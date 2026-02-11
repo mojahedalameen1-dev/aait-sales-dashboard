@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>أوامر الشبكة — لوحة تحكم المبيعات</title>
+  <meta name="description" content="نظام إدارة اجتماعات المبيعات — أوامر الشبكة" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@200;300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="icon" href="/logo.svg" />
+</head>
+
+<body>
+
+  <!-- Start System Overlay (Audio Policy) -->
+  <div id="start-overlay">
+    <div class="start-overlay-content">
+      <div class="start-overlay-icon">
+        <img src="/logo.svg" alt="Awamer Alshabaka Logo" width="80" height="80" class="logo-animate" />
+      </div>
+      <h1>أوامر الشبكة</h1>
+      <p>لوحة تحكم إدارة المبيعات</p>
+      <button id="start-btn">
+        <span class="btn-icon">🔊</span>
+        تشغيل النظام
+      </button>
+      <p class="start-hint">اضغط لتفعيل الإشعارات الصوتية ولوحة التحكم</p>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>⚙️ إعدادات النظام</h2>
+        <button id="close-modal-btn" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="sheet-id-input">معرّف جدول Google Sheet ID</label>
+          <input type="text" id="sheet-id-input" placeholder="ألصق المعرّف هنا (ID من الرابط)" />
+          <p class="input-hint">تأكد من نشر الملف كـ CSV (File > Share > Publish to web)</p>
+        </div>
+
+        <div class="form-group-row">
+          <label>التنبيهات الصوتية</label>
+          <label class="switch">
+            <input type="checkbox" id="sound-toggle" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="form-group-row">
+          <label>الوضع الفاتح ☀️</label>
+          <label class="switch">
+            <input type="checkbox" id="theme-toggle">
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="refresh-interval">تحديث البيانات كل</label>
+          <select id="refresh-interval">
+            <option value="0.25">15 ثانية (لحظي)</option>
+            <option value="0.5">30 ثانية</option>
+            <option value="1" selected>1 دقيقة</option>
+            <option value="5">5 دقائق</option>
+            <option value="10">10 دقائق</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-settings-btn" class="primary-btn">حفظ وتحديث</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden">
+    <!-- Header -->
+    <header id="app-header">
+      <div class="header-right">
+        <div class="header-logo">
+          <img src="/logo.svg" alt="Awamer Alshabaka Logo" width="40" height="40" />
+        </div>
+        <div class="header-text">
+          <h1>أوامر الشبكة</h1>
+          <p>إدارة اجتماعات المبيعات</p>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div id="live-clock" class="live-clock">--:--:--</div>
+      </div>
+
+      <div class="header-left">
+        <div id="sync-status" class="sync-badge">
+          <span class="sync-dot"></span>
+          <span class="sync-text">متصل</span>
+        </div>
+        <button id="export-btn" class="icon-btn" title="تصدير البيانات" aria-label="Export Data">📤</button>
+        <button id="sync-now-btn" class="icon-btn" title="مزامنة الآن" aria-label="Sync Now">↻</button>
+        <button id="settings-btn" class="icon-btn" title="الإعدادات" aria-label="Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="settings-modal hidden">
+      <div class="settings-content">
+        <div class="settings-header">
+          <h2>تصدير البيانات</h2>
+          <button id="close-export-btn" class="close-btn">&times;</button>
+        </div>
+        <div class="settings-body">
+          <div class="export-options">
+            <button id="export-csv" class="action-btn">📄 Excel / CSV</button>
+            <button id="export-print" class="action-btn">🖨️ طباعة / PDF</button>
+            <button id="export-copy" class="action-btn">📋 نسخ للنشر</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar: Search & Filter -->
+    <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Meeting Filters">
+      <div class="search-container">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="search-input" placeholder="بحث عن عميل، مشروع، أو فريق..."
+          aria-label="بحث في الاجتماعات" />
+        <button id="clear-search" class="clear-btn hidden" aria-label="مسح البحث">&times;</button>
+      </div>
+      <div class="filter-group" role="group" aria-label="تصفية حسب الحالة">
+        <button class="filter-btn active" data-filter="all" aria-pressed="true">الكل</button>
+        <button class="filter-btn" data-filter="active" aria-pressed="false">نشط</button>
+        <button class="filter-btn" data-filter="completed" aria-pressed="false">مكتمل</button>
+        <button class="filter-btn" data-filter="cancelled" aria-pressed="false">ملغي</button>
+      </div>
+    </div>
+
+    <!-- Next Meeting Banner -->
+    <section id="next-meeting-banner" class="next-meeting-banner hidden">
+      <div class="banner-bg-glow"></div>
+      <div class="banner-content">
+        <!-- Right Side: Meeting Details + Progress Bar -->
+        <div class="banner-details">
+          <div id="banner-meetings-list" class="banner-multi-list"></div>
+          <div class="progress-bar-container">
+            <div id="time-progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+        <!-- Left Side (visually right in RTL): Timer -->
+        <div class="banner-countdown">
+          <span class="countdown-label">متبقي على الاجتماع القادم</span>
+          <span id="countdown-timer" class="countdown-value">--:--</span>
+          <span id="next-meeting-time-display" class="banner-time-small"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Notification Toast Container -->
+    <div id="notification-container" class="notification-container"></div>
+
+    <!-- Meetings Grid -->
+    <main id="meetings-main">
+      <div id="meetings-container" class="meetings-container">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <p>جاري الاتصال بالقاعدة...</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer id="app-footer">
+      <div class="footer-info">
+        <span>أوامر الشبكة — نظام المبيعات v2.0</span>
+        <span class="divider">|</span>
+        <span id="last-sync-time">آخر تحديث: --</span>
+        <span id="last-updated-seconds" class="last-updated-counter">(منذ 0 ثانية)</span>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
