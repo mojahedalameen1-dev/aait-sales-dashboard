@@ -400,15 +400,25 @@ export function isDone(meeting) {
     return /تم|نجاح|complete|done|finish/i.test(s);
 }
 
+/**
+ * Check if a meeting is cancelled/archived.
+ * Handles Arabic "ملغي", "لم يتم" and common cancellation strings.
+ */
+export function isCancelled(meeting) {
+    if (!meeting || !meeting.status) return false;
+    const s = meeting.status.trim().toLowerCase();
+    return /ملغ|لم يتم|cancel|postpone|مؤجل/i.test(s);
+}
+
 export function getNextMeeting(meetings) {
     const today = formatTodayDate();
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-    // 1. Get Today's Meetings that are NOT "Done"
+    // 1. Get Today's Meetings that are NOT "Done" and NOT "Cancelled"
     const pendingToday = meetings.filter(m => {
         if (m.date !== today) return false;
-        return !isDone(m);
+        return !isDone(m) && !isCancelled(m);
     });
 
     if (pendingToday.length === 0) return null;

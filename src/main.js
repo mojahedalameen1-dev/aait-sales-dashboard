@@ -16,7 +16,8 @@ import {
   updateSettings,
   formatTime12h,
   getStatusIcon,
-  isDone
+  isDone,
+  isCancelled
 } from './data.js';
 import { unlockAudio, startNotificationLoop, testNotification, showToast, requestNotificationPermission } from './notifications.js';
 import { escapeHTML } from './utils.js';
@@ -250,11 +251,11 @@ function renderMeetings() {
     filtered = filtered.filter(m => {
       const s = (m.status || '').toLowerCase();
       const done = isDone(m);
-      const isCancelled = s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
+      const isCancelled_m = s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
 
-      if (activeFilter === 'active') return !done && !isCancelled;
+      if (activeFilter === 'active') return !done && !isCancelled_m;
       if (activeFilter === 'completed') return done;
-      if (activeFilter === 'cancelled') return isCancelled;
+      if (activeFilter === 'cancelled') return isCancelled_m;
       return true;
     });
   }
@@ -303,7 +304,7 @@ function renderMeetings() {
     for (const m of meetings) {
       const sLower = (m.status || '').toLowerCase();
       const done = isDone(m);
-      const isArchived = done || sLower.includes('ملغي') || sLower.includes('لم يتم') || sLower.includes('cancel') || sLower.includes('postpone');
+      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
 
       if (isArchived) groupB.push(m);
       else groupA.push(m);
@@ -331,7 +332,7 @@ function renderMeetings() {
 
       const sLower = (m.status || '').toLowerCase();
       const done = isDone(m);
-      const isArchived = done || sLower.includes('ملغي') || sLower.includes('لم يتم') || sLower.includes('cancel') || sLower.includes('postpone');
+      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
 
       // THE GOLDEN RULE + SMART SORT: Never pulse if in Group B
       const isActive = isTargeted && !isArchived;
