@@ -437,6 +437,11 @@ body::before {
   filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
 }
 
+.countdown-value.long-format {
+  font-size: 2.2rem;
+  letter-spacing: -1px;
+}
+
 .countdown-value.urgent {
   background: linear-gradient(180deg, var(--neon-red), #f87171);
   -webkit-background-clip: text;

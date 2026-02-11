@@ -134,10 +134,20 @@ function updateCountdownBanner() {
   const isUrgent = diffMin < 5 || next.isOverdue;
   if (next.isOverdue) {
     timerEl.textContent = 'الآن!';
+    timerEl.classList.remove('long-format');
   } else {
-    timerEl.textContent = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
+    if (diffMin > 59) {
+      const hours = Math.floor(diffMin / 60);
+      const mins = diffMin % 60;
+      const secs = Math.max(0, diffSec);
+      timerEl.textContent = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      timerEl.classList.add('long-format');
+    } else {
+      timerEl.textContent = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
+      timerEl.classList.remove('long-format');
+    }
   }
-  timerEl.className = `countdown-value${isUrgent ? ' urgent' : ''}`;
+  timerEl.className = `countdown-value${isUrgent ? ' urgent' : ''}${timerEl.classList.contains('long-format') ? ' long-format' : ''}`;
 
   // Meeting time display
   if (timeDisplayEl) {
