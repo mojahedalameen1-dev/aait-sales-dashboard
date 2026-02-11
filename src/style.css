@@ -637,43 +637,47 @@ body::before {
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 1rem;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
   border-radius: 50px;
-  background: var(--bg-glass);
-  border: 1px solid var(--border-glass);
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: default;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
 }
 
 .status-badge:hover {
-  transform: scale(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .status-badge.external {
-  border-color: var(--neon-red);
-  color: var(--neon-red);
-  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .status-badge.completed {
-  border-color: var(--neon-green);
+  border-color: rgba(140, 198, 63, 0.35);
   color: var(--neon-green);
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(140, 198, 63, 0.08);
 }
 
 .status-badge.inperson {
-  border-color: var(--neon-blue);
-  color: var(--neon-blue);
-  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(41, 171, 226, 0.35);
+  color: var(--brand-teal-light);
+  background: rgba(41, 171, 226, 0.08);
 }
 
 .status-badge.remote {
-  border-color: var(--neon-orange);
-  color: var(--neon-orange);
-  background: rgba(249, 115, 22, 0.1);
+  border-color: rgba(249, 115, 22, 0.35);
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.08);
 }
 
 /* Action Buttons */
@@ -681,33 +685,52 @@ body::before {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .btn-action {
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-glass);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  border-radius: 50px;
+  border: 1px solid rgba(41, 171, 226, 0.25);
+  background: linear-gradient(135deg, rgba(41, 171, 226, 0.1), rgba(0, 123, 182, 0.08));
+  color: var(--brand-teal-light);
   font-family: var(--font);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   text-decoration: none;
-  display: inline-block;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
 }
 
 .btn-action:hover {
-  background: var(--neon-blue);
+  background: linear-gradient(135deg, rgba(41, 171, 226, 0.25), rgba(0, 123, 182, 0.2));
+  border-color: var(--brand-teal);
   color: #fff;
-  border-color: var(--neon-blue);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(41, 171, 226, 0.25);
+}
+
+.btn-action:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(41, 171, 226, 0.2);
+}
+
+.btn-action.secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
 }
 
 .btn-action.secondary:hover {
-  background: var(--bg-glass);
-  border-color: var(--text-secondary);
-  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 /* --- Modal --- */
