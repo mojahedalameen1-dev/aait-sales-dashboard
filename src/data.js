@@ -12,7 +12,7 @@ const STORAGE_KEY_LAST_SYNC = 'aait_last_sync';
 
 const DEFAULT_SETTINGS = {
     sheetId: '', // User must provide this
-    refreshInterval: 1, // Minutes
+    refreshInterval: 0.5, // Minutes (30 seconds)
     soundEnabled: true
 };
 

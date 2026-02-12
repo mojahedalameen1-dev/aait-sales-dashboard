@@ -190,9 +190,21 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 
 // Track which meetings already triggered notifications
 const notifiedMeetings = new Set();
+let lastNotifiedDate = new Date().toDateString();
 const ALERT_INTERVALS = [10, 5, 1];
 
+// Reset notifications daily to prevent unbounded growth
+function resetNotificationsIfNewDay() {
+    const today = new Date().toDateString();
+    if (today !== lastNotifiedDate) {
+        notifiedMeetings.clear();
+        lastNotifiedDate = today;
+        console.log('🔄 Daily notification reset');
+    }
+}
+
 export function checkMeetingTimers(meetings, todayDate) {
+    resetNotificationsIfNewDay();
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 

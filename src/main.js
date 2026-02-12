@@ -30,6 +30,7 @@ let currentMeetings = [];
 let lastSyncTimestamp = null;
 let searchQuery = '';
 let activeFilter = 'all'; // all, active, completed, cancelled
+let clockIntervalId = null;
 
 // ========================================
 // ⏰ Live Clock & Daily Stats
@@ -82,7 +83,8 @@ function startClock() {
   };
 
   update();
-  setInterval(update, 1000);
+  if (clockIntervalId) clearInterval(clockIntervalId);
+  clockIntervalId = setInterval(update, 1000);
 }
 
 
@@ -229,7 +231,7 @@ function renderMeetings() {
     return;
   }
 
-  if (!container) return;
+
 
   // --- FILTERING LOGIC ---
   let filtered = currentMeetings;
@@ -433,14 +435,7 @@ function renderDailyStats() {
   }
 }
 
-function isTimePassed(time) {
-  if (!time) return false;
-  const now = new Date();
-  const [h, m] = time.split(':').map(Number);
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const meetingMin = h * 60 + m;
-  return meetingMin < nowMin;
-}
+
 
 // ========================================
 // ⚙️ UI Logic & Settings Modal
