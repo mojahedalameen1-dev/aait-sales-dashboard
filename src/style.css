@@ -1499,181 +1499,204 @@ input:checked+.slider:before {
   color: white;
 }
 
+/* ================================
+   ☀️ Light Mode Overhaul (High Contrast & Clear)
+   ================================ */
+html.light-mode {
+  /* Backgrounds: Clear White & Soft Gray */
+  --bg-primary: #f1f5f9;
+  /* Slate 100 */
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.95);
+
+  /* Borders & Shadows */
+  --border-glass: #cbd5e1;
+  /* Slate 300 - Visible Borders */
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+
+  /* Typography: Ultra Dark for Max Contrast */
+  --text-primary: #020617;
+  /* Slate 950 (Almost Black) */
+  --text-secondary: #334155;
+  /* Slate 700 */
+  --text-muted: #64748b;
+  /* Slate 500 */
+
+  /* Brand Colors: Deep & Clear */
+  --brand-teal: #0369a1;
+  /* Sky 700 */
+  --brand-teal-dark: #075985;
+  --brand-teal-light: #0ea5e9;
+
+  /* Neon Accents: Darker for Light Mode Visibility */
+  --neon-blue: #0284c7;
+  --neon-cyan: #0891b2;
+  --neon-green: #15803d;
+  /* Green 700 */
+  --neon-red: #b91c1c;
+  /* Red 700 */
+  --neon-orange: #c2410c;
+  /* Orange 700 */
+}
+
+/* --- Light Mode Component Fixes --- */
+
+/* 1. Next Meeting Banner: Clean Light Look */
+.light-mode .next-meeting-banner {
+  background: #ffffff;
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 10px 30px -10px rgba(8, 145, 178, 0.2);
+}
+
+.light-mode .countdown-value {
+  background: none;
+  -webkit-text-fill-color: #020617;
+  color: #020617;
+  text-shadow: none;
+  filter: none;
+}
+
+.light-mode .countdown-label {
+  color: #475569;
+}
+
+.light-mode .banner-project {
+  color: #0f172a;
+}
+
+.light-mode .banner-meeting-item {
+  background: #f8fafc;
+  border-right-color: var(--neon-cyan);
+}
+
+/* 2. Search Input: High Visibility */
+.light-mode #search-input {
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  color: #020617;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.light-mode #search-input::placeholder {
+  color: #94a3b8;
+}
+
+.light-mode .search-icon {
+  color: #475569;
+}
+
+/* 3. Header & Text */
+.light-mode #app-header {
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.light-mode .header-text h1 {
+  color: #0f172a;
+}
+
+.light-mode .live-clock {
+  color: #0284c7;
+  text-shadow: none;
+}
+
+/* 2. The Core (Radial Gauge) */
+.light-mode .radial-bg {
+  stroke: rgba(0, 0, 0, 0.06);
+  /* Darker track for visibility */
+}
+
+.light-mode .radial-center-text .radial-total-count {
+  color: #0f172a;
+  text-shadow: none;
+}
+
+/* 3. Meeting Cards */
 .light-mode .meeting-row {
   background: #ffffff;
-  border: 1px solid rgba(45, 188, 182, 0.1);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .light-mode .meeting-row:hover {
-  border-color: rgba(45, 188, 182, 0.3);
-  box-shadow: 0 2px 10px rgba(45, 188, 182, 0.08);
-}
-
-.light-mode .meeting-row.passed {
-  opacity: 0.55;
-}
-
-.light-mode .meeting-row.active {
-  border-color: rgba(45, 188, 182, 0.35);
-  background: rgba(255, 255, 255, 1);
-}
-
-.light-mode .meeting-time {
-  color: #2dbcb6;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .light-mode .meeting-project {
-  color: #1a2e2d;
+  color: #0f172a;
 }
 
-.light-mode .meeting-team {
-  color: #3d5c5a;
+.light-mode .meeting-team-text {
+  color: #475569;
 }
 
-.light-mode .meeting-ticket {
-  color: #7a9997;
+.light-mode .meeting-time {
+  color: #0284c7;
 }
 
-/* Light Mode: Status Badges */
-.light-mode .status-badge {
-  background: rgba(45, 188, 182, 0.08);
-  color: #1a8a85;
+/* 4. Badges (Pills) */
+.light-mode .badge-pill {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
 }
 
 .light-mode .status-badge.completed {
-  background: rgba(16, 185, 129, 0.1);
-  color: #0d9668;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #15803d;
 }
 
-.light-mode .status-badge.cancelled {
-  background: rgba(220, 38, 38, 0.08);
-  color: #dc2626;
+.light-mode .status-badge.remote {
+  background: #ffedd5;
+  border-color: #fed7aa;
+  color: #c2410c;
 }
 
-.light-mode .via-badge {
-  background: #f0f5f5;
-  color: #3d5c5a;
+.light-mode .status-badge.external {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
-/* Light Mode: Modal */
-.light-mode .modal,
-.light-mode .settings-modal {
-  background: rgba(0, 0, 0, 0.3);
+.light-mode .status-badge.inperson {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #0369a1;
 }
 
+/* 5. Buttons */
+.light-mode .btn-action.secondary-ghost {
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.light-mode .btn-action.secondary-ghost:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+/* 6. Modals & Inputs */
 .light-mode .modal-content,
-.light-mode .settings-content {
+.light-mode .banner-content {
   background: #ffffff;
-  border: 1px solid rgba(45, 188, 182, 0.15);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  color: #1a2e2d;
+  color: #0f172a;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
-.light-mode .modal-header,
-.light-mode .settings-header {
-  border-bottom: 1px solid rgba(45, 188, 182, 0.12);
-}
-
-.light-mode .modal-header h2,
-.light-mode .settings-header h2 {
-  color: #1a2e2d;
-}
-
-.light-mode input[type="text"],
+.light-mode input,
 .light-mode select {
-  background: #f4f7f7;
-  border: 1px solid rgba(45, 188, 182, 0.2);
-  color: #1a2e2d;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
 }
 
-.light-mode input[type="text"]:focus,
-.light-mode select:focus {
-  border-color: #2dbcb6;
-  box-shadow: 0 0 0 3px rgba(45, 188, 182, 0.12);
-}
-
-.light-mode .primary-btn {
-  background: linear-gradient(90deg, #2dbcb6, #1a8a85);
-  color: #fff;
-}
-
-.light-mode .action-btn {
-  background: #f0f5f5;
-  color: #1a8a85;
-  border: 1px solid rgba(45, 188, 182, 0.15);
-}
-
-.light-mode .action-btn:hover {
-  background: rgba(45, 188, 182, 0.1);
-}
-
-/* Light Mode: Footer */
-.light-mode #app-footer {
-  background: #ffffff;
-  border-top: 1px solid rgba(45, 188, 182, 0.12);
-  color: #3d5c5a;
-}
-
-/* Light Mode: Notifications */
-.light-mode .notification-toast {
-  background: #ffffff;
-  border: 1px solid rgba(45, 188, 182, 0.15);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  color: #1a2e2d;
-}
-
-.light-mode .notification-toast.critical {
-  border-left: 4px solid #dc2626;
-}
-
-.light-mode .notification-toast.warning {
-  border-left: 4px solid #d97706;
-}
-
-.light-mode .notification-toast.info {
-  border-left: 4px solid #2dbcb6;
-}
-
-/* Light Mode: Scrollbar */
-.light-mode ::-webkit-scrollbar-track {
-  background: #f4f7f7;
-}
-
-.light-mode ::-webkit-scrollbar-thumb {
-  background: rgba(45, 188, 182, 0.3);
-  border-radius: 4px;
-}
-
-.light-mode ::-webkit-scrollbar-thumb:hover {
-  background: rgba(45, 188, 182, 0.5);
-}
-
-/* Light Mode: Stats */
-.light-mode .stats-bar-bg {
-  background: #e8f0ef;
-}
-
-.light-mode .stat-item {
-  color: #3d5c5a;
-}
-
-.light-mode .stat-item.pending {
-  color: #2dbcb6;
-}
-
-.light-mode .stat-item.cancelled {
-  color: #dc2626;
-}
-
-/* Light Mode: Loading Spinner */
-.light-mode .spinner {
-  border-color: rgba(45, 188, 182, 0.15);
-  border-top-color: #2dbcb6;
-}
-
-.light-mode .loading-spinner p {
-  color: #3d5c5a;
+.light-mode .input-hint {
+  color: #64748b;
 }
 
 /* ================================
