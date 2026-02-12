@@ -374,9 +374,14 @@ function renderMeetings() {
 
             <!-- Zone B: Actions -->
             <div class="zone-actions">
+              ${ticketNum ? `<button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
+                <i data-lucide="copy"></i> ${ticketNum}
+              </button>` : ''}
+              
               ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
                 <i data-lucide="video"></i> فتح الاجتماع
               </a>` : ''}
+              
               ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
                 <i data-lucide="ticket"></i> التذكرة
               </a>` : ''}
@@ -742,13 +747,82 @@ function setupToolbar() {
 // 🚀 App Initialization
 // ========================================
 
+// ========================================
+// 📋 Copy to Clipboard
+// ========================================
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast({ title: 'تم النسخ', message: `تم نسخ الكود: ${text}`, level: 'info' });
+  } catch (err) {
+    console.error('Failed to copy', err);
+    showToast({ title: 'خطأ', message: 'فشل النسخ', level: 'warning' });
+  }
+}
+
+// ========================================
+// 🎨 Theme Logic
+// ========================================
+
+function setupThemeToggle() {
+  const toggleBtn = document.getElementById('header-theme-toggle');
+
+  const updateIcon = (isLight) => {
+    if (!toggleBtn) return;
+    const iconName = isLight ? 'sun' : 'moon';
+    toggleBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  const isLight = document.documentElement.classList.contains('light-mode');
+  updateIcon(isLight);
+
+  toggleBtn?.addEventListener('click', () => {
+    const isLightNow = document.documentElement.classList.toggle('light-mode');
+    localStorage.setItem('aait_theme', isLightNow ? 'light' : 'dark');
+    updateIcon(isLightNow);
+
+    const settingsToggle = document.getElementById('theme-toggle');
+    if (settingsToggle) settingsToggle.checked = isLightNow;
+  });
+}
+
+// ========================================
+// 🖱️ Start Handler
+// ========================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  const startBtn = document.getElementById('start-btn');
+  const overlay = document.getElementById('start-overlay');
+  const app = document.getElementById('app');
+
+  // Delegated Event Listener for Copy Buttons
+  document.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.btn-copy-slack');
+    if (copyBtn) {
+      e.preventDefault();
+      const code = copyBtn.dataset.code;
+      if (code) copyToClipboard(code);
+    }
+  });
+
+  startBtn?.addEventListener('click', () => {
+    unlockAudio();
+    requestNotificationPermission();
+    overlay.classList.add('hidden');
+    app.classList.remove('hidden');
+    initApp();
+  });
+});
+
 function initApp() {
-  // Load Theme
   const savedTheme = localStorage.getItem('aait_theme');
   if (savedTheme === 'light') {
     document.documentElement.classList.add('light-mode');
   }
 
+  setupThemeToggle(); // Initialize Header Toggle
   startClock();
   setupSettingsModal();
   setupSyncButton();
@@ -765,21 +839,3 @@ function initApp() {
 
   console.log('🚀 AAIT Mission Control initialized');
 }
-
-// ========================================
-// 🖱️ Start Handler
-// ========================================
-
-document.addEventListener('DOMContentLoaded', () => {
-  const startBtn = document.getElementById('start-btn');
-  const overlay = document.getElementById('start-overlay');
-  const app = document.getElementById('app');
-
-  startBtn?.addEventListener('click', () => {
-    unlockAudio();
-    requestNotificationPermission(); // Request permission
-    overlay.classList.add('hidden');
-    app.classList.remove('hidden');
-    initApp();
-  });
-});

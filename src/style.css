@@ -853,6 +853,30 @@ svg.lucide.icon-small {
   color: #fff;
 }
 
+.btn-copy-slack {
+  min-width: auto !important;
+  border-style: dashed !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: var(--neon-cyan) !important;
+  padding: 0 1rem;
+}
+
+.btn-copy-slack:hover {
+  background: rgba(41, 171, 226, 0.1) !important;
+  border-color: var(--neon-cyan) !important;
+  color: #fff !important;
+}
+
+.light-mode .btn-copy-slack {
+  border-color: rgba(0, 0, 0, 0.2) !important;
+  color: #0369a1 !important;
+}
+
+.light-mode .btn-copy-slack:hover {
+  background: #e0f2fe !important;
+  border-color: #0369a1 !important;
+}
+
 .meeting-row:last-child {
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
