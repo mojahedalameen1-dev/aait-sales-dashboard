@@ -38,15 +38,9 @@ let clockIntervalId = null;
 
 function injectDailyStatsUI() {
   const container = document.querySelector('.header-center');
+  // Inject "The Core" container if not present
   if (container && !container.querySelector('.daily-stats-container')) {
-    const statsHTML = `
-      <div class="daily-stats-container">
-        <div id="daily-stats-text" class="daily-stats-text">إحصائيات اليوم: 0 / 0</div>
-        <div class="daily-progress-bg">
-          <div id="daily-progress-fill" class="daily-progress-fill"></div>
-        </div>
-      </div>
-    `;
+    const statsHTML = `<div id="daily-stats-container" class="daily-stats-container"></div>`;
     container.insertAdjacentHTML('beforeend', statsHTML);
   }
 }
@@ -414,59 +408,88 @@ function renderMeetings() {
 // ========================================
 
 function renderDailyStats() {
-  // Use the container injected by injectDailyStatsUI
-  const statsText = document.getElementById('daily-stats-text');
-  const progressFill = document.getElementById('daily-progress-fill');
-
-  // If elements don't exist (e.g. init lag), try again next tick
-  if (!statsText || !progressFill) return;
+  const container = document.getElementById('daily-stats-container');
+  // If element doesn't exist (e.g. init lag), try again next tick
+  if (!container) return;
 
   const todayStr = formatTodayDate();
   const todayMeetings = currentMeetings.filter(m => m.date === todayStr);
   const total = todayMeetings.length;
 
-  if (total === 0) {
-    statsText.textContent = `إحصائيات اليوم: 0 / 0`;
-    progressFill.style.width = '0%';
-    return;
-  }
-
+  // Counts
   const doneCount = todayMeetings.filter(m => isDone(m)).length;
-  // Advanced Stats Calculation
   const cancelledCount = todayMeetings.filter(m => {
     const s = (m.status || '').toLowerCase();
     return s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
   }).length;
-
   const pendingCount = total - doneCount - cancelledCount;
-  const percentage = Math.round((doneCount / total) * 100);
 
-  // Update Text & Width - Minimalist Premium Design
-  statsText.style.display = 'flex';
-  statsText.style.gap = '1rem';
-  statsText.style.alignItems = 'center';
-  statsText.style.justifyContent = 'center';
+  // --- Radial Gauge Math ---
+  const radius = 70; // Radius of the circle
+  const circumference = 2 * Math.PI * radius;
 
-  statsText.innerHTML = `
-    <span style="color:var(--neon-green)">✅ ${doneCount}</span>
-    <span class="divider" style="opacity: 0.2">|</span>
-    <span style="color:var(--neon-cyan)">⏳ ${pendingCount}</span>
-    <span class="divider" style="opacity: 0.2">|</span>
-    <span style="color:var(--neon-red)">🚫 ${cancelledCount}</span>
-    <span class="divider" style="opacity: 0.4">|</span>
-    <span style="font-weight: 700; color: #fff">الإجمالي: ${total}</span>
+  // Calculate stroke-dasharray (length of each segment)
+  // formula: (count / total) * circumference
+  const doneLength = total ? (doneCount / total) * circumference : 0;
+  const pendingLength = total ? (pendingCount / total) * circumference : 0;
+  const cancelledLength = total ? (cancelledCount / total) * circumference : 0;
+
+  // Calculate offsets (starting position of each segment)
+  // We rotate -90deg so 0 is at top.
+  // Segment 1 (Done) starts at 0.
+  // Segment 2 (Pending) starts after Done.
+  // Segment 3 (Cancelled) starts after Done + Pending.
+  const doneOffset = 0;
+  const pendingOffset = -doneLength;
+  const cancelledOffset = -(doneLength + pendingLength);
+
+  // HTML Template for "The Core"
+  container.innerHTML = `
+    <!-- 1. The Radial Gauge (SVG) -->
+    <div class="radial-gauge-wrapper breathing">
+      <svg width="160" height="160" viewBox="0 0 160 160">
+        <!-- Background Track -->
+        <circle class="radial-bg" cx="80" cy="80" r="${radius}"></circle>
+        
+        <!-- Segment 1: Done (Green) -->
+        <circle class="radial-segment segment-done" cx="80" cy="80" r="${radius}"
+          stroke-dasharray="${doneLength} ${circumference}"
+          stroke-dashoffset="${doneOffset}"></circle>
+          
+        <!-- Segment 2: Pending (Blue/Cyan) -->
+        <circle class="radial-segment segment-pending" cx="80" cy="80" r="${radius}"
+          stroke-dasharray="${pendingLength} ${circumference}"
+          stroke-dashoffset="${pendingOffset}"></circle>
+          
+        <!-- Segment 3: Cancelled (Red) -->
+        <circle class="radial-segment segment-cancelled" cx="80" cy="80" r="${radius}"
+          stroke-dasharray="${cancelledLength} ${circumference}"
+          stroke-dashoffset="${cancelledOffset}"></circle>
+      </svg>
+      
+      <!-- Center Text -->
+      <div class="radial-center-text">
+        <span class="radial-total-count">${total}</span>
+        <span class="radial-label">الإجمالي</span>
+      </div>
+    </div>
+
+    <!-- 2. The Legend (Below) -->
+    <div class="stats-legend">
+      <div class="legend-item" title="مكتمل">
+        <span class="legend-dot" style="background:var(--neon-green); box-shadow:0 0 5px var(--neon-green)"></span>
+        <span>${doneCount}</span>
+      </div>
+      <div class="legend-item" title="قيد الانتظار">
+        <span class="legend-dot" style="background:var(--neon-cyan); box-shadow:0 0 5px var(--neon-cyan)"></span>
+        <span>${pendingCount}</span>
+      </div>
+      <div class="legend-item" title="ملغي">
+        <span class="legend-dot" style="background:var(--neon-red); box-shadow:0 0 5px var(--neon-red)"></span>
+        <span>${cancelledCount}</span>
+      </div>
+    </div>
   `;
-
-  progressFill.style.width = `${percentage}% `;
-
-  // Color logic based on completion
-  if (percentage === 100) {
-    progressFill.style.background = 'var(--neon-green)';
-    progressFill.style.boxShadow = '0 0 10px var(--neon-green)';
-  } else {
-    progressFill.style.background = 'linear-gradient(90deg, var(--neon-cyan), var(--neon-blue))';
-    progressFill.style.boxShadow = '0 0 5px var(--neon-blue)';
-  }
 }
 
 

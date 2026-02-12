@@ -202,38 +202,132 @@ body::before {
 }
 
 /* Daily Stats */
+/* --- "The Core" Radial Status Gauge --- */
 .daily-stats-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
-  min-width: 180px;
-  gap: 4px;
+  position: relative;
+  /* Ensure it sits nicely under the clock */
+  margin-top: 0.5rem;
   opacity: 0;
   animation: fadeIn 1s ease-out forwards 0.5s;
 }
 
-.daily-stats-text {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  font-weight: 500;
+/* The Radial SVG Wrapper */
+.radial-gauge-wrapper {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  filter: drop-shadow(0 0 15px rgba(41, 171, 226, 0.15));
 }
 
-.daily-progress-bg {
-  width: 100%;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  overflow: hidden;
+/* SVG Circle Styles */
+.radial-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.05);
+  /* Track color */
+  stroke-width: 8;
 }
 
-.daily-progress-fill {
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-green));
-  border-radius: 10px;
-  transition: width 1s ease;
-  box-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
+.radial-segment {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  /* Start from top */
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.radial-segment.segment-done {
+  stroke: var(--neon-green);
+  filter: drop-shadow(0 0 4px var(--neon-green));
+}
+
+.radial-segment.segment-pending {
+  stroke: var(--neon-cyan);
+  filter: drop-shadow(0 0 4px var(--neon-cyan));
+}
+
+.radial-segment.segment-cancelled {
+  stroke: var(--neon-red);
+  filter: drop-shadow(0 0 4px var(--neon-red));
+}
+
+/* Center Text (The Total) */
+.radial-center-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.radial-total-count {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+.radial-label {
+  font-size: 0.8rem;
+  color: var(--neon-cyan);
+  font-weight: 600;
+  margin-top: 4px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Breathing Animation for Idle State */
+@keyframes breathe {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 10px rgba(41, 171, 226, 0.2));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 25px rgba(41, 171, 226, 0.4));
+  }
+}
+
+.radial-gauge-wrapper.breathing {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* Stats Legend (Below the Circle) */
+.stats-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 0.6rem 1.2rem;
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 /* Lucide Icon Utils */
