@@ -396,7 +396,12 @@ export function formatTodayDate() {
 export function isDone(meeting) {
     if (!meeting || !meeting.status) return false;
     const s = meeting.status.trim();
-    // Handle Arabic "تم" (including zero-width chars or spaces)
+
+    // 1. Exclude "Not Done" / "Cancelled" explicit phrases to avoid overlap
+    // "لم يتم" contains "تم", so we must check this first!
+    if (/لم يتم|not|fail/i.test(s)) return false;
+
+    // 2. Check for positive completion
     return /تم|نجاح|complete|done|finish/i.test(s);
 }
 

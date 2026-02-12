@@ -622,67 +622,7 @@ function setupSyncButton() {
 // 📤 Export Logic
 // ========================================
 
-function setupExport() {
-  const exportBtn = document.getElementById('export-btn');
-  const exportModal = document.getElementById('export-modal');
-  const closeExportBtn = document.getElementById('close-export-btn');
-  const btnCsv = document.getElementById('export-csv');
-  const btnPrint = document.getElementById('export-print');
-  const btnCopy = document.getElementById('export-copy');
 
-  if (!exportBtn || !exportModal) return;
-
-  // Open/Close
-  exportBtn.addEventListener('click', () => {
-    exportModal.classList.remove('hidden');
-    closeExportBtn?.focus(); // Accessibility focus
-  });
-  closeExportBtn?.addEventListener('click', () => {
-    exportModal.classList.add('hidden');
-    exportBtn?.focus(); // Return focus
-  });
-  exportModal.addEventListener('click', (e) => {
-    if (e.target === exportModal) exportModal.classList.add('hidden');
-  });
-
-  // 1. CSV Export
-  btnCsv?.addEventListener('click', () => {
-    const headers = ['المشروع', 'الفريق', 'الوقت', 'الحالة', 'العميل'];
-    const rows = currentMeetings.map(m => [
-      `"${m.project || ''}"`,
-      `"${m.team || ''}"`,
-      `"${m.time || ''}"`,
-      `"${m.status || ''}"`,
-      `"${m.clientStatus || ''}"`
-    ]);
-
-    const csvContent = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `meetings_${formatDate(new Date())}.csv`;
-    link.click();
-    exportModal.classList.add('hidden');
-  });
-
-  // 2. Print View
-  btnPrint?.addEventListener('click', () => {
-    window.print(); // Relies on @media print CSS
-    exportModal.classList.add('hidden');
-  });
-
-  // 3. Copy to Clipboard
-  btnCopy?.addEventListener('click', () => {
-    const text = currentMeetings.map(m =>
-      `📌 * ${m.project}* | ${m.team} \n🕒 ${m.time} | س: ${m.status} `
-    ).join('\n\n');
-
-    navigator.clipboard.writeText(text).then(() => {
-      showToast({ title: 'تم النسخ', message: 'تم نسخ جدول الاجتماعات للحافظة بنجاح ✅', level: 'info' });
-      exportModal.classList.add('hidden');
-    });
-  });
-}
 
 function formatDate(date) {
   return date.toISOString().split('T')[0];
@@ -827,7 +767,6 @@ function initApp() {
   setupSettingsModal();
   setupSyncButton();
   setupToolbar();
-  setupExport();
   initSync();
 
   // Start notification loop
