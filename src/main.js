@@ -20,7 +20,7 @@ import {
   isCancelled
 } from './data.js';
 import { unlockAudio, startNotificationLoop, testNotification, showToast, requestNotificationPermission } from './notifications.js';
-import { escapeHTML } from './utils.js';
+import { escapeHTML, formatMeetingCount } from './utils.js';
 
 // ========================================
 // 🌐 State
@@ -301,7 +301,7 @@ function renderMeetings() {
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center">
             ${isToday ? '<span class="today-badge">اليوم</span>' : ''}
-            <span class="meeting-count">${meetings.length} اجتماع</span>
+            <span class="meeting-count">${formatMeetingCount(meetings.length)}</span>
           </div>
         </div>
         <div class="meetings-table">
