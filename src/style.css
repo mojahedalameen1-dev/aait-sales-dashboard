@@ -319,7 +319,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: #fff;
 }
@@ -328,6 +328,21 @@ body::before {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+.legend-label {
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+.legend-value {
+  font-weight: 700;
+  min-width: 15px;
+  text-align: center;
+}
+
+.light-mode .legend-item {
+  color: #334155;
 }
 
 /* Lucide Icon Utils */

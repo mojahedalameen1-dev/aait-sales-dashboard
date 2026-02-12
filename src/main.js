@@ -478,15 +478,18 @@ function renderDailyStats() {
     <div class="stats-legend">
       <div class="legend-item" title="مكتمل">
         <span class="legend-dot" style="background:var(--neon-green); box-shadow:0 0 5px var(--neon-green)"></span>
-        <span>${doneCount}</span>
+        <span class="legend-label">مكتملة</span>
+        <span class="legend-value">${doneCount}</span>
       </div>
-      <div class="legend-item" title="قيد الانتظار">
+      <div class="legend-item" title="قادمة / انتظار">
         <span class="legend-dot" style="background:var(--neon-cyan); box-shadow:0 0 5px var(--neon-cyan)"></span>
-        <span>${pendingCount}</span>
+        <span class="legend-label">قادمة</span>
+        <span class="legend-value">${pendingCount}</span>
       </div>
-      <div class="legend-item" title="ملغي">
+      <div class="legend-item" title="لم تتم / ملغي">
         <span class="legend-dot" style="background:var(--neon-red); box-shadow:0 0 5px var(--neon-red)"></span>
-        <span>${cancelledCount}</span>
+        <span class="legend-label">لم تتم</span>
+        <span class="legend-value">${cancelledCount}</span>
       </div>
     </div>
   `;
