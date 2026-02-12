@@ -484,17 +484,16 @@ export function getStatusIcon(via, status) {
     const s = (status || '').toLowerCase();
 
     // 1. Check Status first for "External"
-    if (s.includes('خارجي') || v.includes('خارجي')) return '🚗';
-    if (s.includes('سيارة') || v.includes('سيارة')) return '🚗';
+    if (s.includes('خارجي') || v.includes('خارجي') || s.includes('سيارة') || v.includes('سيارة')) return 'car';
 
     // 2. Check Via
-    if (v.includes('بعد') || v.includes('remote') || v.includes('zoom') || v.includes('meet')) return '🎥';
-    if (v.includes('حضوري') || v.includes('مكتب') || v.includes('office')) return '🏢';
+    if (v.includes('بعد') || v.includes('remote') || v.includes('zoom') || v.includes('meet')) return 'video';
+    if (v.includes('حضوري') || v.includes('مكتب') || v.includes('office')) return 'building-2';
 
     // Default fallback based on status text if Via is ambiguous
-    if (s.includes('حضوري')) return '🏢';
+    if (s.includes('حضوري')) return 'building-2';
 
-    return '📅'; // Generic calendar default
+    return 'calendar'; // Generic calendar default
 }
 
 export { getLastSyncTime };

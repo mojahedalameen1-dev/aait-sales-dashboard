@@ -152,11 +152,6 @@ function updateCountdownBanner() {
   }
   timerEl.className = `countdown-value${isUrgent ? ' urgent' : ''}${timerEl.classList.contains('long-format') ? ' long-format' : ''}`;
 
-  // Meeting time display
-  if (timeDisplayEl) {
-    timeDisplayEl.textContent = `⏰ ${formatTime12h(next.time)}`;
-  }
-
   // --- Progress Bar ---
   let barColor = 'linear-gradient(90deg, var(--neon-cyan), var(--neon-blue))';
   if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
@@ -178,12 +173,25 @@ function updateCountdownBanner() {
       return `
         <div class="banner-meeting-item">
           <div class="banner-project">${escapeHTML(m.project || '')}</div>
-          <div class="banner-team">${escapeHTML(m.team || '')} ${ticketNum ? `<span class="banner-ticket">#${ticketNum}</span>` : ''}</div>
+          <div class="banner-team">
+            <span><i data-lucide="users" class="icon-small"></i> ${escapeHTML(m.team || '')}</span>
+            ${ticketNum ? `<span class="banner-ticket"><i data-lucide="ticket" class="icon-small"></i> #${ticketNum}</span>` : ''}
+          </div>
         </div>
       `;
     }).join('');
 
     meetingsList.innerHTML = meetingsHTML;
+  }
+
+  // Meeting time display
+  if (timeDisplayEl) {
+    timeDisplayEl.innerHTML = `<i data-lucide="clock" class="icon-small"></i> ${formatTime12h(next.time)}`;
+  }
+
+  // Initialize Lucide icons
+  if (window.lucide) {
+    window.lucide.createIcons();
   }
 }
 
@@ -358,13 +366,17 @@ function renderMeetings() {
           
           <div class="meeting-status">
             <span class="status-badge ${statusClass}">
-              ${icon} ${escapeHTML(m.status || '—')}
+              <i data-lucide="${icon}"></i> ${escapeHTML(m.status || '—')}
             </span>
           </div>
 
           <div class="meeting-actions">
-            ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action">📹 فتح الاجتماع</a>` : ''}
-            ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary">🎫 التذكرة</a>` : ''}
+            ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action">
+              <i data-lucide="video"></i> فتح الاجتماع
+            </a>` : ''}
+            ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary">
+              <i data-lucide="ticket"></i> التذكرة
+            </a>` : ''}
           </div>
         </div>
       `;
@@ -376,6 +388,10 @@ function renderMeetings() {
   // --- ANTI-FLICKER: Smart Diffing ---
   if (container.innerHTML !== html) {
     container.innerHTML = html;
+    // Initialize Lucide icons
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
   }
 
   // Update Daily Stats after render
@@ -416,14 +432,14 @@ function renderDailyStats() {
 
   // Update Text & Width
   statsText.innerHTML = `
-    <span title="مكتمل">✅ ${doneCount}</span> / 
-    <span title="الإجمالي">${total}</span> 
+      < span title = "مكتمل" >✅ ${doneCount}</span > /
+        < span title = "الإجمالي" > ${total}</span > 
     <span class="divider">|</span> 
     <span title="قيد الانتظار" style="color:var(--neon-cyan)">⏳ ${pendingCount}</span>
     <span title="ملغي" style="color:var(--neon-red)">🚫 ${cancelledCount}</span>
-  `;
+    `;
 
-  progressFill.style.width = `${percentage}%`;
+  progressFill.style.width = `${percentage}% `;
 
   // Color logic based on completion
   if (percentage === 100) {
@@ -521,7 +537,7 @@ function handleSyncResult({ meetings, fromCache, error }) {
       const m = String(now.getMinutes()).padStart(2, '0');
       const suffix = h < 12 ? 'ص' : 'م';
       h = h % 12 || 12;
-      dateEl.textContent = `آخر تحديث: ${h}:${m} ${suffix}`;
+      dateEl.textContent = `آخر تحديث: ${h}:${m} ${suffix} `;
     }
 
   } else {
@@ -609,7 +625,7 @@ function setupExport() {
   // 3. Copy to Clipboard
   btnCopy?.addEventListener('click', () => {
     const text = currentMeetings.map(m =>
-      `📌 *${m.project}* | ${m.team}\n🕒 ${m.time} | س: ${m.status}`
+      `📌 * ${m.project}* | ${m.team} \n🕒 ${m.time} | س: ${m.status} `
     ).join('\n\n');
 
     navigator.clipboard.writeText(text).then(() => {

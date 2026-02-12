@@ -160,8 +160,17 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 
     const toast = document.createElement('div');
     toast.className = `notification-toast ${level}`;
+
+    // Lucide icon map
+    const iconMap = {
+        'info': 'info',
+        'warning': 'alert-triangle',
+        'critical': 'alert-circle'
+    };
+    const lucideIcon = iconMap[level] || 'bell';
+
     toast.innerHTML = `
-    <span class="toast-icon">${icon}</span>
+    <span class="toast-icon"><i data-lucide="${lucideIcon}"></i></span>
     <div class="toast-body">
       <div class="toast-title"></div> <!-- Set via textContent below -->
       <div class="toast-message"></div> <!-- Set via textContent below -->
@@ -174,6 +183,11 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
     toast.querySelector('.toast-message').textContent = message;
 
     container.prepend(toast);
+
+    // Initialize Lucide icons
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
 
     // Auto-dismiss
     setTimeout(() => {
