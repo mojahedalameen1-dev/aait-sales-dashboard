@@ -479,18 +479,21 @@ export function getNextMeeting(meetings) {
     };
 }
 
-export function getStatusIcon(via, status) {
+export function getStatusIcon(via, status, hasMeetUrl = false) {
+    // 1. Force Video if there's a meeting link
+    if (hasMeetUrl) return 'video';
+
     const v = (via || '').toLowerCase();
     const s = (status || '').toLowerCase();
 
-    // 1. Check Status first for "External"
+    // 2. Check Via for Remote/Video keywords (High Priority)
+    if (v.includes('بعد') || v.includes('remote') || v.includes('zoom') || v.includes('meet')) return 'video';
+
+    // 3. Check for External/Car (Medium Priority)
     if (s.includes('خارجي') || v.includes('خارجي') || s.includes('سيارة') || v.includes('سيارة')) return 'car';
 
-    // 2. Check Via
-    if (v.includes('بعد') || v.includes('remote') || v.includes('zoom') || v.includes('meet')) return 'video';
+    // 4. Check for Office/Building
     if (v.includes('حضوري') || v.includes('مكتب') || v.includes('office')) return 'building-2';
-
-    // Default fallback based on status text if Via is ambiguous
     if (s.includes('حضوري')) return 'building-2';
 
     return 'calendar'; // Generic calendar default

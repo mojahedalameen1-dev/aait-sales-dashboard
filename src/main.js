@@ -188,11 +188,6 @@ function updateCountdownBanner() {
   if (timeDisplayEl) {
     timeDisplayEl.innerHTML = `<i data-lucide="clock" class="icon-small"></i> ${formatTime12h(next.time)}`;
   }
-
-  // Initialize Lucide icons
-  if (window.lucide) {
-    window.lucide.createIcons();
-  }
 }
 
 // ========================================
@@ -347,37 +342,53 @@ function renderMeetings() {
       // THE GOLDEN RULE + SMART SORT: Never pulse if in Group B
       const isActive = isTargeted && !isArchived;
 
-      // Icon
-      const icon = getStatusIcon(m.via, m.status);
+      // Icon logic - prioritize video if link exists
+      const icon = getStatusIcon(m.via, m.status, !!m.meetUrl);
 
       html += `
         <div class="meeting-row ${isActive ? 'active' : ''} ${isArchived ? 'dimmed' : ''}" 
              style="${isArchived ? 'opacity: 0.5;' : ''}">
+          
+          <!-- Column 1: Time -->
           <div class="meeting-time">
             ${formatTime12h(m.time) || '--:--'}
           </div>
           
-          <div class="meeting-info">
-            <div class="meeting-project">${escapeHTML(m.project || '—')}</div>
-            ${ticketNum ? `<div class="meeting-ticket">#${ticketNum}</div>` : ''}
+          <!-- Column 2: Meeting Details -->
+          <div class="meeting-details">
+            <div class="meeting-project-wrapper">
+                <div class="meeting-project">${escapeHTML(m.project || '—')}</div>
+                ${ticketNum ? `<div class="meeting-ticket-pill">#${ticketNum}</div>` : ''}
+            </div>
+            <div class="meeting-team-text">${escapeHTML(m.team || '—')}</div>
           </div>
           
-          <div class="meeting-team">${escapeHTML(m.team || '—')}</div>
-          
-          <div class="meeting-status">
-            <span class="status-badge ${statusClass}">
-              <i data-lucide="${icon}"></i> ${escapeHTML(m.status || '—')}
-            </span>
+          <!-- Column 3: Divider -->
+          <div class="meeting-row-divider"></div>
+
+          <!-- Column 4: Control Zone (Badges & Actions) -->
+          <div class="meeting-control-zone">
+            <!-- Zone A: Badges (Method & Status) -->
+            <div class="zone-badges">
+              <span class="badge-pill method-badge">
+                <i data-lucide="${icon}"></i> ${escapeHTML(m.via || 'اجتماع')}
+              </span>
+              <span class="badge-pill status-badge ${statusClass}">
+                <i data-lucide="${isActive ? 'circle-dot' : 'circle'}"></i> ${escapeHTML(m.status || '—')}
+              </span>
+            </div>
+
+            <!-- Zone B: Actions -->
+            <div class="zone-actions">
+              ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
+                <i data-lucide="video"></i> فتح الاجتماع
+              </a>` : ''}
+              ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
+                <i data-lucide="ticket"></i> التذكرة
+              </a>` : ''}
+            </div>
           </div>
 
-          <div class="meeting-actions">
-            ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action">
-              <i data-lucide="video"></i> فتح الاجتماع
-            </a>` : ''}
-            ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary">
-              <i data-lucide="ticket"></i> التذكرة
-            </a>` : ''}
-          </div>
         </div>
       `;
     }
@@ -430,14 +441,21 @@ function renderDailyStats() {
   const pendingCount = total - doneCount - cancelledCount;
   const percentage = Math.round((doneCount / total) * 100);
 
-  // Update Text & Width
+  // Update Text & Width - Minimalist Premium Design
+  statsText.style.display = 'flex';
+  statsText.style.gap = '1rem';
+  statsText.style.alignItems = 'center';
+  statsText.style.justifyContent = 'center';
+
   statsText.innerHTML = `
-      < span title = "مكتمل" >✅ ${doneCount}</span > /
-        < span title = "الإجمالي" > ${total}</span > 
-    <span class="divider">|</span> 
-    <span title="قيد الانتظار" style="color:var(--neon-cyan)">⏳ ${pendingCount}</span>
-    <span title="ملغي" style="color:var(--neon-red)">🚫 ${cancelledCount}</span>
-    `;
+    <span style="color:var(--neon-green)">✅ ${doneCount}</span>
+    <span class="divider" style="opacity: 0.2">|</span>
+    <span style="color:var(--neon-cyan)">⏳ ${pendingCount}</span>
+    <span class="divider" style="opacity: 0.2">|</span>
+    <span style="color:var(--neon-red)">🚫 ${cancelledCount}</span>
+    <span class="divider" style="opacity: 0.4">|</span>
+    <span style="font-weight: 700; color: #fff">الإجمالي: ${total}</span>
+  `;
 
   progressFill.style.width = `${percentage}% `;
 

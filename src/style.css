@@ -242,6 +242,8 @@ svg.lucide {
   height: 1.25rem;
   stroke-width: 2.5px;
   vertical-align: middle;
+  flex-shrink: 0;
+  /* Never shrink icons */
 }
 
 .icon-small svg.lucide,
@@ -249,6 +251,7 @@ svg.lucide.icon-small {
   width: 1rem;
   height: 1rem;
   stroke-width: 2px;
+  flex-shrink: 0;
 }
 
 
@@ -564,25 +567,181 @@ svg.lucide.icon-small {
   /* Slight gap for card effect */
 }
 
-/* Enhanced Glassmorphism Card */
+/* Enhanced Glassmorphism Card Overhaul */
 .meeting-row {
   display: grid;
-  grid-template-columns: 80px 1fr 180px 100px 120px auto;
-  gap: 1rem;
-  padding: 1.4rem 1.5rem;
+  /* Grid Layout: Time | Main Details | Divider | Control Zone */
+  grid-template-columns: 90px 1fr auto minmax(360px, auto);
+  gap: 1.5rem;
+  padding: 1.5rem 1.8rem;
 
-  background: rgba(30, 41, 59, 0.25);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 
   align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
   position: relative;
+}
 
-  /* Fade In Animation defaults */
-  opacity: 0;
-  animation: fadeIn 0.6s ease-out forwards;
+.meeting-row-divider {
+  width: 1px;
+  height: 40px;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.1), transparent);
+  margin: 0 0.5rem;
+}
+
+.meeting-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  /* Enable truncation for children */
+}
+
+.meeting-project-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.meeting-project {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meeting-ticket-pill {
+  padding: 0.1rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  background: rgba(41, 171, 226, 0.1);
+  border: 1px solid rgba(41, 171, 226, 0.2);
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.meeting-team-text {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 400;
+}
+
+/* Control Zone Architecture */
+.meeting-control-zone {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  /* Clear separation between Zones A and B */
+  justify-content: flex-end;
+}
+
+/* Zone A: Badges (Pills) */
+.zone-badges {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 1rem;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.3s ease;
+}
+
+.badge-pill svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.method-badge {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.status-badge.completed {
+  color: var(--neon-green);
+  background: rgba(140, 198, 63, 0.05);
+  border-color: rgba(140, 198, 63, 0.15);
+}
+
+.status-badge.remote {
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.05);
+  border-color: rgba(249, 115, 22, 0.15);
+}
+
+.status-badge.inperson {
+  color: var(--brand-teal-light);
+  background: rgba(41, 171, 226, 0.05);
+  border-color: rgba(41, 171, 226, 0.15);
+}
+
+.status-badge.external {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.15);
+}
+
+/* Zone B: Action Tools */
+.zone-actions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 42px;
+  padding: 0 1.4rem;
+  border-radius: 8px;
+  /* More corporate rectangular feel */
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  white-space: nowrap;
+}
+
+.btn-action.primary-glow {
+  min-width: 160px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--neon-blue), var(--neon-cyan));
+  box-shadow: 0 4px 15px rgba(41, 171, 226, 0.2);
+  border: none;
+}
+
+.btn-action.primary-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(41, 171, 226, 0.4);
+  filter: brightness(1.1);
+}
+
+.btn-action.secondary-ghost {
+  min-width: 120px;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-action.secondary-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
 }
 
 .meeting-row:last-child {
@@ -625,121 +784,7 @@ svg.lucide.icon-small {
   text-align: center;
 }
 
-.meeting-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.meeting-project {
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--text-primary);
-  margin-bottom: 0.2rem;
-}
-
-.meeting-ticket {
-  font-size: 0.8rem;
-  color: var(--neon-cyan);
-  letter-spacing: 0.5px;
-}
-
-.meeting-team {
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-}
-
-/* Status Badges */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.4rem 1rem;
-  border-radius: 50px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  cursor: default;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(4px);
-  white-space: nowrap;
-}
-
-.status-badge svg.lucide {
-  width: 1rem;
-  height: 1rem;
-  opacity: 0.9;
-}
-
-.status-badge:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.status-badge.external {
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #f87171;
-  background: rgba(239, 68, 68, 0.08);
-}
-
-.status-badge.completed {
-  border-color: rgba(140, 198, 63, 0.35);
-  color: var(--neon-green);
-  background: rgba(140, 198, 63, 0.08);
-}
-
-.status-badge.inperson {
-  border-color: rgba(41, 171, 226, 0.35);
-  color: var(--brand-teal-light);
-  background: rgba(41, 171, 226, 0.08);
-}
-
-.status-badge.remote {
-  border-color: rgba(249, 115, 22, 0.35);
-  color: #fb923c;
-  background: rgba(249, 115, 22, 0.08);
-}
-
-/* Action Buttons */
-.meeting-actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-  align-items: center;
-}
-
-.btn-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 1.2rem;
-  border-radius: 50px;
-  border: 1px solid rgba(41, 171, 226, 0.25);
-  background: linear-gradient(135deg, rgba(41, 171, 226, 0.1), rgba(0, 123, 182, 0.08));
-  color: var(--brand-teal-light);
-  font-family: var(--font);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-decoration: none;
-  white-space: nowrap;
-  backdrop-filter: blur(4px);
-}
-
-.btn-action svg.lucide {
-  width: 1.1rem;
-  height: 1.1rem;
-}
-
-.btn-action:hover {
-  background: linear-gradient(135deg, rgba(41, 171, 226, 0.25), rgba(0, 123, 182, 0.2));
-  border-color: var(--brand-teal);
-  color: #fff;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(41, 171, 226, 0.25);
-}
+/* End of meeting row styles */
 
 .btn-action:active {
   transform: translateY(0);
