@@ -1917,3 +1917,77 @@ html.light-mode {
     font-size: 1rem;
   }
 }
+
+/* ================================
+   📺 TV Mode (Large Screens > 1900px)
+   ================================ */
+@media (min-width: 1900px) {
+  html {
+    font-size: 22px; /* Significant scale up from 16px */
+  }
+
+  /* Adjust Container Widths */
+  #meetings-main, 
+  #app-header, 
+  .next-meeting-banner {
+    max-width: 95vw;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Meeting Row Breathing Room */
+  .meeting-row {
+    padding: 2rem 3rem;
+    gap: 3rem;
+  }
+
+  /* Typography Adjustments */
+  .meeting-time {
+    font-size: 1.8rem;
+    min-width: 120px;
+  }
+
+  .meeting-project {
+    font-size: 1.4rem;
+  }
+
+  .badge-pill {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
+  }
+
+  /* Header & Banner */
+  .header-logo img {
+    width: 60px;
+    height: 60px;
+  }
+
+  .header-text h1 {
+    font-size: 1.6rem;
+  }
+
+  .countdown-value {
+    font-size: 5rem;
+  }
+
+  .banner-meeting-item .banner-project {
+    font-size: 1.3rem;
+  }
+}
+
+/* ================================
+   🧹 Performance Utilities
+   ================================ */
+/* Low Performance: Disable Blurs & Shadows */
+.low-perf, 
+.low-perf * {
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transition: none !important;
+}
+
+.low-perf .meeting-row {
+  background: var(--bg-card); /* Fallback to solid color */
+  border: 1px solid rgba(255,255,255,0.1);
+}
