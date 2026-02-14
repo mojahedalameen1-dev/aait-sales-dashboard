@@ -430,7 +430,7 @@ function renderDailyStats() {
   // --- Responsive Radial Gauge Math ---
   const isMobile = window.innerWidth <= 768;
   const radius = isMobile ? 50 : 70; // Scaled down for mobile
-  const strokeWidth = 10;
+  const strokeWidth = 14;
   const svgSize = (radius + strokeWidth) * 2;
   const center = svgSize / 2;
   const circumference = 2 * Math.PI * radius;

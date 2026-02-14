@@ -1663,40 +1663,39 @@ input:checked+.slider:before {
    ================================ */
 html.light-mode {
   /* Backgrounds: Clear White & Soft Gray */
-  --bg-primary: #f1f5f9;
-  /* Slate 100 */
+  --bg-primary: #f8fafc;
+  /* Slate 50 */
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
-  --bg-glass: rgba(255, 255, 255, 0.95);
+  --bg-glass: rgba(255, 255, 255, 0.98);
 
-  /* Borders & Shadows */
-  --border-glass: #cbd5e1;
-  /* Slate 300 - Visible Borders */
-  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  /* Borders & Shadows - More visible */
+  --border-glass: #94a3b8;
+  /* Slate 400 - Bold Borders */
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.08);
 
   /* Typography: Ultra Dark for Max Contrast */
-  --text-primary: #020617;
-  /* Slate 950 (Almost Black) */
+  --text-primary: #0f172a;
+  /* Slate 900 */
   --text-secondary: #334155;
-  /* Slate 700 */
-  --text-muted: #64748b;
-  /* Slate 500 */
+  /* Slate 700 - Much Darker */
+  --text-muted: #475569;
+  /* Slate 600 */
 
-  /* Brand Colors: Deep & Clear */
-  --brand-teal: #0369a1;
-  /* Sky 700 */
-  --brand-teal-dark: #075985;
-  --brand-teal-light: #0ea5e9;
+  /* Brand Colors: Saturated for Light Mode */
+  --brand-teal: #0284c7;
+  /* Saturated Sky 600 */
+  --brand-teal-dark: #0369a1;
+  --brand-teal-light: #38bdf8;
 
-  /* Neon Accents: Darker for Light Mode Visibility */
-  --neon-blue: #0284c7;
-  --neon-cyan: #0891b2;
-  --neon-green: #15803d;
-  /* Green 700 */
-  --neon-red: #b91c1c;
-  /* Red 700 */
-  --neon-orange: #c2410c;
-  /* Orange 700 */
+  /* Saturated Segment Colors */
+  --neon-blue: #0ea5e9;
+  --neon-cyan: #06b6d4;
+  --neon-green: #16a34a;
+  /* Saturated Green 600 */
+  --neon-red: #dc2626;
+  /* Saturated Red 600 */
+  --neon-orange: #ea580c;
 }
 
 /* --- Light Mode Component Fixes --- */
@@ -1799,8 +1798,37 @@ html.light-mode {
 /* 4. Badges (Pills) */
 .light-mode .badge-pill {
   background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.light-mode .badge-pill.status-active {
+  background: rgba(14, 165, 233, 0.1);
+  border-color: #0ea5e9;
+  color: #0369a1;
+}
+
+/* 5. Filter Buttons: More contrast */
+.light-mode .filter-btn {
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  color: #475569;
+}
+
+.light-mode .filter-btn.active {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+/* 6. Stats Legend Pill: Contrast Fix */
+.light-mode .stats-legend {
+  background: #ffffff;
   border: 1px solid #e2e8f0;
-  color: #334155;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 50px;
 }
 
 .light-mode .status-badge.completed {
