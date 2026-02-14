@@ -327,15 +327,33 @@ export function stopAutoSync() {
     }
 }
 
+
 export function startAutoSync(callback) {
     stopAutoSync(); // Stop existing if any
 
     const { refreshInterval } = getSettings();
     const intervalMs = Math.max(0.25, parseFloat(refreshInterval)) * 60 * 1000;
 
+    // Concurrency Control: Track the timestamp of the latest request
+    let latestRequestTime = 0;
+
     const poll = async () => {
-        const result = await fetchMeetings();
-        callback(result);
+        const thisRequestTime = Date.now();
+        latestRequestTime = thisRequestTime;
+
+        try {
+            const result = await fetchMeetings();
+
+            // 🛡️ STALE CHECK: If a newer request started while we were fetching, ignore this result.
+            if (thisRequestTime !== latestRequestTime) {
+                console.warn(`[Sync] Stale response ignored (ID: ${thisRequestTime}). Newer request exists.`);
+                return;
+            }
+
+            callback(result);
+        } catch (err) {
+            console.error('[Sync] Poll error:', err);
+        }
     };
 
     // Initial fetch called immediately
