@@ -571,17 +571,6 @@ function handleSyncResult({ meetings, fromCache, error }) {
 
   if (!error) {
     lastSyncTimestamp = new Date();
-
-    // 🛡️ SYNC STABILITY CHECK:
-    // If we have meetings now, and the new fetch is suddenly empty (and not from cache),
-    // it's likely a Google Sheets CDN glitch or temp connection issue.
-    // We keep the old data instead of clearing the screen.
-    if (meetings.length === 0 && currentMeetings.length > 0 && !fromCache) {
-      console.warn('⚠️ Sync returned 0 meetings while state has data. Ignoring update to prevent flickering.');
-      showToast({ title: 'تنبيه اتصال', message: 'مزامنة غير مستقرة، تم الإبقاء على البيانات الحالية', level: 'info' });
-      return;
-    }
-
     // 3. Updates UI
     currentMeetings = meetings;
     renderMeetings();

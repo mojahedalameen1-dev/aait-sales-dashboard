@@ -1,7 +1,6 @@
 /**
  * data.js — Data layer: Settings management, CSV fetch, robust parsing, local cache
-
-import { generateHash } from './utils.js';
+ */
 
 // ========================================
 // 🔧 SETTINGS & CONFIG
@@ -224,39 +223,35 @@ function normalizeDate(dateStr) {
     return dateStr.trim();
 }
 
-
 /**
  * Map parsed CSV rows to Meeting objects
  */
 function mapRowsToMeetings(rows) {
+    // Skip header row usually, but sometimes Google Sheets CSV includes title first.
+    // We'll rely on smart filtering below.
+
     const dataRows = rows.slice(1); // Assume row 1 is headers
     const filledRows = forwardFillDates(dataRows);
 
     const meetings = [];
+    let id = 0;
 
     for (const row of filledRows) {
         if (isDateHeaderRow(row)) continue;
 
-        const project = (row[1] || '').trim();
-        const team = (row[2] || '').trim();
-        const rawTime = (row[3] || '').trim();
-        const date = normalizeDate((row[0] || '').trim());
+        // Check minimum columns existence
+        const project = (row[1] || '').trim();  // B column
+        const time = (row[3] || '').trim();     // C column (الساعة)
 
-        if (!project && !rawTime) continue;
+        if (!project && !time) continue;
 
-        const time = parseTimeStr(rawTime);
-
-        // 🆔 GENERATE STABLE CONTENT-BASED ID
-        // This ensures the ID stays the same even if the row moves in the spreadsheet.
-        const contentString = `${date}|${time}|${project}|${team}`;
-        const id = `m-${generateHash(contentString)}`;
-
+        id++;
         meetings.push({
-            id,
-            date,
-            project,
-            team,
-            time,
+            id: `m-${id}`,
+            date: normalizeDate((row[0] || '').trim()),
+            project: project,
+            team: (row[2] || '').trim(),
+            time: parseTimeStr(time),
             via: (row[4] || '').trim(),
             status: (row[5] || '').trim(),
             ticketUrl: (row[6] || '').trim(),
