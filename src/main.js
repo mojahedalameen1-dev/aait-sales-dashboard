@@ -19,7 +19,7 @@ import {
   isDone,
   isCancelled
 } from './data.js';
-import { unlockAudio, startNotificationLoop, testNotification, showToast, requestNotificationPermission } from './notifications.js';
+import { startNotificationLoop, showToast, requestNotificationPermission } from './notifications.js';
 import { escapeHTML, formatMeetingCount } from './utils.js';
 
 // ========================================
@@ -748,7 +748,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   startBtn?.addEventListener('click', () => {
-    unlockAudio();
     requestNotificationPermission();
     overlay.classList.add('hidden');
     app.classList.remove('hidden');
