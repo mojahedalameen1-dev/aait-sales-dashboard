@@ -46,7 +46,7 @@
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --font: 'Cairo', sans-serif;
+  --font: 'Tajawal', sans-serif;
 }
 
 html {
@@ -56,12 +56,14 @@ html {
 }
 
 body {
-  font-family: 'Outfit', 'Inter', 'Noto Sans Arabic', sans-serif;
+  font-family: var(--font);
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
   overflow-x: hidden;
   direction: rtl;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #meetings-main,
