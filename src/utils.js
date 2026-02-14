@@ -19,9 +19,20 @@ export function escapeHTML(str) {
  * @returns {string}
  */
 export function formatMeetingCount(count) {
-    if (count === 0) return 'لا توجد اجتماعات';
-    if (count === 1) return 'اجتماع واحد';
-    if (count === 2) return 'اجتماعان';
-    if (count >= 3 && count <= 10) return `${count} اجتماعات`;
-    return `${count} اجتماع`;
+    const parts = getArabicMeetingParts(count);
+    if (parts.isDual) return parts.text;
+    return `${parts.num} ${parts.text}`.trim();
+}
+
+/**
+ * Returns meeting parts for UI logic (number/text/dual state)
+ * @param {number} count 
+ * @returns {{num: string, text: string, isDual: boolean}}
+ */
+export function getArabicMeetingParts(count) {
+    if (count === 0) return { num: '0', text: 'اجتماع', isDual: false };
+    if (count === 1) return { num: '1', text: 'اجتماع', isDual: false };
+    if (count === 2) return { num: '', text: 'اجتماعان', isDual: true };
+    if (count >= 3 && count <= 10) return { num: String(count), text: 'اجتماعات', isDual: false };
+    return { num: String(count), text: 'اجتماع', isDual: false };
 }

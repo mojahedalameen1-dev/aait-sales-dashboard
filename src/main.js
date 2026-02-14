@@ -20,7 +20,7 @@ import {
   isCancelled
 } from './data.js';
 import { startNotificationLoop, showToast, requestNotificationPermission } from './notifications.js';
-import { escapeHTML, formatMeetingCount } from './utils.js';
+import { escapeHTML, formatMeetingCount, getArabicMeetingParts } from './utils.js';
 
 // ========================================
 // 🌐 State
@@ -414,14 +414,12 @@ function renderMeetings() {
 
 function renderDailyStats() {
   const container = document.getElementById('daily-stats-container');
-  // If element doesn't exist (e.g. init lag), try again next tick
   if (!container) return;
 
   const todayStr = formatTodayDate();
   const todayMeetings = currentMeetings.filter(m => m.date === todayStr);
   const total = todayMeetings.length;
 
-  // Counts
   const doneCount = todayMeetings.filter(m => isDone(m)).length;
   const cancelledCount = todayMeetings.filter(m => {
     const s = (m.status || '').toLowerCase();
@@ -429,59 +427,61 @@ function renderDailyStats() {
   }).length;
   const pendingCount = total - doneCount - cancelledCount;
 
-  // --- Radial Gauge Math ---
-  const radius = 70; // Radius of the circle
+  // --- Responsive Radial Gauge Math ---
+  const isMobile = window.innerWidth <= 768;
+  const radius = isMobile ? 50 : 70; // Scaled down for mobile
+  const strokeWidth = 10;
+  const svgSize = (radius + strokeWidth) * 2;
+  const center = svgSize / 2;
   const circumference = 2 * Math.PI * radius;
 
-  // Calculate stroke-dasharray (length of each segment)
-  // formula: (count / total) * circumference
+  // Calculate segment lengths (ensuring total adds up to circumference)
   const doneLength = total ? (doneCount / total) * circumference : 0;
   const pendingLength = total ? (pendingCount / total) * circumference : 0;
   const cancelledLength = total ? (cancelledCount / total) * circumference : 0;
 
-  // Calculate offsets (starting position of each segment)
-  // We rotate -90deg so 0 is at top.
-  // Segment 1 (Done) starts at 0.
-  // Segment 2 (Pending) starts after Done.
-  // Segment 3 (Cancelled) starts after Done + Pending.
+  // Offsets (starting top)
   const doneOffset = 0;
   const pendingOffset = -doneLength;
   const cancelledOffset = -(doneLength + pendingLength);
 
-  // HTML Template for "The Core"
+  // Arabic Grammar (The Core)
+  const parts = getArabicMeetingParts(total);
+
   container.innerHTML = `
     <!-- 1. The Radial Gauge (SVG) -->
-    <div class="radial-gauge-wrapper breathing">
-      <svg width="160" height="160" viewBox="0 0 160 160">
+    <div class="radial-gauge-wrapper breathing ${parts.isDual ? 'dual-mode' : ''}" 
+         style="width:${svgSize}px; height:${svgSize}px">
+      <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}">
         <!-- Background Track -->
-        <circle class="radial-bg" cx="80" cy="80" r="${radius}"></circle>
+        <circle class="radial-bg" cx="${center}" cy="${center}" r="${radius}"></circle>
         
         <!-- Segment 1: Done (Green) -->
-        <circle class="radial-segment segment-done" cx="80" cy="80" r="${radius}"
-          stroke-dasharray="${doneLength} ${circumference}"
+        <circle class="radial-segment segment-done" cx="${center}" cy="${center}" r="${radius}"
+          stroke-dasharray="${doneLength} ${circumference - doneLength}"
           stroke-dashoffset="${doneOffset}"></circle>
           
         <!-- Segment 2: Pending (Blue/Cyan) -->
-        <circle class="radial-segment segment-pending" cx="80" cy="80" r="${radius}"
-          stroke-dasharray="${pendingLength} ${circumference}"
+        <circle class="radial-segment segment-pending" cx="${center}" cy="${center}" r="${radius}"
+          stroke-dasharray="${pendingLength} ${circumference - pendingLength}"
           stroke-dashoffset="${pendingOffset}"></circle>
           
         <!-- Segment 3: Cancelled (Red) -->
-        <circle class="radial-segment segment-cancelled" cx="80" cy="80" r="${radius}"
-          stroke-dasharray="${cancelledLength} ${circumference}"
+        <circle class="radial-segment segment-cancelled" cx="${center}" cy="${center}" r="${radius}"
+          stroke-dasharray="${cancelledLength} ${circumference - cancelledLength}"
           stroke-dashoffset="${cancelledOffset}"></circle>
       </svg>
       
       <!-- Center Text -->
       <div class="radial-center-text">
-        <span class="radial-total-count">${total}</span>
-        <span class="radial-label">الإجمالي</span>
+        ${!parts.isDual ? `<span class="radial-total-count">${parts.num}</span>` : ''}
+        <span class="radial-label ${parts.isDual ? 'large-dual' : ''}">${parts.text}</span>
       </div>
     </div>
 
     <!-- 2. The Legend (Below) -->
     <div class="stats-legend">
-      <div class="legend-item" title="مكتمل">
+      <div class="legend-item" title="مكتملة">
         <span class="legend-dot" style="background:var(--neon-green); box-shadow:0 0 5px var(--neon-green)"></span>
         <span class="legend-label">مكتملة</span>
         <span class="legend-value">${doneCount}</span>
