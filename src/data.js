@@ -334,8 +334,9 @@ export function startAutoSync(callback) {
     const { refreshInterval } = getSettings();
     const intervalMs = Math.max(0.25, parseFloat(refreshInterval)) * 60 * 1000;
 
-    // Concurrency Control: Track the timestamp of the latest request
+    // Concurrency & Stability Control
     let latestRequestTime = 0;
+    let lastKnownMeetings = []; // Track state to detect erratic reversions
 
     const poll = async () => {
         const thisRequestTime = Date.now();
@@ -344,13 +345,55 @@ export function startAutoSync(callback) {
         try {
             const result = await fetchMeetings();
 
-            // 🛡️ STALE CHECK: If a newer request started while we were fetching, ignore this result.
-            if (thisRequestTime !== latestRequestTime) {
-                console.warn(`[Sync] Stale response ignored (ID: ${thisRequestTime}). Newer request exists.`);
-                return;
+            // 🛡️ STALE CHECK: If a newer request started while we were fetching -> Ignore.
+            if (thisRequestTime !== latestRequestTime) return;
+
+            // 🛡️ ANTI-FLAP CHECK: Detect suspicious "Done" -> "Active" reversions
+            // If the sheet serves stale data (Active) after we already saw (Done), we must verify.
+            if (lastKnownMeetings.length > 0 && result.meetings.length > 0) {
+                const isReverting = result.meetings.some(newM => {
+                    const oldM = lastKnownMeetings.find(m => m.id === newM.id);
+                    if (!oldM) return false;
+                    // Check: Was Done, Now NOT Done (and NOT Cancelled)
+                    // We treat "Cancelled" as a final state too, but "Done" -> "Active" is the main suspect.
+                    return isDone(oldM) && !isDone(newM) && !isCancelled(newM);
+                });
+
+                if (isReverting) {
+                    console.warn('[Sync] Detected state reversion (Done -> Active). Verifying...');
+
+                    // 🚀 DOUBLE-CHECK: Fetch again immediately to confirm it's not a CDN glitch
+                    // We wait a tiny bit (500ms) to hit a different server potentially
+                    await new Promise(r => setTimeout(r, 500));
+
+                    const verifyResult = await fetchMeetings();
+
+                    // If Verify failed or is stale, abort
+                    if (thisRequestTime !== latestRequestTime) return;
+
+                    // Compare again. If Verify *also* says it's reverted, then IT IS REAL.
+                    const isStillReverting = verifyResult.meetings.some(newM => {
+                        const oldM = lastKnownMeetings.find(m => m.id === newM.id);
+                        if (!oldM) return false;
+                        return isDone(oldM) && !isDone(newM) && !isCancelled(newM);
+                    });
+
+                    if (isStillReverting) {
+                        console.log('[Sync] Reversion verified. Updates confirmed.');
+                        lastKnownMeetings = verifyResult.meetings;
+                        callback(verifyResult);
+                    } else {
+                        console.warn('[Sync] Reversion was a FLAP. Ignoring stale data. Keeping "Done" state.');
+                        // Do NOT callback. Keep existing UI.
+                    }
+                    return; // Exit this poll cycle
+                }
             }
 
+            // Normal Flow
+            lastKnownMeetings = result.meetings;
             callback(result);
+
         } catch (err) {
             console.error('[Sync] Poll error:', err);
         }
