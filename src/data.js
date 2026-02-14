@@ -81,7 +81,14 @@ async function fetchCSV() {
         throw new Error(`فشل الاتصال: ${response.status}`);
     }
 
-    return await response.text();
+    const text = await response.text();
+
+    // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
+    if (text.trim().startsWith('<')) {
+        throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
+    }
+
+    return text;
 }
 
 /**

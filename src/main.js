@@ -571,6 +571,7 @@ function handleSyncResult({ meetings, fromCache, error }) {
 
   if (!error) {
     lastSyncTimestamp = new Date();
+    // 3. Updates UI
     currentMeetings = meetings;
     renderMeetings();
     updateCountdownBanner();
@@ -589,9 +590,19 @@ function handleSyncResult({ meetings, fromCache, error }) {
       dateEl.textContent = `آخر تحديث: ${h}:${m} ${suffix} `;
     }
 
+    // Warning if empty
+    if (meetings.length === 0 && !fromCache) {
+      showToast({ title: 'تنبيه', message: 'لم يتم العثور على اجتماعات (الجدول فارغ؟)', level: 'warning' });
+    }
+
   } else {
     dot?.classList.add('error');
     text.textContent = 'خطأ اتصال';
+    // Don't overwrite currentMeetings on error unless it's initial load? 
+    // Actually handleSyncResult doesn't overwrite if error. 
+    // Wait, the original code in handleSyncResult was:
+    // if (!error) { currentMeetings = meetings; ... }
+
     showToast({ title: 'خطأ في المزامنة', message: error, level: 'warning', icon: '⚠️' });
   }
 

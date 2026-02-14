@@ -141,8 +141,11 @@ export function checkMeetingTimers(meetings, todayDate) {
         const [h, min] = meeting.time.split(':').map(Number);
         if (isNaN(h) || isNaN(min)) continue;
 
+
         const meetingMinutes = h * 60 + min;
         const diff = meetingMinutes - nowMinutes;
+
+        console.log(`[Timer] ${meeting.id} (${meeting.time}): diff=${diff}m`);
 
         const prefix = getEngineerPrefix(meeting.team);
 
@@ -152,7 +155,8 @@ export function checkMeetingTimers(meetings, todayDate) {
             const key = `${meeting.id}_30min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 30);
+                console.log(`[Trigger] 30m Audio for ${meeting.id} (Diff: ${diff})`);
+                triggerAlert(meeting, prefix, 30, diff);
             }
         }
 
@@ -161,13 +165,14 @@ export function checkMeetingTimers(meetings, todayDate) {
             const key = `${meeting.id}_5min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 5);
+                console.log(`[Trigger] 5m Audio for ${meeting.id} (Diff: ${diff})`);
+                triggerAlert(meeting, prefix, 5, diff);
             }
         }
     }
 }
 
-function triggerAlert(meeting, prefix, minutesType) {
+function triggerAlert(meeting, prefix, minutesType, diff) {
     // 1. Play Sound (if prefix exists)
     if (prefix) {
         const filename = `${prefix}${minutesType}.mp3`;
@@ -175,7 +180,7 @@ function triggerAlert(meeting, prefix, minutesType) {
     }
 
     // 2. Show Visual Toast (Always, regardless of prefix)
-    const timeText = minutesType === 30 ? 'بعد 30 دقيقة' : 'بعد 5 دقائق';
+    const timeText = diff <= 1 ? 'سيبدأ الآن' : `بعد ${diff} دقيقة`;
     let level = 'info';
     let icon = 'bell';
 
