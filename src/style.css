@@ -1221,121 +1221,216 @@ input:checked+.slider:before {
   }
 }
 
-/* --- Mobile Responsiveness --- */
+/* --- Mobile Overhaul (max-width: 768px) --- */
 @media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
 
-  /* Header Adjustments */
+  /* Header Overhaul */
   #app-header {
-    flex-wrap: wrap;
-    gap: 1rem;
-    justify-content: center;
+    flex-direction: column;
     padding: 1rem;
+    gap: 0.8rem;
+    text-align: center;
   }
 
-  .header-right {
-    width: 100%;
-    justify-content: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .header-center {
-    order: 2;
-    width: 100%;
-    margin-top: 0.5rem;
-  }
-
+  .header-right,
+  .header-center,
   .header-left {
-    order: 3;
     width: 100%;
     justify-content: center;
-    gap: 1.5rem;
+    order: unset;
+  }
+
+  .header-text h1 {
+    font-size: 1.1rem;
   }
 
   .live-clock {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
+    margin: 0.2rem 0;
   }
 
-  /* Banner Adjustments */
+  /* The Core (Radial Gauge) Scaling */
+  .daily-stats-container {
+    margin-top: 0.2rem;
+  }
+
+  .radial-gauge-wrapper {
+    width: 120px;
+    height: 120px;
+  }
+
+  .radial-total-count {
+    font-size: 1.8rem;
+  }
+
+  .radial-label {
+    font-size: 0.7rem;
+    margin-top: 2px;
+  }
+
+  .stats-legend {
+    gap: 1rem;
+    padding: 0.4rem 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .legend-label {
+    display: none;
+    /* Hide text to save space */
+  }
+
+  /* Toolbar */
+  .toolbar {
+    margin: 0.5rem 1rem;
+    padding: 0.8rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-container {
+    max-width: 100%;
+    min-width: unset;
+  }
+
+  .filter-group {
+    justify-content: space-between;
+  }
+
+  .filter-btn {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  /* Banner (Countdown) */
   .next-meeting-banner {
-    margin: 1rem;
-    padding: 1.5rem;
+    margin: 0.5rem 1rem;
+    padding: 1rem;
   }
 
   .banner-content {
     flex-direction: column;
-    gap: 2rem;
-    align-items: center;
     text-align: center;
+    gap: 1rem;
   }
 
-  .banner-details {
+  .banner-countdown {
     width: 100%;
-  }
-
-  .banner-multi-list {
-    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0 0 1rem 0;
   }
 
   .countdown-value {
-    font-size: 3rem;
+    font-size: 2.5rem !important;
   }
 
-  /* Meeting List Adjustments */
+  .banner-details {
+    padding-right: 0;
+    width: 100%;
+  }
+
+  .banner-meeting-item {
+    border-right: none;
+    border-top: 3px solid var(--neon-cyan);
+    border-radius: var(--radius-md);
+  }
+
+  /* Meeting List Transformation (Cards) */
   #meetings-main {
     padding: 0 1rem 1rem;
   }
 
-  #meetings-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .meetings-table {
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
+  .date-group-header {
+    padding: 0.8rem 1rem;
   }
 
   .meeting-row {
     display: flex;
-    /* Override grid */
     flex-direction: column;
-    gap: 0.8rem;
-    text-align: center;
-    padding: 1.5rem;
-    opacity: 1 !important;
-    /* Ensure visibility */
+    gap: 1rem;
+    padding: 1.2rem;
+    border-radius: var(--radius-md) !important;
+    margin-bottom: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    align-items: stretch;
+    background: rgba(30, 41, 59, 0.6);
+  }
+
+  .meeting-row-divider {
+    display: none;
   }
 
   .meeting-time {
-    font-size: 1.8rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 1.6rem;
+    text-align: right;
+    width: 100%;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     padding-bottom: 0.5rem;
+  }
+
+  .meeting-details {
+    text-align: right;
+  }
+
+  .meeting-project {
+    font-size: 1.2rem;
+    white-space: normal;
+    /* Allow wrap on mobile */
+  }
+
+  .meeting-project-wrapper {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .meeting-control-zone {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    justify-content: flex-start;
+  }
+
+  .zone-badges {
+    justify-content: space-between;
     width: 100%;
   }
 
-  .meeting-info,
-  .meeting-team,
-  .meeting-status,
-  .meeting-actions {
-    width: 100%;
-  }
-
-  .meeting-status {
+  .badge-pill {
+    flex: 1;
     justify-content: center;
+  }
+
+  /* Thumb-Friendly Buttons */
+  .zone-actions {
     display: flex;
+    flex-direction: row;
+    /* Keep them side-by-side but grow */
+    width: 100%;
+    gap: 0.5rem;
   }
 
-  .meeting-actions {
-    justify-content: center;
-    margin-top: 0.5rem;
+  .btn-action {
+    flex: 1;
+    height: 48px;
+    font-size: 0.9rem;
+    padding: 0 0.5rem;
+    min-width: unset !important;
   }
 
-  .meeting-actions {
-    justify-content: center;
-    margin-top: 0.5rem;
+  .btn-copy-slack {
+    flex: 0 0 auto;
+    /* Keep compact */
+  }
+
+  /* Performance: Disable heavy blurs on mobile */
+  .meeting-row {
+    backdrop-filter: blur(5px);
   }
 }
 
@@ -1923,12 +2018,13 @@ html.light-mode {
    ================================ */
 @media (min-width: 1900px) {
   html {
-    font-size: 22px; /* Significant scale up from 16px */
+    font-size: 22px;
+    /* Significant scale up from 16px */
   }
 
   /* Adjust Container Widths */
-  #meetings-main, 
-  #app-header, 
+  #meetings-main,
+  #app-header,
   .next-meeting-banner {
     max-width: 95vw;
     margin-left: auto;
@@ -1979,7 +2075,7 @@ html.light-mode {
    🧹 Performance Utilities
    ================================ */
 /* Low Performance: Disable Blurs & Shadows */
-.low-perf, 
+.low-perf,
 .low-perf * {
   backdrop-filter: none !important;
   box-shadow: none !important;
@@ -1988,6 +2084,7 @@ html.light-mode {
 }
 
 .low-perf .meeting-row {
-  background: var(--bg-card); /* Fallback to solid color */
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--bg-card);
+  /* Fallback to solid color */
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
