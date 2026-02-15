@@ -604,9 +604,15 @@ svg.lucide.icon-small {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1rem 2rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  margin-right: 0;
+  padding: 1.2rem 2.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
+  margin-right: 0.5rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .countdown-label {
@@ -655,7 +661,7 @@ svg.lucide.icon-small {
   flex-direction: column;
   justify-content: center;
   gap: 0.8rem;
-  padding-right: 2rem;
+  padding-right: 1.5rem;
 }
 
 /* Multi-Meeting List in Banner */
