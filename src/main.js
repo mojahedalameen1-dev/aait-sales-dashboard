@@ -31,6 +31,7 @@ let lastSyncTimestamp = null;
 let searchQuery = '';
 let activeFilter = 'all'; // all, active, completed, cancelled
 let clockIntervalId = null;
+const prevStatusMap = new Map(); // Track previous meeting status for animations
 
 // ========================================
 // ⏰ Live Clock & Daily Stats
@@ -99,12 +100,39 @@ function updateCountdownBanner() {
   const next = getNextMeeting(currentMeetings);
 
   if (!next) {
+    // Check if it's because everything is done/cancelled
+    const today = formatTodayDate();
+    const todayMeetings = currentMeetings.filter(m => m.date === today);
+    const hasMeetingsToday = todayMeetings.length > 0;
+    const allFinished = hasMeetingsToday && todayMeetings.every(m => isDone(m) || isCancelled(m));
+
+    if (allFinished) {
+      banner.classList.remove('hidden');
+      banner.classList.add('all-done');
+      timerEl.textContent = '✅';
+      timerEl.className = 'countdown-value';
+      if (meetingsList) {
+        meetingsList.innerHTML = `
+          <div class="banner-meeting-item" style="border:none; text-align:center;">
+            <div class="banner-project" style="font-size: 1.5rem; color: var(--neon-green);">لا اجتماعات متبقية اليوم</div>
+            <div class="banner-team" style="justify-content:center;">كل شيء تحت السيطرة !</div>
+          </div>
+        `;
+      }
+      if (progressBar) {
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'var(--neon-green)';
+      }
+      if (timeDisplayEl) timeDisplayEl.textContent = '';
+      return;
+    }
+
     banner.classList.add('hidden');
-    banner.classList.remove('urgent-orange', 'urgent-red');
+    banner.classList.remove('urgent-orange', 'urgent-red', 'all-done');
     return;
   }
 
-  banner.classList.remove('hidden');
+  banner.classList.remove('hidden', 'all-done');
 
   // Calculate countdown
   const now = new Date();
@@ -333,6 +361,14 @@ function renderMeetings() {
       const done = isDone(m);
       const isArchived = done || isCancelled(m) || sLower.includes('postpone');
 
+      // NEW: Success Flash Logic
+      let isNewlyDone = false;
+      if (done && prevStatusMap.has(m.id) && prevStatusMap.get(m.id) !== 'done') {
+        isNewlyDone = true;
+      }
+      // Update map for next render
+      prevStatusMap.set(m.id, done ? 'done' : 'pending');
+
       // THE GOLDEN RULE + SMART SORT: Never pulse if in Group B
       const isActive = isTargeted && !isArchived;
 
@@ -340,7 +376,7 @@ function renderMeetings() {
       const icon = getStatusIcon(m.via, m.status, !!m.meetUrl);
 
       html += `
-        <div class="meeting-row ${isActive ? 'active' : ''} ${isArchived ? 'dimmed' : ''}" 
+        <div class="meeting-row ${isActive ? 'active' : ''} ${isArchived ? 'dimmed' : ''} ${isNewlyDone ? 'just-done' : ''}" 
              style="${isArchived ? 'opacity: 0.5;' : ''}">
           
           <!-- Column 1: Time -->

@@ -126,6 +126,24 @@ body::before {
   }
 }
 
+@keyframes flashGreen {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(140, 198, 63, 0);
+  }
+
+  20% {
+    transform: scale(1.02);
+    box-shadow: 0 0 30px 10px rgba(140, 198, 63, 0.6);
+    background-color: rgba(140, 198, 63, 0.2);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(140, 198, 63, 0);
+  }
+}
+
 .start-overlay-content h1 {
   font-size: 3rem;
   font-weight: 800;
@@ -538,6 +556,28 @@ svg.lucide.icon-small {
   box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
 }
 
+.next-meeting-banner.all-done {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 78, 59, 0.4));
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
+}
+
+.next-meeting-banner.all-done .countdown-label {
+  color: var(--neon-green);
+  opacity: 1;
+}
+
+.next-meeting-banner.all-done .countdown-value {
+  color: #fff;
+  background: none;
+  -webkit-text-fill-color: #fff;
+  text-shadow: 0 0 15px var(--neon-green);
+}
+
+.next-meeting-banner.all-done .banner-bg-glow {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.3), transparent 70%);
+}
+
 .banner-bg-glow {
   position: absolute;
   top: -50%;
@@ -933,6 +973,12 @@ svg.lucide.icon-small {
   opacity: 0.6 !important;
   filter: grayscale(0.5) blur(0);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.meeting-row.just-done {
+  animation: flashGreen 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border-color: var(--neon-green) !important;
+  z-index: 10;
 }
 
 .meeting-time {
