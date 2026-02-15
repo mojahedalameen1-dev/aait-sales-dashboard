@@ -1654,8 +1654,37 @@ input:checked+.slider:before {
 }
 
 .light-mode .today-badge {
-  background: #2dbcb6;
-  color: white;
+  background: transparent;
+  padding: 0;
+  color: #000000;
+  font-weight: bold;
+}
+
+/* 7. Notification Toasts (Light Mode Refinement) */
+.light-mode .notification-toast {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.light-mode .toast-title {
+  color: #1e293b;
+}
+
+.light-mode .toast-message {
+  color: #334155;
+}
+
+.light-mode .toast-icon {
+  color: var(--neon-cyan);
+}
+
+.light-mode .toast-close {
+  color: #64748b;
+}
+
+.light-mode .toast-close:hover {
+  color: #1e293b;
 }
 
 /* ================================

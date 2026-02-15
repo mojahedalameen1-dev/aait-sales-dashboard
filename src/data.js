@@ -176,16 +176,16 @@ function parseTimeStr(timeStr) {
         let h = parseInt(match[1], 10);
         const m = match[2];
 
-        // Heuristic if no AM/PM indicator is present
+        // Smarter Heuristic (The 10 AM Rule)
         if (!isPM && !isAM) {
-            // 8, 9, 10, 11 => ص (AM)
-            // 12, 1, 2, 3, 4, 5, 6, 7 => م (PM)
-            if (h >= 1 && h <= 7) {
+            // If hour < 10, treat as PM (e.g. 8:00 -> 20:00)
+            // If hour >= 10, treat as AM (e.g. 10:00 -> 10:00, 11:00 -> 11:00)
+            // Note: 12:00 remains 12:00 (Noon)
+            if (h < 10) {
                 h += 12;
             } else if (h === 12) {
-                h = 12; // 12 PM
+                h = 12; // 12 PM (Noon) explicitly
             }
-            // 8-11 remains as is (AM)
         } else {
             // 12-hour to 24-hour conversion if indicator IS present
             if (isPM && h < 12) h += 12;
