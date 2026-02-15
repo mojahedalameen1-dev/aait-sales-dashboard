@@ -194,10 +194,25 @@ function updateCountdownBanner() {
       const ticketNum = ticketMatch ? ticketMatch[0] : '';
       return `
         <div class="banner-meeting-item">
-          <div class="banner-project">${escapeHTML(m.project || '')}</div>
-          <div class="banner-team">
-            <span><i data-lucide="users" class="icon-small"></i> ${escapeHTML(m.team || '')}</span>
-            ${ticketNum ? `<span class="banner-ticket"><i data-lucide="ticket" class="icon-small"></i> #${ticketNum}</span>` : ''}
+          <div class="banner-item-main">
+            <div class="banner-project">${escapeHTML(m.project || '')}</div>
+            <div class="banner-team">
+              <span><i data-lucide="users" class="icon-small"></i> ${escapeHTML(m.team || '')}</span>
+              ${ticketNum ? `<span class="banner-ticket"><i data-lucide="ticket" class="icon-small"></i> #${ticketNum}</span>` : ''}
+            </div>
+          </div>
+          <div class="banner-actions">
+            ${ticketNum ? `<button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
+              <i data-lucide="copy"></i> ${ticketNum}
+            </button>` : ''}
+            
+            ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
+              <i data-lucide="video"></i> دخول الاجتماع
+            </a>` : ''}
+            
+            ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
+              <i data-lucide="ticket"></i> التذكرة
+            </a>` : ''}
           </div>
         </div>
       `;

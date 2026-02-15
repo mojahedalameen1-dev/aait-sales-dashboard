@@ -669,22 +669,46 @@ svg.lucide.icon-small {
 .banner-meeting-item {
   background: rgba(255, 255, 255, 0.05);
   border-right: 3px solid var(--neon-cyan);
-  padding: 0.6rem 1rem;
+  padding: 1rem 1.5rem;
   border-radius: var(--radius-md) 0 0 var(--radius-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  transition: background 0.3s ease;
+}
+
+.banner-meeting-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.banner-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
 }
 
 .banner-meeting-item .banner-project {
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.25rem;
+  font-weight: 800;
   color: #fff;
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .banner-meeting-item .banner-team {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: var(--text-secondary);
   display: flex;
-  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
 }
 
 .banner-ticket {
@@ -693,6 +717,9 @@ svg.lucide.icon-small {
   background: rgba(139, 92, 246, 0.1);
   padding: 2px 6px;
   border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Progress Bar (inside banner box) */
