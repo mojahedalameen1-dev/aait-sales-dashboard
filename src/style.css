@@ -225,14 +225,10 @@ body::before {
 .live-clock {
   font-size: 1.8rem;
   font-weight: 700;
-  font-family: 'Roboto Mono', monospace;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
   line-height: 1.2;
-  min-width: 160px;
-  text-align: center;
-  display: inline-block;
 }
 
 /* Daily Stats */
@@ -629,24 +625,19 @@ svg.lucide.icon-small {
 .countdown-value {
   font-size: 3.5rem;
   font-weight: 900;
-  font-family: 'Roboto Mono', monospace;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -1px;
+  letter-spacing: -2px;
   line-height: 1;
   background: linear-gradient(180deg, #fff, #cbd5e1);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
-  min-width: 140px;
-  text-align: center;
-  display: inline-block;
 }
 
 .countdown-value.long-format {
   font-size: 2.2rem;
-  letter-spacing: -0.5px;
-  min-width: 180px;
+  letter-spacing: -1px;
 }
 
 .countdown-value.urgent {
