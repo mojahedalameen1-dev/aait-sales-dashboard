@@ -600,9 +600,8 @@ svg.lucide.icon-small {
 .countdown-box {
   flex-shrink: 0;
   flex-grow: 0;
-  flex-basis: 220px;
-  /* Fixed basis for stability */
-  width: 220px;
+  flex-basis: 260px;
+  width: 260px;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -623,14 +622,11 @@ svg.lucide.icon-small {
 }
 
 .countdown-value {
-  font-size: 3.5rem;
+  font-size: 3.2rem;
   font-weight: 900;
   font-family: 'Inter', 'Roboto Mono', 'Consolas', monospace;
-  /* Use fonts with stable digits */
   font-variant-numeric: tabular-nums;
-  /* Prevent Shaking */
-  letter-spacing: 0;
-  /* Removing negative spacing for stability */
+  letter-spacing: -1px;
   line-height: 1;
   background: linear-gradient(180deg, #fff, #cbd5e1);
   -webkit-background-clip: text;
