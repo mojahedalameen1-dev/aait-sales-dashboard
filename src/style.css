@@ -612,9 +612,9 @@ svg.lucide.icon-small {
 .countdown-box {
   flex-shrink: 0;
   flex-grow: 0;
-  flex-basis: 280px;
+  flex-basis: 310px;
   /* Increased base width */
-  width: 280px;
+  width: 310px;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -636,7 +636,7 @@ svg.lucide.icon-small {
 }
 
 .countdown-value {
-  font-size: 3.2rem;
+  font-size: 3.0rem;
   font-weight: 900;
   font-family: 'Inter', 'Roboto Mono', 'Consolas', monospace;
   font-variant-numeric: tabular-nums;
