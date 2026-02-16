@@ -68,7 +68,7 @@ body {
 
 #meetings-main,
 #app-header,
-.next-meeting-banner {
+.hero-section {
   max-width: 1400px;
   /* Standardize laptop width */
   margin-left: auto;
@@ -532,93 +532,87 @@ svg.lucide.icon-small {
   box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
 }
 
-/* --- Banner (Redesigned) --- */
-.next-meeting-banner {
+/* --- Hero Section (Elastic Dashboard) --- */
+.hero-section {
   position: relative;
   margin: 1.5rem 2rem;
-  padding: 1.5rem 2rem;
-  border-radius: var(--radius-lg);
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  overflow: hidden;
-  box-shadow: 0 0 30px rgba(6, 182, 212, 0.1);
-  transition: border-color 0.5s ease, box-shadow 0.5s ease, background 0.5s ease;
+  padding: 0;
+  transition: all 0.5s ease;
 }
 
-.next-meeting-banner.urgent-orange {
-  border-color: var(--neon-orange);
-  box-shadow: 0 0 30px rgba(249, 115, 22, 0.3);
-}
-
-.next-meeting-banner.urgent-red {
-  background: rgba(69, 10, 10, 0.8);
-  border-color: var(--neon-red);
-  box-shadow: 0 0 40px rgba(239, 68, 68, 0.5);
-}
-
-.next-meeting-banner.all-done {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 78, 59, 0.4));
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
-}
-
-.next-meeting-banner.all-done .countdown-label {
-  color: var(--neon-green);
-  opacity: 1;
-}
-
-.next-meeting-banner.all-done .countdown-value {
-  color: #fff;
-  background: none;
-  -webkit-text-fill-color: #fff;
-  text-shadow: 0 0 15px var(--neon-green);
-}
-
-.next-meeting-banner.all-done .banner-bg-glow {
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.3), transparent 70%);
-}
-
-.banner-bg-glow {
+.hero-bg-glow {
   position: absolute;
   top: -50%;
   left: -20%;
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.15), transparent 70%);
+  background: radial-gradient(circle, rgba(45, 171, 226, 0.15), transparent 70%);
   filter: blur(40px);
   pointer-events: none;
+  z-index: 0;
 }
 
-.banner-content {
+.hero-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
   position: relative;
-  z-index: 2;
+  z-index: 1;
+}
+
+/* Individual Hero Card */
+.hero-card {
+  flex: 1 1 450px;
+  min-width: 320px;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
   display: flex;
   align-items: stretch;
-  gap: 0;
+  gap: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+  overflow: hidden;
 }
 
-/* Right Side (RTL) = Timer */
-.banner-countdown {
-  min-width: 180px;
+.hero-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 20px rgba(41, 171, 226, 0.2);
+}
+
+.hero-card.urgent-orange {
+  border-color: var(--neon-orange);
+  box-shadow: 0 0 30px rgba(249, 115, 22, 0.2);
+}
+
+.hero-card.urgent-red {
+  background: rgba(69, 10, 10, 0.8);
+  border-color: var(--neon-red);
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.4);
+}
+
+/* Section: Countdown Box (The Fix) */
+.countdown-box {
+  min-width: 190px;
+  padding: 0 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1.2rem 2.5rem;
   background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(5px);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
-  margin-right: 0.5rem;
+  border-radius: var(--radius-md);
   position: relative;
-  overflow: hidden;
 }
 
 .countdown-label {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
   white-space: nowrap;
 }
 
@@ -626,6 +620,7 @@ svg.lucide.icon-small {
   font-size: 3.5rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
+  /* Prevent Shaking */
   letter-spacing: -2px;
   line-height: 1;
   background: linear-gradient(180deg, #fff, #cbd5e1);
@@ -645,104 +640,154 @@ svg.lucide.icon-small {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.5));
 }
 
-.banner-time-small {
+.hero-time-display {
   font-size: 0.9rem;
   color: var(--neon-cyan);
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
-/* Left Side (RTL) = Meeting Details */
-.banner-details {
+/* Section: Project Info inside Card */
+.hero-project-info {
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.8rem;
-  padding-right: 1.5rem;
-}
-
-/* Multi-Meeting List in Banner */
-.banner-multi-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  width: 100%;
-}
-
-.banner-meeting-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-right: 3px solid var(--neon-cyan);
-  padding: 1rem 1.5rem;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1.5rem;
-  transition: background 0.3s ease;
-}
-
-.banner-meeting-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.banner-item-main {
-  flex: 1;
+  gap: 1rem;
   min-width: 0;
 }
 
-.banner-actions {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-}
-
-.banner-meeting-item .banner-project {
-  font-size: 1.25rem;
+.hero-project-title {
+  font-size: 1.3rem;
   font-weight: 800;
   color: #fff;
-  margin-bottom: 0.25rem;
-  white-space: nowrap;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* Standard property */
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.banner-meeting-item .banner-team {
-  font-size: 0.95rem;
-  color: var(--text-secondary);
+.hero-project-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   align-items: center;
 }
 
-.banner-ticket {
+.hero-team {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-ticket {
   color: var(--neon-purple);
   font-size: 0.8rem;
   background: rgba(139, 92, 246, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-/* Progress Bar (inside banner box) */
-.progress-bar-container {
-  height: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  overflow: hidden;
+.hero-actions {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 0.5rem;
 }
 
-.progress-bar {
+/* Progress Bar inside Card */
+.hero-progress-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hero-progress-bar {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, var(--neon-blue), var(--neon-cyan));
-  border-radius: 10px;
   transition: width 1s linear;
-  box-shadow: 0 0 8px rgba(6, 182, 212, 0.4);
+}
+
+/* ================================
+   RESPONSIVENESS (BREAKPOINTS)
+   ================================ */
+
+/* MOBILE (max-width: 768px) */
+@media (max-width: 768px) {
+  .hero-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 2rem 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .countdown-box {
+    width: 100%;
+    min-width: 0;
+    padding: 1.5rem 0;
+  }
+
+  .countdown-value {
+    font-size: 2.8rem;
+  }
+
+  .hero-project-info {
+    align-items: center;
+  }
+
+  .hero-project-meta {
+    justify-content: center;
+  }
+
+  .hero-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .hero-actions .btn-action {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* TV (min-width: 2200px) */
+@media (min-width: 2200px) {
+  .hero-section {
+    max-width: 2400px;
+  }
+
+  .hero-card {
+    flex: 1 1 600px;
+    padding: 2.5rem;
+    gap: 2.5rem;
+  }
+
+  .countdown-value {
+    font-size: 4.5rem;
+  }
+
+  .hero-project-title {
+    font-size: 1.8rem;
+  }
+
+  .hero-card {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 30px rgba(41, 171, 226, 0.2);
+  }
 }
 
 /* --- Meetings List --- */

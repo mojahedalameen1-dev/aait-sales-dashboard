@@ -73,8 +73,8 @@ function startClock() {
       else lastUpdatedEl.style.color = 'var(--neon-cyan)';
     }
 
-    // Interactive Countdown
-    updateCountdownBanner();
+    // Interactive Hero Section
+    updateHeroSection();
   };
 
   update();
@@ -88,14 +88,11 @@ function startClock() {
 // 🎯 Countdown Banner & Progress Bar
 // ========================================
 
-function updateCountdownBanner() {
-  const banner = document.getElementById('next-meeting-banner');
-  const timerEl = document.getElementById('countdown-timer');
-  const meetingsList = document.getElementById('banner-meetings-list');
-  const progressBar = document.getElementById('time-progress-bar');
-  const timeDisplayEl = document.getElementById('next-meeting-time-display');
+function updateHeroSection() {
+  const section = document.getElementById('hero-section');
+  const container = document.getElementById('hero-container');
 
-  if (!banner) return;
+  if (!section || !container) return;
 
   const next = getNextMeeting(currentMeetings);
 
@@ -107,34 +104,24 @@ function updateCountdownBanner() {
     const allFinished = hasMeetingsToday && todayMeetings.every(m => isDone(m) || isCancelled(m));
 
     if (allFinished) {
-      banner.classList.remove('hidden');
-      banner.classList.add('all-done');
-      timerEl.textContent = '✅';
-      timerEl.className = 'countdown-value';
-      if (meetingsList) {
-        meetingsList.innerHTML = `
-          <div class="banner-meeting-item" style="border:none; text-align:center;">
-            <div class="banner-project" style="font-size: 1.5rem; color: var(--neon-green);">لا اجتماعات متبقية اليوم</div>
-            <div class="banner-team" style="justify-content:center;">كل شيء تحت السيطرة !</div>
+      section.classList.remove('hidden');
+      container.innerHTML = `
+        <div class="hero-card all-done" style="flex: 1; justify-content: center; text-align: center;">
+          <div class="hero-project-info" style="align-items: center;">
+            <div class="hero-project-title" style="font-size: 2rem; color: var(--neon-green);">✅ لا اجتماعات متبقية اليوم</div>
+            <div class="hero-team">كل شيء تحت السيطرة !</div>
           </div>
-        `;
-      }
-      if (progressBar) {
-        progressBar.style.width = '100%';
-        progressBar.style.background = 'var(--neon-green)';
-      }
-      if (timeDisplayEl) timeDisplayEl.textContent = '';
+        </div>
+      `;
       return;
     }
 
-    banner.classList.add('hidden');
-    banner.classList.remove('urgent-orange', 'urgent-red', 'all-done');
+    section.classList.add('hidden');
     return;
   }
 
-  banner.classList.remove('hidden', 'all-done');
+  section.classList.remove('hidden');
 
-  // Calculate countdown
   const now = new Date();
   const [h, min] = next.time.split(':').map(Number);
   const meetingDate = new Date(now);
@@ -144,86 +131,96 @@ function updateCountdownBanner() {
   const diffMin = Math.floor(diffMs / 60000);
   const diffSec = Math.floor((diffMs % 60000) / 1000);
 
-  // --- Urgency Classes ---
-  banner.classList.remove('urgent-orange', 'urgent-red');
+  // --- Render Multiple Cards ---
+  const cardsHTML = next.meetings.map(m => {
+    const ticketMatch = m.project?.match(/AA\d+/);
+    const ticketNum = ticketMatch ? ticketMatch[0] : '';
 
-  if (next.isOverdue) {
-    banner.classList.add('urgent-red');
-  } else if (diffMin <= 2) {
-    banner.classList.add('urgent-red');
-  } else if (diffMin <= 10) {
-    banner.classList.add('urgent-orange');
-  }
+    // Urgency Logic
+    let urgencyClass = '';
+    if (next.isOverdue || diffMin <= 2) {
+      urgencyClass = 'urgent-red';
+    } else if (diffMin <= 10) {
+      urgencyClass = 'urgent-orange';
+    }
 
-  // --- Timer (Right Side) ---
-  const isUrgent = diffMin < 5 || next.isOverdue;
-  if (next.isOverdue) {
-    timerEl.textContent = 'الآن!';
-    timerEl.classList.remove('long-format');
-  } else {
-    if (diffMin > 59) {
+    // Timer Text
+    let timerText = '';
+    let isLong = false;
+    if (next.isOverdue) {
+      timerText = 'الآن!';
+    } else if (diffMin > 59) {
       const hours = Math.floor(diffMin / 60);
       const mins = diffMin % 60;
       const secs = Math.max(0, diffSec);
-      timerEl.textContent = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-      timerEl.classList.add('long-format');
+      timerText = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      isLong = true;
     } else {
-      timerEl.textContent = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
-      timerEl.classList.remove('long-format');
+      timerText = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
     }
-  }
-  timerEl.className = `countdown-value${isUrgent ? ' urgent' : ''}${timerEl.classList.contains('long-format') ? ' long-format' : ''}`;
 
-  // --- Progress Bar ---
-  let barColor = 'linear-gradient(90deg, var(--neon-cyan), var(--neon-blue))';
-  if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
-  else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
+    // Progress Bar
+    let barColor = 'linear-gradient(90deg, var(--neon-blue), var(--neon-cyan))';
+    if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
+    else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
 
-  const totalMinutesScale = 60;
-  const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
+    const totalMinutesScale = 60;
+    const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
 
-  if (progressBar) {
-    progressBar.style.width = `${progressPercent}%`;
-    progressBar.style.background = barColor;
-  }
-
-  // --- Meetings List (Left Side) ---
-  if (meetingsList) {
-    const meetingsHTML = next.meetings.map(m => {
-      const ticketMatch = m.project?.match(/AA\d+/);
-      const ticketNum = ticketMatch ? ticketMatch[0] : '';
-      return `
-        <div class="banner-meeting-item">
-          <div class="banner-item-main">
-            <div class="banner-project">${escapeHTML(m.project || '')}</div>
-            <div class="banner-team">
-              <span><i data-lucide="users" class="icon-small"></i> ${escapeHTML(m.team || '')}</span>
-              ${ticketNum ? `<span class="banner-ticket"><i data-lucide="ticket" class="icon-small"></i> #${ticketNum}</span>` : ''}
-            </div>
-          </div>
-          <div class="banner-actions">
-            ${ticketNum ? `<button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-              <i data-lucide="copy"></i> ${ticketNum}
-            </button>` : ''}
-            
-            ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-              <i data-lucide="video"></i> دخول الاجتماع
-            </a>` : ''}
-            
-            ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
-              <i data-lucide="ticket"></i> التذكرة
-            </a>` : ''}
+    return `
+      <div class="hero-card ${urgencyClass}">
+        <div class="countdown-box">
+          <span class="countdown-label">متبقي على الاجتماع</span>
+          <span class="countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}">${timerText}</span>
+          <div class="hero-time-display">
+            <i data-lucide="clock" class="icon-small"></i>
+            <span>${formatTime12h(next.time)}</span>
           </div>
         </div>
-      `;
-    }).join('');
 
-    meetingsList.innerHTML = meetingsHTML;
-  }
+        <div class="hero-project-info">
+          <div class="hero-project-title" title="${escapeHTML(m.project || '')}">
+            ${escapeHTML(m.project || '')}
+          </div>
+          
+          <div class="hero-project-meta">
+            <div class="hero-team">
+              <i data-lucide="users" class="icon-small"></i>
+              <span>${escapeHTML(m.team || '')}</span>
+            </div>
+            ${ticketNum ? `
+              <div class="hero-ticket">
+                <i data-lucide="ticket" class="icon-small"></i>
+                <span>#${ticketNum}</span>
+              </div>
+            ` : ''}
+          </div>
 
-  // Meeting time display
-  if (timeDisplayEl) {
-    timeDisplayEl.innerHTML = `<i data-lucide="clock" class="icon-small"></i> ${formatTime12h(next.time)}`;
+          <div class="hero-actions">
+            ${ticketNum ? `
+              <button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
+                <i data-lucide="copy"></i> ${ticketNum}
+              </button>
+            ` : ''}
+            
+            ${m.meetUrl ? `
+              <a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
+                <i data-lucide="video" class="icon-small"></i> دخول الاجتماع
+              </a>
+            ` : ''}
+          </div>
+        </div>
+
+        <div class="hero-progress-container">
+          <div class="hero-progress-bar" style="width: ${progressPercent}%; background: ${barColor}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (container.innerHTML !== cardsHTML) {
+    container.innerHTML = cardsHTML;
+    if (window.lucide) window.lucide.createIcons();
   }
 }
 
@@ -625,7 +622,7 @@ function handleSyncResult({ meetings, fromCache, error }) {
     // 3. Updates UI
     currentMeetings = meetings;
     renderMeetings();
-    updateCountdownBanner();
+    updateHeroSection();
 
     dot?.classList.add('live');
     dot?.classList.remove('error');
@@ -834,7 +831,7 @@ function initApp() {
   startNotificationLoop(
     () => currentMeetings,
     formatTodayDate,
-    updateCountdownBanner
+    updateHeroSection
   );
 
   console.log('🚀 AAIT Mission Control initialized');
