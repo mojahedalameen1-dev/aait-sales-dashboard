@@ -97,7 +97,6 @@ function updateHeroSection() {
   const next = getNextMeeting(currentMeetings);
 
   if (!next) {
-    // Check if it's because everything is done/cancelled
     const today = formatTodayDate();
     const todayMeetings = currentMeetings.filter(m => m.date === today);
     const hasMeetingsToday = todayMeetings.length > 0;
@@ -105,7 +104,7 @@ function updateHeroSection() {
 
     if (allFinished) {
       section.classList.remove('hidden');
-      container.innerHTML = `
+      const doneHTML = `
         <div class="hero-card all-done" style="flex: 1; justify-content: center; text-align: center;">
           <div class="hero-project-info" style="align-items: center;">
             <div class="hero-project-title" style="font-size: 2rem; color: var(--neon-green);">✅ لا اجتماعات متبقية اليوم</div>
@@ -113,6 +112,7 @@ function updateHeroSection() {
           </div>
         </div>
       `;
+      if (container.innerHTML !== doneHTML) container.innerHTML = doneHTML;
       return;
     }
 
@@ -131,95 +131,115 @@ function updateHeroSection() {
   const diffMin = Math.floor(diffMs / 60000);
   const diffSec = Math.floor((diffMs % 60000) / 1000);
 
-  // --- Render Multiple Cards ---
-  const cardsHTML = next.meetings.map(m => {
-    const ticketMatch = m.project?.match(/AA\d+/);
-    const ticketNum = ticketMatch ? ticketMatch[0] : '';
+  // --- Urgency Logic ---
+  let urgencyClass = '';
+  if (next.isOverdue || diffMin <= 2) urgencyClass = 'urgent-red';
+  else if (diffMin <= 10) urgencyClass = 'urgent-orange';
 
-    // Urgency Logic
-    let urgencyClass = '';
-    if (next.isOverdue || diffMin <= 2) {
-      urgencyClass = 'urgent-red';
-    } else if (diffMin <= 10) {
-      urgencyClass = 'urgent-orange';
-    }
+  // --- Timer Text ---
+  let timerText = '';
+  let isLong = false;
+  if (next.isOverdue) {
+    timerText = 'الآن!';
+  } else if (diffMin > 59) {
+    const hours = Math.floor(diffMin / 60);
+    const mins = diffMin % 60;
+    const secs = Math.max(0, diffSec);
+    timerText = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    isLong = true;
+  } else {
+    timerText = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
+  }
 
-    // Timer Text
-    let timerText = '';
-    let isLong = false;
-    if (next.isOverdue) {
-      timerText = 'الآن!';
-    } else if (diffMin > 59) {
-      const hours = Math.floor(diffMin / 60);
-      const mins = diffMin % 60;
-      const secs = Math.max(0, diffSec);
-      timerText = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-      isLong = true;
-    } else {
-      timerText = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
-    }
+  // --- Progress Bar Logic ---
+  let barColor = 'linear-gradient(90deg, var(--neon-blue), var(--neon-cyan))';
+  if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
+  else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
 
-    // Progress Bar
-    let barColor = 'linear-gradient(90deg, var(--neon-blue), var(--neon-cyan))';
-    if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
-    else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
+  const totalMinutesScale = 60;
+  const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
 
-    const totalMinutesScale = 60;
-    const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
+  // --- SMART RENDERING: Selective Updates ---
+  const currentMeetingIds = next.meetings.map(m => m.id).join(',');
+  const renderedIds = container.dataset.meetingIds || '';
 
-    return `
-      <div class="hero-card ${urgencyClass}">
-        <div class="countdown-box">
-          <span class="countdown-label">متبقي على الاجتماع</span>
-          <span class="countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}">${timerText}</span>
-          <div class="hero-time-display">
-            <i data-lucide="clock" class="icon-small"></i>
-            <span>${formatTime12h(next.time)}</span>
-          </div>
-        </div>
+  if (renderedIds === currentMeetingIds && container.children.length === next.meetings.length) {
+    // ONLY UPDATE VALUES (No Jitter)
+    const cards = container.querySelectorAll('.hero-card');
+    cards.forEach(card => {
+      // Update Urgency Class
+      card.className = `hero-card ${urgencyClass}`;
 
-        <div class="hero-project-info">
-          <div class="hero-project-title" title="${escapeHTML(m.project || '')}">
-            ${escapeHTML(m.project || '')}
-          </div>
-          
-          <div class="hero-project-meta">
-            <div class="hero-team">
-              <i data-lucide="users" class="icon-small"></i>
-              <span>${escapeHTML(m.team || '')}</span>
+      const timerVal = card.querySelector('.countdown-value');
+      if (timerVal) {
+        timerVal.textContent = timerText;
+        timerVal.className = `countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}`;
+      }
+
+      const progressBar = card.querySelector('.hero-progress-bar');
+      if (progressBar) {
+        progressBar.style.width = `${progressPercent}%`;
+        progressBar.style.background = barColor;
+      }
+    });
+  } else {
+    // FULL RE-RENDER (Meetings list changed)
+    container.dataset.meetingIds = currentMeetingIds;
+    container.innerHTML = next.meetings.map(m => {
+      const ticketMatch = m.project?.match(/AA\d+/);
+      const ticketNum = ticketMatch ? ticketMatch[0] : '';
+
+      return `
+        <div class="hero-card ${urgencyClass}">
+          <div class="countdown-box">
+            <span class="countdown-label">متبقي على الاجتماع</span>
+            <span class="countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}">${timerText}</span>
+            <div class="hero-time-display">
+              <i data-lucide="clock" class="icon-small"></i>
+              <span>${formatTime12h(next.time)}</span>
             </div>
-            ${ticketNum ? `
-              <div class="hero-ticket">
-                <i data-lucide="ticket" class="icon-small"></i>
-                <span>#${ticketNum}</span>
-              </div>
-            ` : ''}
           </div>
 
-          <div class="hero-actions">
-            ${ticketNum ? `
-              <button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-                <i data-lucide="copy"></i> ${ticketNum}
-              </button>
-            ` : ''}
+          <div class="hero-project-info">
+            <div class="hero-project-title" title="${escapeHTML(m.project || '')}">
+              ${escapeHTML(m.project || '')}
+            </div>
             
-            ${m.meetUrl ? `
-              <a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-                <i data-lucide="video" class="icon-small"></i> دخول الاجتماع
-              </a>
-            ` : ''}
+            <div class="hero-project-meta">
+              <div class="hero-team">
+                <i data-lucide="users" class="icon-small"></i>
+                <span>${escapeHTML(m.team || '')}</span>
+              </div>
+              ${ticketNum ? `
+                <div class="hero-ticket">
+                  <i data-lucide="ticket" class="icon-small"></i>
+                  <span>#${ticketNum}</span>
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="hero-actions">
+              ${ticketNum ? `
+                <button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
+                  <i data-lucide="copy"></i> ${ticketNum}
+                </button>
+              ` : ''}
+              
+              ${m.meetUrl ? `
+                <a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
+                  <i data-lucide="video" class="icon-small"></i> دخول الاجتماع
+                </a>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="hero-progress-container">
+            <div class="hero-progress-bar" style="width: ${progressPercent}%; background: ${barColor}"></div>
           </div>
         </div>
+      `;
+    }).join('');
 
-        <div class="hero-progress-container">
-          <div class="hero-progress-bar" style="width: ${progressPercent}%; background: ${barColor}"></div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  if (container.innerHTML !== cardsHTML) {
-    container.innerHTML = cardsHTML;
     if (window.lucide) window.lucide.createIcons();
   }
 }
