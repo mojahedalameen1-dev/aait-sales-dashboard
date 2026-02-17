@@ -60,6 +60,9 @@ body {
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   overflow-x: hidden;
   direction: rtl;
   -webkit-font-smoothing: antialiased;
@@ -1406,24 +1409,26 @@ input:checked+.slider:before {
   }
 
   .header-content {
+    width: 100%;
+    max-width: none;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 0.8rem;
+    gap: 0.4rem;
   }
 
   .header-right {
     width: auto;
-    flex: 1;
+    flex: 0 1 auto;
     justify-content: flex-start;
     order: 1;
   }
 
   .header-left {
     width: auto;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     justify-content: flex-end;
     order: 2;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   .header-center {
@@ -1474,12 +1479,14 @@ input:checked+.slider:before {
 
   /* Toolbar */
   .toolbar {
-    margin: 0.6rem 1rem;
-    padding: 0.8rem;
+    margin: 0.6rem 0.5rem;
+    padding: 0.8rem 0.6rem;
     flex-direction: column;
     gap: 0.8rem;
     background: rgba(15, 23, 42, 0.6);
     border-radius: var(--radius-md);
+    width: calc(100% - 1rem);
+    /* Force 100% minus small gap */
   }
 
   .search-container {
@@ -1512,7 +1519,8 @@ input:checked+.slider:before {
 
   /* Hero Section / Cards */
   .hero-section {
-    padding: 1rem;
+    padding: 0.5rem;
+    width: 100%;
   }
 
   .hero-container {
@@ -1551,7 +1559,9 @@ input:checked+.slider:before {
 
   /* Meeting List Transformation (Cards) */
   #meetings-main {
-    padding: 0 1rem 1rem;
+    padding: 0 0.5rem 1rem;
+    width: 100%;
+    max-width: none;
   }
 
   .date-group-header {
