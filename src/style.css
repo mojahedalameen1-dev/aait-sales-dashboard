@@ -1401,18 +1401,36 @@ input:checked+.slider:before {
 
   /* Header Overhaul */
   #app-header {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 0.8rem;
-    text-align: center;
+    padding: 0.8rem 1rem;
+    gap: 0.5rem;
   }
 
-  .header-right,
-  .header-center,
+  .header-content {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .header-right {
+    width: auto;
+    flex: 1;
+    justify-content: flex-start;
+    order: 1;
+  }
+
   .header-left {
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    order: 2;
+    gap: 0.5rem;
+  }
+
+  .header-center {
     width: 100%;
-    justify-content: center;
-    order: unset;
+    order: 3;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 0.8rem;
   }
 
   .header-text h1 {
@@ -1430,12 +1448,12 @@ input:checked+.slider:before {
   }
 
   .radial-gauge-wrapper {
-    width: 120px;
-    height: 120px;
+    width: 110px;
+    height: 110px;
   }
 
   .radial-total-count {
-    font-size: 1.8rem;
+    font-size: 1.6rem;
   }
 
   .radial-label {
@@ -1456,10 +1474,12 @@ input:checked+.slider:before {
 
   /* Toolbar */
   .toolbar {
-    margin: 0.5rem 1rem;
+    margin: 0.6rem 1rem;
     padding: 0.8rem;
     flex-direction: column;
-    align-items: stretch;
+    gap: 0.8rem;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: var(--radius-md);
   }
 
   .search-container {
@@ -1468,33 +1488,50 @@ input:checked+.slider:before {
   }
 
   .filter-group {
-    justify-content: space-between;
+    display: flex;
+    gap: 0.4rem;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* Hide scrollbar for clean look */
+  }
+
+  .filter-group::-webkit-scrollbar {
+    display: none;
   }
 
   .filter-btn {
     flex: 1;
-    padding: 0.4rem 0.5rem;
-    font-size: 0.8rem;
-    text-align: center;
+    min-width: 70px;
+    padding: 0.5rem 0.2rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
   }
 
-  /* Banner (Countdown) */
-  .next-meeting-banner {
-    margin: 0.5rem 1rem;
+  /* Hero Section / Cards */
+  .hero-section {
     padding: 1rem;
   }
 
-  .banner-content {
-    flex-direction: column;
-    text-align: center;
+  .hero-container {
     gap: 1rem;
   }
 
-  .banner-countdown {
+  .hero-card {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    padding: 1.5rem !important;
+    flex-direction: column !important;
+    gap: 1.2rem !important;
+    border-radius: var(--radius-md);
+  }
+
+  .countdown-box {
     width: 100%;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 0 0 1rem 0;
+    flex-basis: auto;
+    padding: 1rem;
   }
 
   .countdown-value {
@@ -1539,11 +1576,12 @@ input:checked+.slider:before {
   }
 
   .meeting-time {
-    font-size: 1.6rem;
+    font-size: 1.4rem;
     text-align: right;
     width: 100%;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.4rem;
+    color: var(--neon-cyan);
   }
 
   .meeting-details {
@@ -1578,11 +1616,9 @@ input:checked+.slider:before {
     justify-content: center;
   }
 
-  /* Thumb-Friendly Buttons */
   .zone-actions {
     display: flex;
     flex-direction: row;
-    /* Keep them side-by-side but grow */
     width: 100%;
     gap: 0.5rem;
   }
@@ -1597,12 +1633,41 @@ input:checked+.slider:before {
 
   .btn-copy-slack {
     flex: 0 0 auto;
-    /* Keep compact */
   }
 
-  /* Performance: Disable heavy blurs on mobile */
-  .meeting-row {
-    backdrop-filter: blur(5px);
+  /* Start Overlay Mobile */
+  .start-overlay-icon {
+    font-size: 4rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .start-overlay-content h1 {
+    font-size: 2.2rem;
+  }
+
+  .start-overlay-content p {
+    font-size: 1rem;
+  }
+
+  #start-btn {
+    padding: 0.8rem 2.5rem;
+    font-size: 1.2rem;
+    margin-top: 1.5rem;
+  }
+
+  .start-hint {
+    font-size: 0.8rem;
+  }
+
+  /* Modal Mobile */
+  .modal-content {
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header h2 {
+    font-size: 1.2rem;
   }
 }
 
