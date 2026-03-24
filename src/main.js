@@ -590,6 +590,7 @@ function setupSettingsModal() {
     const settings = getSettings();
     if (inputSheetId) inputSheetId.value = settings.sheetId || '';
     if (checkSound) checkSound.checked = settings.soundEnabled;
+    if (checkTheme) checkTheme.checked = document.documentElement.classList.contains('light-mode');
     if (selectInterval) selectInterval.value = settings.refreshInterval;
 
     modal?.classList.remove('hidden');

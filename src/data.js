@@ -16,16 +16,6 @@ const DEFAULT_SETTINGS = {
     soundEnabled: true
 };
 
-const ARABIC_MONTHS = [
-    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
-];
-
-const ENGLISH_MONTHS = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-];
-
 /**
  * Get current settings from localStorage or defaults
  */
@@ -74,64 +64,71 @@ export function updateSettings(newSettings) {
 const DEFAULT_PUBLISH_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 
 /**
+ * 🗓️ خريطة التبويبات الشهرية — MONTHLY TAB MAP
+ * أضف GID كل شهر جديد هنا بسطر واحد فقط:
+ * 'YYYY-MM': 'GID'
+ *
+ * كيف تجد رقم GID؟
+ * 1. افتح Google Sheets
+ * 2. انتقل للتبويب الذي تريده
+ * 3. انظر للرابط في المتصفح: ?gid=XXXXXXXX
+ * 4. الرقم بعد gid= هو ما تحتاجه
+ */
+const SHEET_TAB_GIDS = {
+    '2026-02': '951085024',    // فبراير 2026
+    '2026-03': '1826079126',   // مارس 2026 ✅
+    // '2026-04': 'GID_هنا',  // ← أبريل 2026 (أضفه عند بدء الشهر)
+};
+
+/**
+ * اختر GID بناءً على الشهر الحالي تلقائياً.
+ * إذا لم يوجد GID للشهر الحالي، يرجع لآخر شهر مُعرَّف.
+ */
+function getCurrentMonthGID() {
+    const now = new Date();
+    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // بحث مباشر عن الشهر الحالي
+    if (SHEET_TAB_GIDS[key]) {
+        console.log(`[Sheets] ✅ تبويب الشهر الحالي: ${key} → GID: ${SHEET_TAB_GIDS[key]}`);
+        return SHEET_TAB_GIDS[key];
+    }
+
+    // Fallback: آخر شهر مُعرَّف في الخريطة
+    const keys = Object.keys(SHEET_TAB_GIDS).sort();
+    const lastKey = keys[keys.length - 1];
+    console.warn(`[Sheets] ⚠️ لا يوجد GID للشهر ${key}، جاري استخدام آخر تبويب: ${lastKey}`);
+    return SHEET_TAB_GIDS[lastKey] || null;
+}
+
+/**
  * Fetch CSV from Google Sheets (publish key format only)
  * Regular sheet IDs require auth and cause CORS errors, so only 2PACX- keys are accepted.
  */
 async function fetchCSV() {
-    const settings = getSettings();
-    const { sheetId } = settings;
+    const { sheetId } = getSettings();
 
-    const now = new Date();
-    const monthIndex = now.getMonth();
-    const year = now.getFullYear();
-
-    // Generate potential sheet names to try
-    const arMonth = ARABIC_MONTHS[monthIndex];
-    const enMonth = ENGLISH_MONTHS[monthIndex];
-    
-    // Patterns: "مارس 2026", "مارس2026", "March 2026", "03-2026"
-    const potentialNames = [
-        `${arMonth} ${year}`,
-        `${arMonth}${year}`,
-        `${enMonth} ${year}`,
-        `${String(monthIndex + 1).padStart(2, '0')}-${year}`,
-        `${String(monthIndex + 1).padStart(2, '0')}/${year}`
-    ];
-
+    // Only use user ID if it's a valid publish key (starts with 2PACX-)
     const activeKey = (sheetId && sheetId.startsWith('2PACX-')) ? sheetId : DEFAULT_PUBLISH_KEY;
-    const baseUrl = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?output=csv`;
 
-    // Try each potential name until one works
-    for (const name of potentialNames) {
-        const sheetUrl = `${baseUrl}&sheet=${encodeURIComponent(name)}`;
-        try {
-            console.log(`[Sync] Checking sheet: "${name}"...`);
-            const response = await fetch(`${sheetUrl}&_t=${Date.now()}`, { cache: "no-store" });
-            if (response.ok) {
-                const text = await response.text();
-                // Ensure it's not an HTML error page
-                if (!text.trim().startsWith('<')) {
-                    console.info(`[Sync] Success! Loaded sheet: "${name}"`);
-                    return text;
-                }
-            }
-        } catch (e) {
-            console.warn(`[Sync] Failed to fetch sheet "${name}":`, e.message);
-        }
+    // 🗓️ اختيار GID تلقائياً بناءً على الشهر الحالي
+    const activeGID = getCurrentMonthGID();
+    const url = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?gid=${activeGID}&single=true&output=csv`;
+
+    const response = await fetch(`${url}&_t=${Date.now()}`, { cache: "no-store" });
+
+    if (!response.ok) {
+        throw new Error(`فشل الاتصال: ${response.status}`);
     }
 
-    // Ultimate Fallback: Default Published Tab
-    console.warn(`[Sync] No monthly sheet found by name. Falling back to default tab.`);
-    try {
-        const response = await fetch(`${baseUrl}&_t=${Date.now()}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const text = await response.text();
-        if (text.trim().startsWith('<')) throw new Error('HTML Error Page');
-        return text;
-    } catch (error) {
-        console.error('[Sync Error] Ultimate fallback failed:', error);
-        throw new Error('لا يمكن الوصول للبيانات. تأكد من نشر الملف كـ CSV (Entire Document)');
+    const text = await response.text();
+
+    // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
+    if (text.trim().startsWith('<')) {
+        throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
     }
+
+    return text;
 }
 
 /**
@@ -270,48 +267,36 @@ function normalizeDate(dateStr) {
  * Map parsed CSV rows to Meeting objects
  */
 function mapRowsToMeetings(rows) {
-    // 🛡️ Robust header detection: find the row that starts with "م" or contains "مختصر فكره المشروع"
-    let headerIndex = -1;
-    for (let i = 0; i < Math.min(rows.length, 10); i++) {
-        const firstCell = (rows[i][0] || '').trim();
-        const secondCell = (rows[i][1] || '').trim();
-        if (firstCell === 'م' || secondCell.includes('فكره المشروع')) {
-            headerIndex = i;
-            break;
-        }
-    }
+    // Skip header row usually, but sometimes Google Sheets CSV includes title first.
+    // We'll rely on smart filtering below.
 
-    const dataRows = headerIndex !== -1 ? rows.slice(headerIndex + 1) : rows;
+    const dataRows = rows.slice(1); // Assume row 1 is headers
     const filledRows = forwardFillDates(dataRows);
 
     const meetings = [];
-    let idCounter = 0;
+    let id = 0;
 
     for (const row of filledRows) {
-        // Skip empty rows or dates-only rows
-        if (!row || row.length < 5) continue;
         if (isDateHeaderRow(row)) continue;
 
-        const project = (row[1] || '').trim();
-        const employee = (row[2] || '').trim();
-        const timeStr = (row[3] || '').trim();
+        // Check minimum columns existence
+        const project = (row[1] || '').trim();  // B column
+        const time = (row[3] || '').trim();     // C column (الساعة)
 
-        // Basic validation: row must have at least a project or a time
-        if (!project && !timeStr) continue;
+        if (!project && !time) continue;
 
-        idCounter++;
+        id++;
         meetings.push({
-            id: `m-${idCounter}`,
+            id: `m-${id}`,
             date: normalizeDate((row[0] || '').trim()),
             project: project,
-            team: employee,
-            time: parseTimeStr(timeStr),
+            team: (row[2] || '').trim(),
+            time: parseTimeStr(time),
             via: (row[4] || '').trim(),
-            mobile: (row[5] || '').trim(), // Added mobile field
-            status: (row[6] || '').trim(), // CORRECTED: row[6] is Status
-            ticketUrl: (row[7] || '').trim(), // CORRECTED: row[7] is Ticket URL
-            meetUrl: (row[8] || '').trim(), // Using Minutes column as fallback for now
-            clientStatus: (row[9] || '').trim()
+            status: (row[5] || '').trim(),
+            ticketUrl: (row[6] || '').trim(),
+            meetUrl: (row[7] || '').trim(),
+            clientStatus: (row[8] || '').trim()
         });
     }
 
