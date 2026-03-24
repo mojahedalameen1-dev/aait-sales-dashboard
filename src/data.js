@@ -21,6 +21,11 @@ const ARABIC_MONTHS = [
     "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
 ];
 
+const ENGLISH_MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+];
+
 /**
  * Get current settings from localStorage or defaults
  */
@@ -76,42 +81,56 @@ async function fetchCSV() {
     const settings = getSettings();
     const { sheetId } = settings;
 
-    // 1. Determine current month and year
     const now = new Date();
     const monthIndex = now.getMonth();
     const year = now.getFullYear();
-    const sheetName = `${ARABIC_MONTHS[monthIndex]} ${year}`; // e.g., "مارس 2026"
 
-    // 2. Build URLs (Try specific sheet first, then fallback)
+    // Generate potential sheet names to try
+    const arMonth = ARABIC_MONTHS[monthIndex];
+    const enMonth = ENGLISH_MONTHS[monthIndex];
+    
+    // Patterns: "مارس 2026", "مارس2026", "March 2026", "03-2026"
+    const potentialNames = [
+        `${arMonth} ${year}`,
+        `${arMonth}${year}`,
+        `${enMonth} ${year}`,
+        `${String(monthIndex + 1).padStart(2, '0')}-${year}`,
+        `${String(monthIndex + 1).padStart(2, '0')}/${year}`
+    ];
+
     const activeKey = (sheetId && sheetId.startsWith('2PACX-')) ? sheetId : DEFAULT_PUBLISH_KEY;
     const baseUrl = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?output=csv`;
-    const sheetUrl = `${baseUrl}&sheet=${encodeURIComponent(sheetName)}`;
 
+    // Try each potential name until one works
+    for (const name of potentialNames) {
+        const sheetUrl = `${baseUrl}&sheet=${encodeURIComponent(name)}`;
+        try {
+            console.log(`[Sync] Checking sheet: "${name}"...`);
+            const response = await fetch(`${sheetUrl}&_t=${Date.now()}`, { cache: "no-store" });
+            if (response.ok) {
+                const text = await response.text();
+                // Ensure it's not an HTML error page
+                if (!text.trim().startsWith('<')) {
+                    console.info(`[Sync] Success! Loaded sheet: "${name}"`);
+                    return text;
+                }
+            }
+        } catch (e) {
+            console.warn(`[Sync] Failed to fetch sheet "${name}":`, e.message);
+        }
+    }
+
+    // Ultimate Fallback: Default Published Tab
+    console.warn(`[Sync] No monthly sheet found by name. Falling back to default tab.`);
     try {
-        console.log(`[Sync] Attempting to fetch: ${sheetName}`);
-        let response = await fetch(`${sheetUrl}&_t=${Date.now()}`, { cache: "no-store" });
-        
-        // If sheet-specific fetch fails (400/404), fall back to default
-        if (!response.ok) {
-            console.warn(`[Sync] Sheet "${sheetName}" not found. Falling back to default tab.`);
-            response = await fetch(`${baseUrl}&_t=${Date.now()}`, { cache: "no-store" });
-        }
-
-        if (!response.ok) {
-            throw new Error(`فشل الاتصال: ${response.status}`);
-        }
-
+        const response = await fetch(`${baseUrl}&_t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const text = await response.text();
-
-        // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
-        if (text.trim().startsWith('<')) {
-            throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
-        }
-
+        if (text.trim().startsWith('<')) throw new Error('HTML Error Page');
         return text;
     } catch (error) {
-        console.error('[Sync Error]', error);
-        throw error;
+        console.error('[Sync Error] Ultimate fallback failed:', error);
+        throw new Error('لا يمكن الوصول للبيانات. تأكد من نشر الملف كـ CSV (Entire Document)');
     }
 }
 
@@ -251,36 +270,48 @@ function normalizeDate(dateStr) {
  * Map parsed CSV rows to Meeting objects
  */
 function mapRowsToMeetings(rows) {
-    // Skip header row usually, but sometimes Google Sheets CSV includes title first.
-    // We'll rely on smart filtering below.
+    // 🛡️ Robust header detection: find the row that starts with "م" or contains "مختصر فكره المشروع"
+    let headerIndex = -1;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const firstCell = (rows[i][0] || '').trim();
+        const secondCell = (rows[i][1] || '').trim();
+        if (firstCell === 'م' || secondCell.includes('فكره المشروع')) {
+            headerIndex = i;
+            break;
+        }
+    }
 
-    const dataRows = rows.slice(1); // Assume row 1 is headers
+    const dataRows = headerIndex !== -1 ? rows.slice(headerIndex + 1) : rows;
     const filledRows = forwardFillDates(dataRows);
 
     const meetings = [];
-    let id = 0;
+    let idCounter = 0;
 
     for (const row of filledRows) {
+        // Skip empty rows or dates-only rows
+        if (!row || row.length < 5) continue;
         if (isDateHeaderRow(row)) continue;
 
-        // Check minimum columns existence
-        const project = (row[1] || '').trim();  // B column
-        const time = (row[3] || '').trim();     // C column (الساعة)
+        const project = (row[1] || '').trim();
+        const employee = (row[2] || '').trim();
+        const timeStr = (row[3] || '').trim();
 
-        if (!project && !time) continue;
+        // Basic validation: row must have at least a project or a time
+        if (!project && !timeStr) continue;
 
-        id++;
+        idCounter++;
         meetings.push({
-            id: `m-${id}`,
+            id: `m-${idCounter}`,
             date: normalizeDate((row[0] || '').trim()),
             project: project,
-            team: (row[2] || '').trim(),
-            time: parseTimeStr(time),
+            team: employee,
+            time: parseTimeStr(timeStr),
             via: (row[4] || '').trim(),
-            status: (row[5] || '').trim(),
-            ticketUrl: (row[6] || '').trim(),
-            meetUrl: (row[7] || '').trim(),
-            clientStatus: (row[8] || '').trim()
+            mobile: (row[5] || '').trim(), // Added mobile field
+            status: (row[6] || '').trim(), // CORRECTED: row[6] is Status
+            ticketUrl: (row[7] || '').trim(), // CORRECTED: row[7] is Ticket URL
+            meetUrl: (row[8] || '').trim(), // Using Minutes column as fallback for now
+            clientStatus: (row[9] || '').trim()
         });
     }
 
