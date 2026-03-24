@@ -16,6 +16,11 @@ const DEFAULT_SETTINGS = {
     soundEnabled: true
 };
 
+const ARABIC_MONTHS = [
+    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+];
+
 /**
  * Get current settings from localStorage or defaults
  */
@@ -62,33 +67,52 @@ export function updateSettings(newSettings) {
 
 // Default Publish Key (for /d/e/ format — only this works publicly)
 const DEFAULT_PUBLISH_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
-const GID = '951085024';
 
 /**
  * Fetch CSV from Google Sheets (publish key format only)
  * Regular sheet IDs require auth and cause CORS errors, so only 2PACX- keys are accepted.
  */
 async function fetchCSV() {
-    const { sheetId } = getSettings();
+    const settings = getSettings();
+    const { sheetId } = settings;
 
-    // Only use user ID if it's a valid publish key (starts with 2PACX-)
+    // 1. Determine current month and year
+    const now = new Date();
+    const monthIndex = now.getMonth();
+    const year = now.getFullYear();
+    const sheetName = `${ARABIC_MONTHS[monthIndex]} ${year}`; // e.g., "مارس 2026"
+
+    // 2. Build URLs (Try specific sheet first, then fallback)
     const activeKey = (sheetId && sheetId.startsWith('2PACX-')) ? sheetId : DEFAULT_PUBLISH_KEY;
-    const url = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?gid=${GID}&single=true&output=csv`;
+    const baseUrl = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?output=csv`;
+    const sheetUrl = `${baseUrl}&sheet=${encodeURIComponent(sheetName)}`;
 
-    const response = await fetch(`${url}&_t=${Date.now()}`, { cache: "no-store" });
+    try {
+        console.log(`[Sync] Attempting to fetch: ${sheetName}`);
+        let response = await fetch(`${sheetUrl}&_t=${Date.now()}`, { cache: "no-store" });
+        
+        // If sheet-specific fetch fails (400/404), fall back to default
+        if (!response.ok) {
+            console.warn(`[Sync] Sheet "${sheetName}" not found. Falling back to default tab.`);
+            response = await fetch(`${baseUrl}&_t=${Date.now()}`, { cache: "no-store" });
+        }
 
-    if (!response.ok) {
-        throw new Error(`فشل الاتصال: ${response.status}`);
+        if (!response.ok) {
+            throw new Error(`فشل الاتصال: ${response.status}`);
+        }
+
+        const text = await response.text();
+
+        // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
+        if (text.trim().startsWith('<')) {
+            throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
+        }
+
+        return text;
+    } catch (error) {
+        console.error('[Sync Error]', error);
+        throw error;
     }
-
-    const text = await response.text();
-
-    // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
-    if (text.trim().startsWith('<')) {
-        throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
-    }
-
-    return text;
 }
 
 /**

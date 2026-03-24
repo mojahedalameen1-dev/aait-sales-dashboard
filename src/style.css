@@ -2506,3 +2506,49 @@ html.light-mode {
   /* Fallback to solid color */
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* GIDs Grid in Settings */
+.gids-config {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gids-config h3 {
+  font-size: 1rem;
+  margin-bottom: 0.8rem;
+  color: var(--neon-cyan);
+}
+
+.gids-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.8rem;
+}
+
+.gid-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gid-item label {
+  font-size: 0.8rem;
+  min-width: 45px;
+  color: var(--text-secondary);
+}
+
+.gid-item input {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.gid-item input:focus {
+  border-color: var(--neon-cyan);
+  outline: none;
+}
