@@ -4,167 +4,137 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>أوامر الشبكة — لوحة تحكم المبيعات</title>
-  <meta name="description" content="نظام إدارة اجتماعات المبيعات — أوامر الشبكة" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap"
-    rel="stylesheet" />
-  <link rel="stylesheet" href="/src/style.css" />
-  <!-- Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <title>AAIT — Sales Dashboard</title>
   <link rel="icon" href="/logo.svg" />
+  <link rel="stylesheet" href="/src/style.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
 
-  <!-- Start System Overlay (Audio Policy) -->
+  <!-- 1. System Overlay (Audio/Start) -->
   <div id="start-overlay">
-    <div class="start-overlay-content">
-      <div class="start-overlay-icon">
-        <img src="/logo.svg" alt="Awamer Alshabaka Logo" width="80" height="80" class="logo-animate" />
-      </div>
-      <h1>أوامر الشبكة</h1>
-      <p>لوحة تحكم إدارة المبيعات</p>
-      <button id="start-btn">
-        <span class="btn-icon">🔊</span>
-        تشغيل النظام
-      </button>
-      <p class="start-hint">اضغط لتفعيل الإشعارات الصوتية ولوحة التحكم</p>
-    </div>
+    <img src="/logo.svg" alt="AAIT Logo" class="logo-large" />
+    <h1 style="font-size: 2rem; font-weight: 700;">أوامر الشبكة</h1>
+    <p style="color: var(--text-muted);">نظام مراقبة المبيعات — Cinematic Edition</p>
+    <button id="start-btn" class="btn-start">تشغيل النظام</button>
   </div>
 
-  <!-- Settings Modal -->
+  <!-- 2. Settings Modal -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-content">
-      <div class="modal-header">
-        <h2>⚙️ إعدادات النظام</h2>
-        <button id="close-modal-btn" class="close-btn">&times;</button>
+      <div style="display:flex; justify-content:space-between; margin-bottom:var(--s6);">
+        <h2 style="font-weight: 700;">⚙️ الإعدادات</h2>
+        <button id="close-modal-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.5rem;">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label for="sheet-id-input">معرّف جدول Google Sheet ID</label>
-          <input type="text" id="sheet-id-input" placeholder="ألصق المعرّف هنا (ID من الرابط)" />
-          <p class="input-hint">تأكد من نشر الملف كـ CSV (File > Share > Publish to web)</p>
+      
+      <div style="display:flex; flex-direction:column; gap:var(--s4);">
+        <div>
+          <label style="display:block; font-size:var(--t-xs); color:var(--text-muted); margin-bottom:var(--s1);">Google Sheet ID</label>
+          <input type="text" id="sheet-id-input" style="width:100%; padding:var(--s3); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-md); color:white;" />
         </div>
 
-        <div class="form-group-row">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
           <label>التنبيهات الصوتية</label>
-          <label class="switch">
-            <input type="checkbox" id="sound-toggle" checked>
-            <span class="slider round"></span>
-          </label>
+          <input type="checkbox" id="sound-toggle" checked />
         </div>
 
-        <div class="form-group-row">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
           <label>الوضع الفاتح ☀️</label>
-          <label class="switch">
-            <input type="checkbox" id="theme-toggle">
-            <span class="slider round"></span>
-          </label>
+          <input type="checkbox" id="theme-toggle" />
         </div>
 
-        <div class="form-group">
-          <label for="refresh-interval">تحديث البيانات كل</label>
-          <select id="refresh-interval">
+        <div>
+          <label style="display:block; font-size:var(--t-xs); color:var(--text-muted); margin-bottom:var(--s1);">تحديث البيانات</label>
+          <select id="refresh-interval" style="width:100%; padding:var(--s3); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-md); color:white;">
             <option value="0.25">15 ثانية (لحظي)</option>
             <option value="0.5" selected>30 ثانية</option>
             <option value="1">1 دقيقة</option>
             <option value="5">5 دقائق</option>
-            <option value="10">10 دقائق</option>
           </select>
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="save-settings-btn" class="primary-btn">حفظ وتحديث</button>
-      </div>
+      
+      <button id="save-settings-btn" style="width:100%; margin-top:var(--s6); padding:var(--s4); background:var(--accent); color:white; border:none; border-radius:var(--r-md); font-weight:700; cursor:pointer;">حفظ الإعدادات</button>
     </div>
   </div>
 
-  <!-- Main App -->
-  <div id="app" class="hidden">
-    <!-- Header -->
-    <header id="app-header">
-      <div class="header-content">
-        <div class="header-right">
-          <div class="header-logo">
-            <img src="/logo.svg" alt="Awamer Alshabaka Logo" width="40" height="40" />
-          </div>
-          <div class="header-text">
-            <h1>أوامر الشبكة</h1>
-            <p>إدارة اجتماعات المبيعات</p>
-          </div>
+  <!-- 3. Main App Shell -->
+  <div id="app" class="app-shell hidden">
+    
+    <!-- ZONE 1: TOP BAR -->
+    <header class="top-bar">
+      <div class="top-bar-right">
+        <div class="brand-wrapper">
+          <img src="/logo.svg" alt="Logo" class="brand-logo" />
+          <span class="brand-name">أوامر الشبكة</span>
         </div>
+        <div class="sync-status" id="sync-status">
+          <span class="pulsing-dot sync-dot"></span>
+          <span class="sync-text">متصل</span>
+        </div>
+      </div>
 
-        <div class="header-center">
-          <div id="live-clock" class="live-clock">--:--:--</div>
-        </div>
+      <div class="top-bar-center">
+        <div id="live-clock" class="live-clock">--:--:--</div>
+      </div>
 
-        <div class="header-left">
-          <div id="sync-status" class="sync-badge">
-            <span class="sync-dot"></span>
-            <span class="sync-text">متصل</span>
-          </div>
-          <button id="header-theme-toggle" class="icon-btn" title="تبديل المظهر" aria-label="Toggle Theme">
-            <i data-lucide="moon"></i>
-          </button>
-          <!-- Export button removed -->
-          <button id="sync-now-btn" class="icon-btn" title="مزامنة الآن" aria-label="Sync Now">
-            <i data-lucide="refresh-cw"></i>
-          </button>
-          <button id="settings-btn" class="icon-btn" title="الإعدادات" aria-label="Settings">
-            <i data-lucide="settings"></i>
-          </button>
+      <div class="top-bar-left">
+        <!-- Minimal Toolbar -->
+        <div id="toolbar" class="hidden" style="display:flex; align-items:center; gap:var(--s2);">
+             <div class="filter-group" style="display:flex; gap:4px; margin-left:var(--s4);">
+                <button class="filter-btn active" data-filter="all">الكل</button>
+                <button class="filter-btn" data-filter="active">نشط</button>
+                <button class="filter-btn" data-filter="completed">تم</button>
+             </div>
+             <input type="text" id="search-input" placeholder="بحث..." style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-full); padding:4px 12px; color:white; font-size:0.8rem; width:120px;" />
+             <button id="clear-search" class="hidden" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">&times;</button>
         </div>
+        
+        <button id="header-theme-toggle" style="background:none; border:none; color:var(--text-muted); cursor:pointer; display:flex; align-items:center;">
+          <i data-lucide="moon"></i>
+        </button>
+        <button id="sync-now-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; display:flex; align-items:center;">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+        <button id="settings-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; display:flex; align-items:center;">
+          <i data-lucide="settings"></i>
+        </button>
       </div>
     </header>
 
-    <!-- Toolbar: Search & Filter -->
-    <div id="toolbar" class="toolbar hidden" role="toolbar" aria-label="Meeting Filters">
-      <div class="search-container">
-        <span class="search-icon" aria-hidden="true">🔍</span>
-        <input type="text" id="search-input" placeholder="بحث عن عميل، مشروع، أو فريق..."
-          aria-label="بحث في الاجتماعات" />
-        <button id="clear-search" class="clear-btn hidden" aria-label="مسح البحث">&times;</button>
+    <!-- ZONE 2: HERO CENTER -->
+    <main class="hero-center" id="hero-section">
+      <!-- Sub-Zone Left: Stats -->
+      <div class="sub-zone-left" id="daily-stats-container">
+        <!-- KPI Chips will be injected here -->
       </div>
-      <div class="filter-group" role="group" aria-label="تصفية حسب الحالة">
-        <button class="filter-btn active" data-filter="all" aria-pressed="true">الكل</button>
-        <button class="filter-btn" data-filter="active" aria-pressed="false">نشط</button>
-        <button class="filter-btn" data-filter="completed" aria-pressed="false">مكتمل</button>
-        <button class="filter-btn" data-filter="cancelled" aria-pressed="false">ملغي</button>
+
+      <!-- Sub-Zone Center: Main Meeting -->
+      <div class="sub-zone-center" id="hero-container">
+        <!-- Current/Next meeting injected here -->
       </div>
-    </div>
 
-    <!-- Hero Section (Meetings Dashboard) -->
-    <section id="hero-section" class="hero-section hidden">
-      <div class="hero-bg-glow"></div>
-      <div id="hero-container" class="hero-container">
-        <!-- Hero Cards will be injected here by JS -->
-      </div>
-    </section>
-
-    <!-- Notification Toast Container -->
-    <div id="notification-container" class="notification-container"></div>
-
-    <!-- Meetings Grid -->
-    <main id="meetings-main">
-      <div id="meetings-container" class="meetings-container">
-        <div class="loading-spinner">
-          <div class="spinner"></div>
-          <p>جاري الاتصال بالقاعدة...</p>
-        </div>
+      <!-- Sub-Zone Right: Mini Timeline -->
+      <div class="sub-zone-right" id="mini-timeline">
+        <!-- Minimal upcoming list -->
       </div>
     </main>
 
-    <!-- Footer -->
-    <footer id="app-footer">
-      <div class="footer-info">
-        <span>أوامر الشبكة — نظام المبيعات v2.0</span>
-        <span class="divider">|</span>
-        <span id="last-sync-time">آخر تحديث: --</span>
-        <span id="last-updated-seconds" class="last-updated-counter">(منذ 0 ثانية)</span>
-      </div>
+    <!-- ZONE 3: TIMELINE STRIP -->
+    <footer class="timeline-strip" id="meetings-container">
+      <!-- Horizontal tiles injected here -->
     </footer>
+
+    <!-- Invisible Metadata / Footer -->
+    <div style="position:fixed; bottom:var(--s2); right:var(--s4); font-size:10px; color:var(--text-faint); display:flex; gap:var(--s4);">
+      <span id="last-sync-time">تحديث: --</span>
+      <span id="last-updated-seconds">(0ث)</span>
+    </div>
+
+    <!-- Notifications -->
+    <div id="notification-container" style="position:fixed; top:var(--s4); left:var(--s4); z-index:3000;"></div>
+
   </div>
 
   <script type="module" src="/src/main.js"></script>

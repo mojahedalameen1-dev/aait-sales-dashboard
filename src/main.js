@@ -33,6 +33,19 @@ let activeFilter = 'all'; // all, active, completed, cancelled
 let clockIntervalId = null;
 const prevStatusMap = new Map(); // Track previous meeting status for animations
 
+// --- Developer Identity System ---
+const DEV_COLORS = {
+  'أشرف': { color: 'var(--dev-emerald)', initial: 'أ' },
+  'مجاهد': { color: 'var(--dev-sky)', initial: 'م' },
+  'شادي': { color: 'var(--dev-rose)', initial: 'ش' },
+  'حسام': { color: 'var(--dev-amber)', initial: 'ح' },
+  'default': { color: 'var(--text-faint)', initial: '؟' }
+};
+
+function getDevInfo(name) {
+  return DEV_COLORS[name] || DEV_COLORS['default'];
+}
+
 // ========================================
 // ⏰ Live Clock & Daily Stats
 // ========================================
@@ -89,12 +102,31 @@ function startClock() {
 // ========================================
 
 function updateHeroSection() {
-  const section = document.getElementById('hero-section');
   const container = document.getElementById('hero-container');
-
-  if (!section || !container) return;
+  const miniTimeline = document.getElementById('mini-timeline');
+  if (!container) return;
 
   const next = getNextMeeting(currentMeetings);
+
+  // --- Sub-Zone Right: Mini Timeline ---
+  if (miniTimeline) {
+    const upcoming = currentMeetings.filter(m => {
+       const done = isDone(m);
+       const cancelled = isCancelled(m);
+       return !done && !cancelled;
+    }).slice(0, 5);
+    
+    miniTimeline.innerHTML = upcoming.map(m => {
+       const dev = getDevInfo(m.team);
+       return `
+         <div class="mini-tile">
+            <span class="mini-time">${formatTime12h(m.time)}</span>
+            <span class="dev-dot" style="background:${dev.color}"></span>
+            <span class="mini-client">${escapeHTML(m.project || '—')}</span>
+         </div>
+       `;
+    }).join('');
+  }
 
   if (!next) {
     const today = formatTodayDate();
@@ -103,24 +135,17 @@ function updateHeroSection() {
     const allFinished = hasMeetingsToday && todayMeetings.every(m => isDone(m) || isCancelled(m));
 
     if (allFinished) {
-      section.classList.remove('hidden');
-      const doneHTML = `
-        <div class="hero-card all-done" style="flex: 1; justify-content: center; text-align: center;">
-          <div class="hero-project-info" style="align-items: center;">
-            <div class="hero-project-title" style="font-size: 2rem; color: var(--neon-green);">✅ لا اجتماعات متبقية اليوم</div>
-            <div class="hero-team">كل شيء تحت السيطرة !</div>
-          </div>
+      container.innerHTML = `
+        <div style="text-align:center; padding:var(--s8);">
+          <h2 style="font-size:var(--t-lg); color:var(--dev-emerald);">✅ تم إكمال جميع اجتماعات اليوم</h2>
+          <p style="color:var(--text-muted); margin-top:var(--s2);">عمل رائع للفريق!</p>
         </div>
       `;
-      if (container.innerHTML !== doneHTML) container.innerHTML = doneHTML;
       return;
     }
-
-    section.classList.add('hidden');
+    container.innerHTML = `<div style="text-align:center; color:var(--text-faint);">بانتظار اجتماعات جديدة...</div>`;
     return;
   }
-
-  section.classList.remove('hidden');
 
   const now = new Date();
   const [h, min] = next.time.split(':').map(Number);
@@ -133,115 +158,46 @@ function updateHeroSection() {
 
   // --- Urgency Logic ---
   let urgencyClass = '';
-  if (next.isOverdue || diffMin <= 2) urgencyClass = 'urgent-red';
-  else if (diffMin <= 10) urgencyClass = 'urgent-orange';
+  if (next.isOverdue || diffMin < 5) urgencyClass = 'timer-red';
+  else if (diffMin < 15) urgencyClass = 'timer-amber';
 
   // --- Timer Text ---
   let timerText = '';
-  let isLong = false;
   if (next.isOverdue) {
     timerText = 'الآن!';
-  } else if (diffMin > 59) {
-    const hours = Math.floor(diffMin / 60);
-    const mins = diffMin % 60;
-    const secs = Math.max(0, diffSec);
-    timerText = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    isLong = true;
   } else {
     timerText = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
   }
 
-  // --- Progress Bar Logic ---
-  let barColor = 'linear-gradient(90deg, var(--neon-blue), var(--neon-cyan))';
-  if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
-  else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
+  const m = next.meetings[0]; // Hero focuses on the primary next meeting
+  const dev = getDevInfo(m.team);
+  const typeIcon = getStatusIcon(m.via, m.status, !!m.meetUrl);
+  const iconMap = { 'video': '📹', 'car': '🚗', 'building-2': '🏢', 'calendar': '📅' };
 
-  const totalMinutesScale = 60;
-  const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
-
-  // --- SMART RENDERING: Selective Updates ---
-  const currentMeetingIds = next.meetings.map(m => m.id).join(',');
-  const renderedIds = container.dataset.meetingIds || '';
-
-  if (renderedIds === currentMeetingIds && container.children.length === next.meetings.length) {
-    // ONLY UPDATE VALUES (No Jitter)
-    const cards = container.querySelectorAll('.hero-card');
-    cards.forEach(card => {
-      // Update Urgency Class
-      card.className = `hero-card ${urgencyClass}`;
-
-      const timerVal = card.querySelector('.countdown-value');
-      if (timerVal) {
-        timerVal.textContent = timerText;
-        timerVal.className = `countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}`;
-      }
-
-      const progressBar = card.querySelector('.hero-progress-bar');
-      if (progressBar) {
-        progressBar.style.width = `${progressPercent}%`;
-        progressBar.style.background = barColor;
-      }
-    });
-  } else {
-    // FULL RE-RENDER (Meetings list changed)
-    container.dataset.meetingIds = currentMeetingIds;
-    container.innerHTML = next.meetings.map(m => {
-      const ticketMatch = m.project?.match(/AA\d+/);
-      const ticketNum = ticketMatch ? ticketMatch[0] : '';
-
-      return `
-        <div class="hero-card ${urgencyClass}">
-          <div class="countdown-box">
-            <span class="countdown-label">متبقي على الاجتماع</span>
-            <span class="countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}">${timerText}</span>
-            <div class="hero-time-display">
-              <i data-lucide="clock" class="icon-small"></i>
-              <span>${formatTime12h(next.time)}</span>
-            </div>
-          </div>
-
-          <div class="hero-project-info">
-            <div class="hero-project-title" title="${escapeHTML(m.project || '')}">
-              ${escapeHTML(m.project || '')}
-            </div>
-            
-            <div class="hero-project-meta">
-              <div class="hero-team">
-                <i data-lucide="users" class="icon-small"></i>
-                <span>${escapeHTML(m.team || '')}</span>
-              </div>
-              ${ticketNum ? `
-                <div class="hero-ticket">
-                  <i data-lucide="ticket" class="icon-small"></i>
-                  <span>#${ticketNum}</span>
-                </div>
-              ` : ''}
-            </div>
-
-            <div class="hero-actions">
-              ${ticketNum ? `
-                <button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-                  <i data-lucide="copy"></i> ${ticketNum}
-                </button>
-              ` : ''}
-              
-              ${m.meetUrl ? `
-                <a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-                  <i data-lucide="video" class="icon-small"></i> دخول الاجتماع
-                </a>
-              ` : ''}
-            </div>
-          </div>
-
-          <div class="hero-progress-container">
-            <div class="hero-progress-bar" style="width: ${progressPercent}%; background: ${barColor}"></div>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    if (window.lucide) window.lucide.createIcons();
-  }
+  container.innerHTML = `
+    <div class="hero-header">
+       <span class="badge-now">${next.isOverdue ? 'اجتماع جاري' : 'الاجتماع القادم'}</span>
+    </div>
+    
+    <div class="hero-main">
+       <div class="hero-client">${escapeHTML(m.project || 'عميل جديد')}</div>
+       <div class="hero-project">${escapeHTML(m.team || 'فريق المبيعات')} • ${iconMap[typeIcon] || '📅'} ${escapeHTML(m.via || 'اجتماع')}</div>
+       <div class="hero-timer ${urgencyClass}">${timerText}</div>
+    </div>
+    
+    <div class="hero-footer">
+       <div class="dev-avatar-large" style="background:${dev.color}">${dev.initial}</div>
+       <div style="text-align:right;">
+          <div style="font-size:var(--t-xs); color:var(--text-muted);">المسؤول</div>
+          <div style="font-weight:700;">${escapeHTML(m.team)}</div>
+       </div>
+       ${m.meetUrl ? `
+         <a href="${m.meetUrl}" target="_blank" class="btn-join">
+           دخول الاجتماع
+         </a>
+       ` : ''}
+    </div>
+  `;
 }
 
 // ========================================
@@ -276,203 +232,83 @@ function renderMeetings() {
   const container = document.getElementById('meetings-container');
   if (!container) return;
 
-  if (currentMeetings.length === 0) {
-    container.innerHTML = `
-      <div class="no-meetings">
-        <div class="no-meetings-icon">📡</div>
-        <h3>لا توجد اجتماعات</h3>
-        <p>قم بضبط إعدادات Google Sheets للمزامنة</p>
-      </div>
-    `;
-    renderDailyStats();
-    return;
-  }
-
-
-
-  // --- FILTERING LOGIC ---
+  const todayStr = formatTodayDate();
+  
+  // Filter and sort for Today's Timeline
   let filtered = currentMeetings;
 
-  // 1. Search Filter
+  // 1. Search & Status Filters
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(m =>
       (m.project || '').toLowerCase().includes(q) ||
-      (m.team || '').toLowerCase().includes(q) ||
-      (m.clientStatus || '').toLowerCase().includes(q) ||
-      (m.time || '').includes(q) ||
-      (m.date || '').includes(q)
+      (m.team || '').toLowerCase().includes(q)
     );
   }
 
-  // 2. Status Filter
   if (activeFilter !== 'all') {
     filtered = filtered.filter(m => {
-      const s = (m.status || '').toLowerCase();
       const done = isDone(m);
-      const isCancelled_m = s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
-
-      if (activeFilter === 'active') return !done && !isCancelled_m;
+      const cancelled = isCancelled(m);
+      if (activeFilter === 'active') return !done && !cancelled;
       if (activeFilter === 'completed') return done;
-      if (activeFilter === 'cancelled') return isCancelled_m;
+      if (activeFilter === 'cancelled') return cancelled;
       return true;
     });
   }
 
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="no-meetings">
-        <div class="no-meetings-icon">🔍</div>
-        <h3>لا توجد نتائج</h3>
-        <p>جرب تغيير مصطلحات البحث أو الفلتر</p>
-      </div>
-    `;
-    renderDailyStats(); // Still render stats based on ALL meetings? Or filtered? Let's keep it based on today's total.
+  // Focus only on today for the wallboard strip
+  const todayMeetings = filtered.filter(m => m.date === todayStr);
+  todayMeetings.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  if (todayMeetings.length === 0) {
+    container.innerHTML = `<div style="width:100%; display:flex; align-items:center; justify-content:center; color:var(--text-faint);">لا توجد اجتماعات مقررة لهذا اليوم</div>`;
+    renderDailyStats();
     return;
   }
 
-  const grouped = groupByDate(filtered);
-  const today = formatTodayDate();
+  const nextBlock = getNextMeeting(currentMeetings);
+  const targetIds = new Set(nextBlock ? nextBlock.meetings.map(m => m.id) : []);
+  const now = new Date();
 
-  let html = '';
-  let globalIndex = 0; // For staggered animation
+  container.innerHTML = todayMeetings.map(m => {
+    const dev = getDevInfo(m.team);
+    const done = isDone(m);
+    const cancelled = isCancelled(m);
+    const isTargeted = targetIds.has(m.id);
+    const isArchived = done || cancelled;
+    
+    // Urgency Logic for Tile
+    const [h, min] = m.time.split(':').map(Number);
+    const mDate = new Date(now);
+    mDate.setHours(h, min, 0, 0);
+    const diffMin = (mDate - now) / 60000;
+    
+    let stateClass = '';
+    if (done) stateClass = 'tile-completed';
+    else if (cancelled) stateClass = 'tile-missed';
+    else if (isTargeted) stateClass = 'tile-current';
+    else if (diffMin > 0 && diffMin < 15) stateClass = 'tile-urgent';
+    else if (diffMin < 0) stateClass = 'tile-missed'; // Overdue but not current
 
-  for (const [date, meetings] of grouped) {
-    const isToday = date === today;
-    const dateLabel = formatDateLabel(date);
+    const typeIconName = getStatusIcon(m.via, m.status, !!m.meetUrl);
+    const iconMap = { 'video': '📹', 'car': '🚗', 'building-2': '🏢', 'calendar': '📅' };
 
-    html += `
-      <div class="date-group">
-        <div class="date-group-header ${isToday ? 'today' : ''}">
-          <div class="date-label">
-            <span class="date-icon">${isToday ? '📌' : '📅'}</span>
-            <span class="date-text">${dateLabel}</span>
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center">
-            ${isToday ? '<span class="today-badge">اليوم</span>' : ''}
-            <span class="meeting-count">${formatMeetingCount(meetings.length)}</span>
-          </div>
+    return `
+      <div class="timeline-tile ${stateClass}" style="border-left-color: ${dev.color}">
+        <div class="tile-time">${formatTime12h(m.time)}</div>
+        <div class="tile-client" title="${escapeHTML(m.project)}">${escapeHTML(m.project)}</div>
+        <div class="tile-project">${escapeHTML(m.team)}</div>
+        
+        <div class="tile-footer">
+           <div class="dev-avatar-sm" style="background:${dev.color}">${dev.initial}</div>
+           <span class="type-icon">${iconMap[typeIconName] || '📅'}</span>
         </div>
-        <div class="meetings-table">
+      </div>
     `;
+  }).join('');
 
-    // --- SMART SORTING UPDATE ---
-    const groupA = []; // Active/Upcoming
-    const groupB = []; // Archived (تم, ملغي, لم يتم)
-
-    for (const m of meetings) {
-      const sLower = (m.status || '').toLowerCase();
-      const done = isDone(m);
-      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
-
-      if (isArchived) groupB.push(m);
-      else groupA.push(m);
-    }
-
-    // Sort Group A by time (ensure earliest first)
-    groupA.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-
-    const sortedMeetings = [...groupA, ...groupB];
-
-    // --- OPTIMIZATION: Get Next Meeting ONCE outside the loop ---
-    const nextBlock = getNextMeeting(currentMeetings);
-    const targetIds = new Set(nextBlock ? nextBlock.meetings.map(m => m.id) : []);
-
-    for (const m of sortedMeetings) {
-      globalIndex++;
-      const statusClass = getStatusClass(m.status);
-
-      // Parse Ticket Number
-      const ticketMatch = m.project?.match(/AA\d+/);
-      const ticketNum = ticketMatch ? ticketMatch[0] : '';
-
-      // Determine Active State using Persistent Logic (Optimized)
-      const isTargeted = targetIds.has(m.id);
-
-      const sLower = (m.status || '').toLowerCase();
-      const done = isDone(m);
-      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
-
-      // NEW: Success Flash Logic
-      let isNewlyDone = false;
-      if (done && prevStatusMap.has(m.id) && prevStatusMap.get(m.id) !== 'done') {
-        isNewlyDone = true;
-      }
-      // Update map for next render
-      prevStatusMap.set(m.id, done ? 'done' : 'pending');
-
-      // THE GOLDEN RULE + SMART SORT: Never pulse if in Group B
-      const isActive = isTargeted && !isArchived;
-
-      // Icon logic - prioritize video if link exists
-      const icon = getStatusIcon(m.via, m.status, !!m.meetUrl);
-
-      html += `
-        <div class="meeting-row ${isActive ? 'active' : ''} ${isArchived ? 'dimmed' : ''} ${isNewlyDone ? 'just-done' : ''}" 
-             style="${isArchived ? 'opacity: 0.5;' : ''}">
-          
-          <!-- Column 1: Time -->
-          <div class="meeting-time">
-            ${formatTime12h(m.time) || '--:--'}
-          </div>
-          
-          <!-- Column 2: Meeting Details -->
-          <div class="meeting-details">
-            <div class="meeting-project-wrapper">
-                <div class="meeting-project">${escapeHTML(m.project || '—')}</div>
-                ${ticketNum ? `<div class="meeting-ticket-pill">#${ticketNum}</div>` : ''}
-            </div>
-            <div class="meeting-team-text">${escapeHTML(m.team || '—')}</div>
-          </div>
-          
-          <!-- Column 3: Divider -->
-          <div class="meeting-row-divider"></div>
-
-          <!-- Column 4: Control Zone (Badges & Actions) -->
-          <div class="meeting-control-zone">
-            <!-- Zone A: Badges (Method & Status) -->
-            <div class="zone-badges">
-              <span class="badge-pill method-badge">
-                <i data-lucide="${icon}"></i> ${escapeHTML(m.via || 'اجتماع')}
-              </span>
-              <span class="badge-pill status-badge ${statusClass}">
-                <i data-lucide="${isActive ? 'circle-dot' : 'circle'}"></i> ${escapeHTML(m.status || '—')}
-              </span>
-            </div>
-
-            <!-- Zone B: Actions -->
-            <div class="zone-actions">
-              ${ticketNum ? `<button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-                <i data-lucide="copy"></i> ${ticketNum}
-              </button>` : ''}
-              
-              ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-                <i data-lucide="video"></i> فتح الاجتماع
-              </a>` : ''}
-              
-              ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
-                <i data-lucide="ticket"></i> التذكرة
-              </a>` : ''}
-            </div>
-          </div>
-
-        </div>
-      `;
-    }
-
-    html += `</div></div>`;
-  }
-
-  // --- ANTI-FLICKER: Smart Diffing ---
-  if (container.innerHTML !== html) {
-    container.innerHTML = html;
-    // Initialize Lucide icons
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
-  }
-
-  // Update Daily Stats after render
+  if (window.lucide) window.lucide.createIcons();
   renderDailyStats();
 }
 
@@ -489,81 +325,36 @@ function renderDailyStats() {
   const total = todayMeetings.length;
 
   const doneCount = todayMeetings.filter(m => isDone(m)).length;
-  const cancelledCount = todayMeetings.filter(m => {
-    const s = (m.status || '').toLowerCase();
-    return s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
-  }).length;
+  const cancelledCount = todayMeetings.filter(m => isCancelled(m)).length;
   const pendingCount = total - doneCount - cancelledCount;
 
-  // --- Responsive Radial Gauge Math ---
-  const isMobile = window.innerWidth <= 768;
-  const radius = isMobile ? 50 : 70; // Scaled down for mobile
-  const strokeWidth = 14;
-  const svgSize = (radius + strokeWidth) * 2;
-  const center = svgSize / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  // Calculate segment lengths (ensuring total adds up to circumference)
-  const doneLength = total ? (doneCount / total) * circumference : 0;
-  const pendingLength = total ? (pendingCount / total) * circumference : 0;
-  const cancelledLength = total ? (cancelledCount / total) * circumference : 0;
-
-  // Offsets (starting top)
-  const doneOffset = 0;
-  const pendingOffset = -doneLength;
-  const cancelledOffset = -(doneLength + pendingLength);
-
-  // Arabic Grammar (The Core)
-  const parts = getArabicMeetingParts(total);
+  // Urgent Count (Today meetings < 15 mins away or overdue)
+  const now = new Date();
+  const urgentCount = todayMeetings.filter(m => {
+     if (isDone(m) || isCancelled(m)) return false;
+     const [h, min] = m.time.split(':').map(Number);
+     const mDate = new Date(now);
+     mDate.setHours(h, min, 0, 0);
+     const diffMin = (mDate - now) / 60000;
+     return diffMin <= 15;
+  }).length;
 
   container.innerHTML = `
-    <!-- 1. The Radial Gauge (SVG) -->
-    <div class="radial-gauge-wrapper breathing ${parts.isDual ? 'dual-mode' : ''}" 
-         style="width:${svgSize}px; height:${svgSize}px">
-      <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}">
-        <!-- Background Track -->
-        <circle class="radial-bg" cx="${center}" cy="${center}" r="${radius}"></circle>
-        
-        <!-- Segment 1: Done (Green) -->
-        <circle class="radial-segment segment-done" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${doneLength} ${circumference - doneLength}"
-          stroke-dashoffset="${doneOffset}"></circle>
-          
-        <!-- Segment 2: Pending (Blue/Cyan) -->
-        <circle class="radial-segment segment-pending" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${pendingLength} ${circumference - pendingLength}"
-          stroke-dashoffset="${pendingOffset}"></circle>
-          
-        <!-- Segment 3: Cancelled (Red) -->
-        <circle class="radial-segment segment-cancelled" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${cancelledLength} ${circumference - cancelledLength}"
-          stroke-dashoffset="${cancelledOffset}"></circle>
-      </svg>
-      
-      <!-- Center Text -->
-      <div class="radial-center-text">
-        ${!parts.isDual ? `<span class="radial-total-count">${parts.num}</span>` : ''}
-        <span class="radial-label ${parts.isDual ? 'large-dual' : ''}">${parts.text}</span>
-      </div>
+    <div class="kpi-chip">
+      <span class="kpi-label">مكتملة اليوم</span>
+      <span class="kpi-value text-emerald">${doneCount}</span>
     </div>
-
-    <!-- 2. The Legend (Below) -->
-    <div class="stats-legend">
-      <div class="legend-item" title="مكتملة">
-        <span class="legend-dot" style="background:var(--neon-green); box-shadow:0 0 5px var(--neon-green)"></span>
-        <span class="legend-label">مكتملة</span>
-        <span class="legend-value">${doneCount}</span>
-      </div>
-      <div class="legend-item" title="قادمة / انتظار">
-        <span class="legend-dot" style="background:var(--neon-cyan); box-shadow:0 0 5px var(--neon-cyan)"></span>
-        <span class="legend-label">قادمة</span>
-        <span class="legend-value">${pendingCount}</span>
-      </div>
-      <div class="legend-item" title="لم تتم / ملغي">
-        <span class="legend-dot" style="background:var(--neon-red); box-shadow:0 0 5px var(--neon-red)"></span>
-        <span class="legend-label">لم تتم</span>
-        <span class="legend-value">${cancelledCount}</span>
-      </div>
+    <div class="kpi-chip">
+      <span class="kpi-label">القادمة</span>
+      <span class="kpi-value text-sky">${pendingCount}</span>
+    </div>
+    <div class="kpi-chip ${urgentCount > 0 ? 'tile-urgent' : ''}">
+      <span class="kpi-label">عاجلة / الآن</span>
+      <span class="kpi-value ${urgentCount > 0 ? 'text-rose' : 'text-faint'}">${urgentCount}</span>
+    </div>
+    <div class="kpi-chip">
+      <span class="kpi-label">إجمالي الاجتماعات</span>
+      <span class="kpi-value">${total}</span>
     </div>
   `;
 }
