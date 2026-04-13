@@ -1,848 +1,299 @@
-/**
- * main.js — App entry point: initialization, rendering, auto-refresh, UI control
- * Updated with Premium UI + Daily Stats + Urgency Logic
- */
-
 import './style.css';
-import {
-  startAutoSync,
-  stopAutoSync,
-  fetchMeetings,
-  groupByDate,
-  getNextMeeting,
-  formatTodayDate,
-  getLastSyncTime,
-  getSettings,
-  updateSettings,
-  formatTime12h,
-  getStatusIcon,
-  isDone,
-  isCancelled
+import { 
+    startAutoSync, 
+    fetchMeetings, 
+    getSettings, 
+    updateSettings, 
+    formatTime12h, 
+    isDone, 
+    isCancelled 
 } from './data.js';
-import { startNotificationLoop, showToast, requestNotificationPermission } from './notifications.js';
-import { escapeHTML, formatMeetingCount, getArabicMeetingParts } from './utils.js';
 
 // ========================================
-// 🌐 State
+// 🌐 State & Constants
 // ========================================
 
-let currentMeetings = [];
-let lastSyncTimestamp = null;
-let searchQuery = '';
-let activeFilter = 'all'; // all, active, completed, cancelled
-let clockIntervalId = null;
-const prevStatusMap = new Map(); // Track previous meeting status for animations
+const DEFAULT_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
+let activeMeetings = [];
+let soundEnabled = localStorage.getItem('sound_enabled') !== 'false';
 
 // ========================================
-// ⏰ Live Clock & Daily Stats
+// ⏰ Utilities
 // ========================================
 
-function injectDailyStatsUI() {
-  const container = document.querySelector('.header-center');
-  // Inject "The Core" container if not present
-  if (container && !container.querySelector('.daily-stats-container')) {
-    const statsHTML = `<div id="daily-stats-container" class="daily-stats-container"></div>`;
-    container.insertAdjacentHTML('beforeend', statsHTML);
-  }
+function toEn(str) {
+    if (!str) return '0';
+    // Convert Arabic digits to English if needed (fallback)
+    return str.toString().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 }
 
-function startClock() {
-  injectDailyStatsUI();
-
-  const clockEl = document.getElementById('live-clock');
-  const lastUpdatedEl = document.getElementById('last-updated-seconds');
-
-  const update = () => {
+function getTodayDateStr() {
     const now = new Date();
-    if (clockEl) {
-      // 12h Format with Arabic suffixes and English digits
-      let h = now.getHours();
-      const m = String(now.getMinutes()).padStart(2, '0');
-      const s = String(now.getSeconds()).padStart(2, '0');
-      const suffix = h < 12 ? 'ص' : 'م';
-      h = h % 12 || 12;
-      clockEl.textContent = `${h}:${m}:${s} ${suffix}`;
-    }
-
-    if (lastUpdatedEl && lastSyncTimestamp) {
-      const diffSec = Math.floor((now - lastSyncTimestamp) / 1000);
-      lastUpdatedEl.textContent = `(منذ ${diffSec} ثانية)`;
-
-      // Visual cue if stale > 5 mins (300s)
-      if (diffSec > 300) lastUpdatedEl.style.color = 'var(--neon-red)';
-      else lastUpdatedEl.style.color = 'var(--neon-cyan)';
-    }
-
-    // Interactive Hero Section
-    updateHeroSection();
-  };
-
-  update();
-  if (clockIntervalId) clearInterval(clockIntervalId);
-  clockIntervalId = setInterval(update, 1000);
+    return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 }
 
-
+function getDeveloperGradient(team) {
+    const t = (team || '').toLowerCase();
+    if (/أشرف|اشرف|ashraf/i.test(t)) return 'linear-gradient(135deg, #00C853, #1de9b6)';
+    if (/مجاهد|mojahed/i.test(t)) return 'linear-gradient(135deg, #2962FF, #00B0FF)';
+    if (/شادي|shady/i.test(t)) return 'linear-gradient(135deg, #C6242C, #9B1B22)';
+    if (/حسام|hossam/i.test(t)) return 'linear-gradient(135deg, #FF6D00, #FFAB00)';
+    return 'linear-gradient(135deg, #334155, #1e293b)';
+}
 
 // ========================================
-// 🎯 Countdown Banner & Progress Bar
+// 🎨 Rendering Logic
 // ========================================
 
-function updateHeroSection() {
-  const section = document.getElementById('hero-section');
-  const container = document.getElementById('hero-container');
+function renderUI(meetings) {
+    const grid = document.getElementById('meetings-grid');
+    if (!grid) return;
 
-  if (!section || !container) return;
+    const today = getTodayDateStr();
+    const todayMeetings = meetings.filter(m => m.date === today);
 
-  const next = getNextMeeting(currentMeetings);
+    // Update Stats
+    document.getElementById('stat-total').textContent = toEn(todayMeetings.length);
+    document.getElementById('stat-done').textContent = toEn(todayMeetings.filter(m => isDone(m)).length);
+    document.getElementById('stat-pending').textContent = toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length);
+    document.getElementById('stat-urgent').textContent = toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m) && (m.status || '').includes('عاجل')).length);
 
-  if (!next) {
-    const today = formatTodayDate();
-    const todayMeetings = currentMeetings.filter(m => m.date === today);
-    const hasMeetingsToday = todayMeetings.length > 0;
-    const allFinished = hasMeetingsToday && todayMeetings.every(m => isDone(m) || isCancelled(m));
-
-    if (allFinished) {
-      section.classList.remove('hidden');
-      const doneHTML = `
-        <div class="hero-card all-done" style="flex: 1; justify-content: center; text-align: center;">
-          <div class="hero-project-info" style="align-items: center;">
-            <div class="hero-project-title" style="font-size: 2rem; color: var(--neon-green);">✅ لا اجتماعات متبقية اليوم</div>
-            <div class="hero-team">كل شيء تحت السيطرة !</div>
-          </div>
-        </div>
-      `;
-      if (container.innerHTML !== doneHTML) container.innerHTML = doneHTML;
-      return;
-    }
-
-    section.classList.add('hidden');
-    return;
-  }
-
-  section.classList.remove('hidden');
-
-  const now = new Date();
-  const [h, min] = next.time.split(':').map(Number);
-  const meetingDate = new Date(now);
-  meetingDate.setHours(h, min, 0, 0);
-
-  const diffMs = meetingDate - now;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffSec = Math.floor((diffMs % 60000) / 1000);
-
-  // --- Urgency Logic ---
-  let urgencyClass = '';
-  if (next.isOverdue || diffMin <= 2) urgencyClass = 'urgent-red';
-  else if (diffMin <= 10) urgencyClass = 'urgent-orange';
-
-  // --- Timer Text ---
-  let timerText = '';
-  let isLong = false;
-  if (next.isOverdue) {
-    timerText = 'الآن!';
-  } else if (diffMin > 59) {
-    const hours = Math.floor(diffMin / 60);
-    const mins = diffMin % 60;
-    const secs = Math.max(0, diffSec);
-    timerText = `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    isLong = true;
-  } else {
-    timerText = `${Math.max(0, diffMin)}:${String(Math.max(0, diffSec)).padStart(2, '0')}`;
-  }
-
-  // --- Progress Bar Logic ---
-  let barColor = 'linear-gradient(90deg, var(--neon-blue), var(--neon-cyan))';
-  if (next.isOverdue || diffMin < 5) barColor = 'var(--neon-red)';
-  else if (diffMin < 15) barColor = 'linear-gradient(90deg, var(--neon-orange), var(--neon-red))';
-
-  const totalMinutesScale = 60;
-  const progressPercent = next.isOverdue ? 100 : Math.min(100, Math.max(0, ((totalMinutesScale - diffMin) / totalMinutesScale) * 100));
-
-  // --- SMART RENDERING: Selective Updates ---
-  const currentMeetingIds = next.meetings.map(m => m.id).join(',');
-  const renderedIds = container.dataset.meetingIds || '';
-
-  if (renderedIds === currentMeetingIds && container.children.length === next.meetings.length) {
-    // ONLY UPDATE VALUES (No Jitter)
-    const cards = container.querySelectorAll('.hero-card');
-    cards.forEach(card => {
-      // Update Urgency Class
-      card.className = `hero-card ${urgencyClass}`;
-
-      const timerVal = card.querySelector('.countdown-value');
-      if (timerVal) {
-        timerVal.textContent = timerText;
-        timerVal.className = `countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}`;
-      }
-
-      const progressBar = card.querySelector('.hero-progress-bar');
-      if (progressBar) {
-        progressBar.style.width = `${progressPercent}%`;
-        progressBar.style.background = barColor;
-      }
+    // Sorting: Pending First, then Done, then Cancelled
+    const sorted = [...todayMeetings].sort((a, b) => {
+        const aDone = isDone(a) || isCancelled(a);
+        const bDone = isDone(b) || isCancelled(b);
+        if (aDone && !bDone) return 1;
+        if (!aDone && bDone) return -1;
+        return (a.time || '').localeCompare(b.time || '');
     });
-  } else {
-    // FULL RE-RENDER (Meetings list changed)
-    container.dataset.meetingIds = currentMeetingIds;
-    container.innerHTML = next.meetings.map(m => {
-      const ticketMatch = m.project?.match(/AA\d+/);
-      const ticketNum = ticketMatch ? ticketMatch[0] : '';
 
-      return `
-        <div class="hero-card ${urgencyClass}">
-          <div class="countdown-box">
-            <span class="countdown-label">متبقي على الاجتماع</span>
-            <span class="countdown-value ${urgencyClass ? 'urgent' : ''} ${isLong ? 'long-format' : ''}">${timerText}</span>
-            <div class="hero-time-display">
-              <i data-lucide="clock" class="icon-small"></i>
-              <span>${formatTime12h(next.time)}</span>
-            </div>
-          </div>
+    if (sorted.length > 20) grid.classList.add('grid-is-crowded');
+    else grid.classList.remove('grid-is-crowded');
 
-          <div class="hero-project-info">
-            <div class="hero-project-title" title="${escapeHTML(m.project || '')}">
-              ${escapeHTML(m.project || '')}
-            </div>
-            
-            <div class="hero-project-meta">
-              <div class="hero-team">
-                <i data-lucide="users" class="icon-small"></i>
-                <span>${escapeHTML(m.team || '')}</span>
-              </div>
-              ${ticketNum ? `
-                <div class="hero-ticket">
-                  <i data-lucide="ticket" class="icon-small"></i>
-                  <span>#${ticketNum}</span>
+    grid.innerHTML = sorted.map(m => {
+        const done = isDone(m);
+        const cancelled = isCancelled(m);
+        const gradient = getDeveloperGradient(m.team);
+        const ticketMatch = m.project?.match(/AA\d+/);
+        const ticketNum = ticketMatch ? ticketMatch[0] : '';
+        
+        return `
+            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}" 
+                 style="background: ${gradient}">
+                <div class="card-bg-pattern"></div>
+                ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
+                
+                <div class="card-content">
+                    <div class="mc-title">${m.project || '—'}</div>
+                    <div class="mc-subtitle">${m.team || ''} — ${m.via || 'اجتماع'}</div>
+                    
+                    <div class="mc-time">
+                        <i data-lucide="clock"></i>
+                        <span class="en-nums">${formatTime12h(m.time)}</span>
+                    </div>
+
+                    <div class="mc-blocks">
+                        <div class="mc-block">
+                            <div class="mc-block-header">
+                                <span>انضم إلى جوجل ميت</span>
+                            </div>
+                            <a href="${m.meetUrl || '#'}" target="_blank" 
+                               class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
+                                <i data-lucide="video" class="btn-icon"></i> دخول
+                            </a>
+                        </div>
+                        
+                        ${ticketNum ? `
+                        <div class="mc-block">
+                            <button class="mc-btn gold-btn" onclick="window.copyToSlack(this, '${ticketNum}')">
+                                <i data-lucide="copy" class="btn-icon"></i> نسخ ${ticketNum}
+                                <div class="copy-toast">تم النسخ !</div>
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
                 </div>
-              ` : ''}
+                
+                ${done ? '<div class="completed-icon"><i data-lucide="check-circle-2"></i></div>' : ''}
             </div>
-
-            <div class="hero-actions">
-              ${ticketNum ? `
-                <button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-                  <i data-lucide="copy"></i> ${ticketNum}
-                </button>
-              ` : ''}
-              
-              ${m.meetUrl ? `
-                <a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-                  <i data-lucide="video" class="icon-small"></i> دخول الاجتماع
-                </a>
-              ` : ''}
-            </div>
-          </div>
-
-          <div class="hero-progress-container">
-            <div class="hero-progress-bar" style="width: ${progressPercent}%; background: ${barColor}"></div>
-          </div>
-        </div>
-      `;
+        `;
     }).join('');
 
     if (window.lucide) window.lucide.createIcons();
-  }
+    updateDynamicState();
 }
 
 // ========================================
-// 🎨 Render Meetings (Interactive)
+// ⏰ Clock & Countdown
 // ========================================
 
-function getStatusClass(status) {
-  if (!status) return '';
-  const s = status.trim();
-  if (s.includes('خارجي')) return 'external';
-  if (s.includes('تم') || s.includes('نجاح')) return 'completed';
-  if (s.includes('حضوري')) return 'inperson';
-  if (s.includes('بعد') || s.includes('عن بعد')) return 'remote';
-  return '';
+function startClock() {
+    setInterval(() => {
+        const now = new Date();
+        let h = now.getHours();
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        const suffix = h < 12 ? 'ص' : 'م';
+        h = h % 12 || 12;
+        document.getElementById('live-clock').textContent = toEn(`${h}:${m}:${s}`) + ' ' + suffix;
+        const dateStr = now.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        document.getElementById('live-date').textContent = toEn(dateStr);
+    }, 1000);
 }
 
-function formatDateLabel(dateStr) {
-  if (!dateStr) return 'بدون تاريخ';
-  try {
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const date = new Date(parts[0], parseInt(parts[1]) - 1, parts[2]);
-      const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-      const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-      return `${days[date.getDay()]} ${parseInt(parts[2])} ${months[date.getMonth()]} ${parts[0]}`;
-    }
-  } catch { }
-  return dateStr;
-}
+function updateCountdown(meeting) {
+    const timer = document.getElementById('countdown-timer');
+    const badge = document.getElementById('meeting-now-badge');
+    const sideDetails = document.getElementById('sidebar-meeting-details');
+    const label = document.querySelector('.countdown-label');
 
-function renderMeetings() {
-  const container = document.getElementById('meetings-container');
-  if (!container) return;
-
-  if (currentMeetings.length === 0) {
-    container.innerHTML = `
-      <div class="no-meetings">
-        <div class="no-meetings-icon">📡</div>
-        <h3>لا توجد اجتماعات</h3>
-        <p>قم بضبط إعدادات Google Sheets للمزامنة</p>
-      </div>
-    `;
-    renderDailyStats();
-    return;
-  }
-
-
-
-  // --- FILTERING LOGIC ---
-  let filtered = currentMeetings;
-
-  // 1. Search Filter
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(m =>
-      (m.project || '').toLowerCase().includes(q) ||
-      (m.team || '').toLowerCase().includes(q) ||
-      (m.clientStatus || '').toLowerCase().includes(q) ||
-      (m.time || '').includes(q) ||
-      (m.date || '').includes(q)
-    );
-  }
-
-  // 2. Status Filter
-  if (activeFilter !== 'all') {
-    filtered = filtered.filter(m => {
-      const s = (m.status || '').toLowerCase();
-      const done = isDone(m);
-      const isCancelled_m = s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
-
-      if (activeFilter === 'active') return !done && !isCancelled_m;
-      if (activeFilter === 'completed') return done;
-      if (activeFilter === 'cancelled') return isCancelled_m;
-      return true;
-    });
-  }
-
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="no-meetings">
-        <div class="no-meetings-icon">🔍</div>
-        <h3>لا توجد نتائج</h3>
-        <p>جرب تغيير مصطلحات البحث أو الفلتر</p>
-      </div>
-    `;
-    renderDailyStats(); // Still render stats based on ALL meetings? Or filtered? Let's keep it based on today's total.
-    return;
-  }
-
-  const grouped = groupByDate(filtered);
-  const today = formatTodayDate();
-
-  let html = '';
-  let globalIndex = 0; // For staggered animation
-
-  for (const [date, meetings] of grouped) {
-    const isToday = date === today;
-    const dateLabel = formatDateLabel(date);
-
-    html += `
-      <div class="date-group">
-        <div class="date-group-header ${isToday ? 'today' : ''}">
-          <div class="date-label">
-            <span class="date-icon">${isToday ? '📌' : '📅'}</span>
-            <span class="date-text">${dateLabel}</span>
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center">
-            ${isToday ? '<span class="today-badge">اليوم</span>' : ''}
-            <span class="meeting-count">${formatMeetingCount(meetings.length)}</span>
-          </div>
-        </div>
-        <div class="meetings-table">
-    `;
-
-    // --- SMART SORTING UPDATE ---
-    const groupA = []; // Active/Upcoming
-    const groupB = []; // Archived (تم, ملغي, لم يتم)
-
-    for (const m of meetings) {
-      const sLower = (m.status || '').toLowerCase();
-      const done = isDone(m);
-      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
-
-      if (isArchived) groupB.push(m);
-      else groupA.push(m);
+    if (!meeting) {
+        timer.textContent = "00:00";
+        badge.style.display = 'none';
+        sideDetails.style.display = 'none';
+        label.textContent = "لا اجتماعات متبقية اليوم";
+        return;
     }
 
-    // Sort Group A by time (ensure earliest first)
-    groupA.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    label.textContent = "متبقى على الاجتماع القادم :";
+    const now = new Date();
+    const [h, mi] = meeting.time.split(':').map(Number);
+    const target = new Date(); target.setHours(h, mi, 0, 0);
+    const diff = target - now;
 
-    const sortedMeetings = [...groupA, ...groupB];
+    if (diff <= 0) {
+        timer.style.display = 'none'; badge.style.display = 'block';
+    } else {
+        timer.style.display = 'block'; badge.style.display = 'none';
+        const hours = Math.floor(diff / 3600000);
+        const mm = Math.floor((diff % 3600000) / 60000);
+        const ss = Math.floor((diff % 60000) / 1000);
 
-    // --- OPTIMIZATION: Get Next Meeting ONCE outside the loop ---
-    const nextBlock = getNextMeeting(currentMeetings);
-    const targetIds = new Set(nextBlock ? nextBlock.meetings.map(m => m.id) : []);
+        let timeStr = "";
+        if (hours > 0) {
+            timeStr = `${String(hours).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+        } else {
+            timeStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+        }
 
-    for (const m of sortedMeetings) {
-      globalIndex++;
-      const statusClass = getStatusClass(m.status);
-
-      // Parse Ticket Number
-      const ticketMatch = m.project?.match(/AA\d+/);
-      const ticketNum = ticketMatch ? ticketMatch[0] : '';
-
-      // Determine Active State using Persistent Logic (Optimized)
-      const isTargeted = targetIds.has(m.id);
-
-      const sLower = (m.status || '').toLowerCase();
-      const done = isDone(m);
-      const isArchived = done || isCancelled(m) || sLower.includes('postpone');
-
-      // NEW: Success Flash Logic
-      let isNewlyDone = false;
-      if (done && prevStatusMap.has(m.id) && prevStatusMap.get(m.id) !== 'done') {
-        isNewlyDone = true;
-      }
-      // Update map for next render
-      prevStatusMap.set(m.id, done ? 'done' : 'pending');
-
-      // THE GOLDEN RULE + SMART SORT: Never pulse if in Group B
-      const isActive = isTargeted && !isArchived;
-
-      // Icon logic - prioritize video if link exists
-      const icon = getStatusIcon(m.via, m.status, !!m.meetUrl);
-
-      html += `
-        <div class="meeting-row ${isActive ? 'active' : ''} ${isArchived ? 'dimmed' : ''} ${isNewlyDone ? 'just-done' : ''}" 
-             style="${isArchived ? 'opacity: 0.5;' : ''}">
-          
-          <!-- Column 1: Time -->
-          <div class="meeting-time">
-            ${formatTime12h(m.time) || '--:--'}
-          </div>
-          
-          <!-- Column 2: Meeting Details -->
-          <div class="meeting-details">
-            <div class="meeting-project-wrapper">
-                <div class="meeting-project">${escapeHTML(m.project || '—')}</div>
-                ${ticketNum ? `<div class="meeting-ticket-pill">#${ticketNum}</div>` : ''}
-            </div>
-            <div class="meeting-team-text">${escapeHTML(m.team || '—')}</div>
-          </div>
-          
-          <!-- Column 3: Divider -->
-          <div class="meeting-row-divider"></div>
-
-          <!-- Column 4: Control Zone (Badges & Actions) -->
-          <div class="meeting-control-zone">
-            <!-- Zone A: Badges (Method & Status) -->
-            <div class="zone-badges">
-              <span class="badge-pill method-badge">
-                <i data-lucide="${icon}"></i> ${escapeHTML(m.via || 'اجتماع')}
-              </span>
-              <span class="badge-pill status-badge ${statusClass}">
-                <i data-lucide="${isActive ? 'circle-dot' : 'circle'}"></i> ${escapeHTML(m.status || '—')}
-              </span>
-            </div>
-
-            <!-- Zone B: Actions -->
-            <div class="zone-actions">
-              ${ticketNum ? `<button class="btn-action secondary-ghost btn-copy-slack" data-code="${ticketNum}" title="نسخ كود السلاك">
-                <i data-lucide="copy"></i> ${ticketNum}
-              </button>` : ''}
-              
-              ${m.meetUrl ? `<a href="${m.meetUrl}" target="_blank" class="btn-action primary-glow">
-                <i data-lucide="video"></i> فتح الاجتماع
-              </a>` : ''}
-              
-              ${m.ticketUrl ? `<a href="${m.ticketUrl}" target="_blank" class="btn-action secondary-ghost">
-                <i data-lucide="ticket"></i> التذكرة
-              </a>` : ''}
-            </div>
-          </div>
-
-        </div>
-      `;
+        timer.textContent = toEn(timeStr);
+        timer.style.color = diff < 15 * 60000 ? "var(--color-urgent)" : "var(--text-white)";
     }
 
-    html += `</div></div>`;
-  }
+    sideDetails.style.display = 'block';
+    document.getElementById('side-m-title').textContent = meeting.project;
+    document.getElementById('side-m-meta').textContent = `${meeting.team} — ${formatTime12h(meeting.time)}`;
+}
 
-  // --- ANTI-FLICKER: Smart Diffing ---
-  if (container.innerHTML !== html) {
-    container.innerHTML = html;
-    // Initialize Lucide icons
-    if (window.lucide) {
-      window.lucide.createIcons();
+function updateDynamicState() {
+    if (!activeMeetings || !activeMeetings.length) {
+        updateCountdown(null);
+        return;
     }
-  }
 
-  // Update Daily Stats after render
-  renderDailyStats();
+    const today = getTodayDateStr();
+    const filtered = activeMeetings.filter(m => m.date === today && !isCancelled(m));
+    
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    
+    let current = null;
+    let pending = filtered
+        .filter(m => !isDone(m))
+        .map(m => { 
+            const [h, mi] = m.time.split(':').map(Number); 
+            return { m, mins: h * 60 + mi }; 
+        })
+        .sort((a, b) => a.mins - b.mins);
+
+    const match = pending.find(x => x.mins >= nowMins - 30);
+    if (match) current = match.m;
+    
+    updateCountdown(current);
 }
 
 // ========================================
-// 📊 Daily Stats
+// 🔘 UI Handlers
 // ========================================
 
-function renderDailyStats() {
-  const container = document.getElementById('daily-stats-container');
-  if (!container) return;
+window.manualRefresh = async () => {
+    const btn = document.getElementById('refresh-now-btn');
+    btn.style.opacity = "0.5";
+    const result = await fetchMeetings();
+    activeMeetings = result.meetings;
+    renderUI(activeMeetings);
+    setTimeout(() => btn.style.opacity = "1", 1000);
+};
 
-  const todayStr = formatTodayDate();
-  const todayMeetings = currentMeetings.filter(m => m.date === todayStr);
-  const total = todayMeetings.length;
+window.toggleTheme = () => {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    const icon = document.querySelector('#theme-toggle-btn i');
+    if (icon) {
+        icon.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
+        window.lucide.createIcons();
+    }
+};
 
-  const doneCount = todayMeetings.filter(m => isDone(m)).length;
-  const cancelledCount = todayMeetings.filter(m => {
-    const s = (m.status || '').toLowerCase();
-    return s.includes('ملغي') || s.includes('لم يتم') || s.includes('cancel');
-  }).length;
-  const pendingCount = total - doneCount - cancelledCount;
+window.toggleSound = () => {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem('sound_enabled', soundEnabled);
+    const btn = document.getElementById('sound-toggle-btn');
+    if (btn) {
+        btn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}"></i>`;
+        window.lucide.createIcons();
+    }
+};
 
-  // --- Responsive Radial Gauge Math ---
-  const isMobile = window.innerWidth <= 768;
-  const radius = isMobile ? 50 : 70; // Scaled down for mobile
-  const strokeWidth = 14;
-  const svgSize = (radius + strokeWidth) * 2;
-  const center = svgSize / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  // Calculate segment lengths (ensuring total adds up to circumference)
-  const doneLength = total ? (doneCount / total) * circumference : 0;
-  const pendingLength = total ? (pendingCount / total) * circumference : 0;
-  const cancelledLength = total ? (cancelledCount / total) * circumference : 0;
-
-  // Offsets (starting top)
-  const doneOffset = 0;
-  const pendingOffset = -doneLength;
-  const cancelledOffset = -(doneLength + pendingLength);
-
-  // Arabic Grammar (The Core)
-  const parts = getArabicMeetingParts(total);
-
-  container.innerHTML = `
-    <!-- 1. The Radial Gauge (SVG) -->
-    <div class="radial-gauge-wrapper breathing ${parts.isDual ? 'dual-mode' : ''}" 
-         style="width:${svgSize}px; height:${svgSize}px">
-      <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}">
-        <!-- Background Track -->
-        <circle class="radial-bg" cx="${center}" cy="${center}" r="${radius}"></circle>
-        
-        <!-- Segment 1: Done (Green) -->
-        <circle class="radial-segment segment-done" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${doneLength} ${circumference - doneLength}"
-          stroke-dashoffset="${doneOffset}"></circle>
-          
-        <!-- Segment 2: Pending (Blue/Cyan) -->
-        <circle class="radial-segment segment-pending" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${pendingLength} ${circumference - pendingLength}"
-          stroke-dashoffset="${pendingOffset}"></circle>
-          
-        <!-- Segment 3: Cancelled (Red) -->
-        <circle class="radial-segment segment-cancelled" cx="${center}" cy="${center}" r="${radius}"
-          stroke-dasharray="${cancelledLength} ${circumference - cancelledLength}"
-          stroke-dashoffset="${cancelledOffset}"></circle>
-      </svg>
-      
-      <!-- Center Text -->
-      <div class="radial-center-text">
-        ${!parts.isDual ? `<span class="radial-total-count">${parts.num}</span>` : ''}
-        <span class="radial-label ${parts.isDual ? 'large-dual' : ''}">${parts.text}</span>
-      </div>
-    </div>
-
-    <!-- 2. The Legend (Below) -->
-    <div class="stats-legend">
-      <div class="legend-item" title="مكتملة">
-        <span class="legend-dot" style="background:var(--neon-green); box-shadow:0 0 5px var(--neon-green)"></span>
-        <span class="legend-label">مكتملة</span>
-        <span class="legend-value">${doneCount}</span>
-      </div>
-      <div class="legend-item" title="قادمة / انتظار">
-        <span class="legend-dot" style="background:var(--neon-cyan); box-shadow:0 0 5px var(--neon-cyan)"></span>
-        <span class="legend-label">قادمة</span>
-        <span class="legend-value">${pendingCount}</span>
-      </div>
-      <div class="legend-item" title="لم تتم / ملغي">
-        <span class="legend-dot" style="background:var(--neon-red); box-shadow:0 0 5px var(--neon-red)"></span>
-        <span class="legend-label">لم تتم</span>
-        <span class="legend-value">${cancelledCount}</span>
-      </div>
-    </div>
-  `;
-}
-
-
-
-// ========================================
-// ⚙️ UI Logic & Settings Modal
-// ========================================
-
-function setupSettingsModal() {
-  const modal = document.getElementById('settings-modal');
-  const btn = document.getElementById('settings-btn');
-  const closeBtn = document.getElementById('close-modal-btn');
-  const saveBtn = document.getElementById('save-settings-btn');
-
-  const inputSheetId = document.getElementById('sheet-id-input');
-  const checkSound = document.getElementById('sound-toggle');
-  const checkTheme = document.getElementById('theme-toggle');
-  const selectInterval = document.getElementById('refresh-interval');
-
-  // Open Modal
-  btn?.addEventListener('click', () => {
+window.toggleSettings = () => {
+    const modal = document.getElementById('settings-modal');
+    modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
     const settings = getSettings();
-    if (inputSheetId) inputSheetId.value = settings.sheetId || '';
-    if (checkSound) checkSound.checked = settings.soundEnabled;
-    if (checkTheme) checkTheme.checked = document.documentElement.classList.contains('light-mode');
-    if (selectInterval) selectInterval.value = settings.refreshInterval;
+    document.getElementById('sheet-key-input').value = settings.sheetId || DEFAULT_KEY;
+};
 
-    modal?.classList.remove('hidden');
-  });
-
-  // Close Modal
-  const close = () => modal?.classList.add('hidden');
-  closeBtn?.addEventListener('click', close);
-  modal?.addEventListener('click', (e) => {
-    if (e.target === modal) close();
-  });
-
-  // Theme Toggle (Immediate Effect)
-  checkTheme?.addEventListener('change', (e) => {
-    document.documentElement.classList.toggle('light-mode', e.target.checked);
-    localStorage.setItem('aait_theme', e.target.checked ? 'light' : 'dark');
-  });
-
-  // Save Settings
-  saveBtn?.addEventListener('click', () => {
-    const newSettings = {
-      sheetId: inputSheetId?.value.trim(),
-      soundEnabled: checkSound?.checked,
-      refreshInterval: parseFloat(selectInterval?.value || '5')
-    };
-
-    updateSettings(newSettings);
-    close();
-
-    showToast({ title: 'تم الحفظ', message: 'جاري تحديث النظام...', level: 'info' });
-
-    // Restart Sync with new settings
-    stopAutoSync();
-    initSync();
-  });
-}
-
-// ========================================
-// 🔄 Sync & Actions
-// ========================================
-
-function handleSyncResult({ meetings, fromCache, error }) {
-  const dot = document.querySelector('.sync-dot');
-  const text = document.querySelector('.sync-text');
-  const dateEl = document.getElementById('last-sync-time');
-
-  if (!error) {
-    lastSyncTimestamp = new Date();
-    // 3. Updates UI
-    currentMeetings = meetings;
-    renderMeetings();
-    updateHeroSection();
-
-    dot?.classList.add('live');
-    dot?.classList.remove('error');
-    text.textContent = fromCache ? 'مؤقت (Cache)' : 'متصل';
-
-    // Update footer time
-    if (dateEl) {
-      const now = new Date();
-      let h = now.getHours();
-      const m = String(now.getMinutes()).padStart(2, '0');
-      const suffix = h < 12 ? 'ص' : 'م';
-      h = h % 12 || 12;
-      dateEl.textContent = `آخر تحديث: ${h}:${m} ${suffix} `;
+window.saveSettings = () => {
+    const val = document.getElementById('sheet-key-input').value.trim();
+    if (val) {
+        updateSettings({ sheetId: val });
+        window.toggleSettings();
+        window.manualRefresh();
     }
+};
 
-    // Warning if empty
-    if (meetings.length === 0 && !fromCache) {
-      showToast({ title: 'تنبيه', message: 'لم يتم العثور على اجتماعات (الجدول فارغ؟)', level: 'warning' });
-    }
-
-  } else {
-    dot?.classList.add('error');
-    text.textContent = 'خطأ اتصال';
-    // Don't overwrite currentMeetings on error unless it's initial load? 
-    // Actually handleSyncResult doesn't overwrite if error. 
-    // Wait, the original code in handleSyncResult was:
-    // if (!error) { currentMeetings = meetings; ... }
-
-    showToast({ title: 'خطأ في المزامنة', message: error, level: 'warning', icon: '⚠️' });
-  }
-
-  // Stop button spinning
-  document.getElementById('sync-now-btn')?.classList.remove('spinning');
-}
-
-function initSync() {
-  const settings = getSettings();
-  if (!settings.sheetId) {
-    showToast({ title: 'تنبيه', message: 'يرجى إدخال Sheet ID من الإعدادات', level: 'warning' });
-    document.getElementById('settings-btn')?.click(); // Open settings
-    return;
-  }
-
-  startAutoSync(handleSyncResult);
-}
-
-function setupSyncButton() {
-  const btn = document.getElementById('sync-now-btn');
-  btn?.addEventListener('click', () => {
-    btn.classList.add('spinning');
-    fetchMeetings().then(handleSyncResult);
-  });
-}
-
-// ========================================
-// 🔎 Toolbar Logic
-// ========================================
-
-function setupToolbar() {
-  const toolbar = document.getElementById('toolbar');
-  const searchInput = document.getElementById('search-input');
-  const clearBtn = document.getElementById('clear-search');
-  const filterBtns = document.querySelectorAll('.filter-btn');
-
-  if (!toolbar) return;
-
-  // Reveal toolbar
-  toolbar.classList.remove('hidden');
-
-  // Search Input (Debounced 300ms)
-  let debounceTimer;
-  searchInput?.addEventListener('input', (e) => {
-    clearTimeout(debounceTimer);
-    const value = e.target.value.trim();
-
-    debounceTimer = setTimeout(() => {
-      searchQuery = value;
-      clearBtn?.classList.toggle('hidden', !searchQuery);
-      renderMeetings();
-    }, 300);
-  });
-
-  // Clear Button
-  clearBtn?.addEventListener('click', () => {
-    searchQuery = '';
-    if (searchInput) searchInput.value = '';
-    clearBtn.classList.add('hidden');
-    renderMeetings();
-  });
-
-  // Filter Buttons
-  filterBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Remove active class from all
-      filterBtns.forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-pressed', 'false');
-      });
-      // Add to clicked
-      btn.classList.add('active');
-      btn.setAttribute('aria-pressed', 'true');
-
-      // Update state
-      activeFilter = btn.dataset.filter;
-      renderMeetings();
+window.copyToSlack = (btn, text) => {
+    navigator.clipboard.writeText(text).then(() => {
+        const toast = btn.querySelector('.copy-toast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2000);
     });
-  });
-}
+};
 
 // ========================================
-// 🚀 App Initialization
+// 🚀 Initialization
 // ========================================
 
-// ========================================
-// 📋 Copy to Clipboard
-// ========================================
-
-async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast({ title: 'تم النسخ', message: `تم نسخ الكود: ${text}`, level: 'info' });
-  } catch (err) {
-    console.error('Failed to copy', err);
-    showToast({ title: 'خطأ', message: 'فشل النسخ', level: 'warning' });
-  }
-}
-
-// ========================================
-// 🎨 Theme Logic
-// ========================================
-
-function setupThemeToggle() {
-  const toggleBtn = document.getElementById('header-theme-toggle');
-
-  const updateIcon = (isLight) => {
-    if (!toggleBtn) return;
-    const iconName = isLight ? 'sun' : 'moon';
-    toggleBtn.innerHTML = `<i data-lucide="${iconName}"></i>`;
-    if (window.lucide) window.lucide.createIcons();
-  };
-
-  const isLight = document.documentElement.classList.contains('light-mode');
-  updateIcon(isLight);
-
-  toggleBtn?.addEventListener('click', () => {
-    const isLightNow = document.documentElement.classList.toggle('light-mode');
-    localStorage.setItem('aait_theme', isLightNow ? 'light' : 'dark');
-    updateIcon(isLightNow);
-
-    const settingsToggle = document.getElementById('theme-toggle');
-    if (settingsToggle) settingsToggle.checked = isLightNow;
-  });
-}
-
-// ========================================
-// 🖱️ Start Handler
-// ========================================
-
-document.addEventListener('DOMContentLoaded', () => {
-  const startBtn = document.getElementById('start-btn');
-  const overlay = document.getElementById('start-overlay');
-  const app = document.getElementById('app');
-
-  // Delegated Event Listener for Copy Buttons
-  document.addEventListener('click', (e) => {
-    const copyBtn = e.target.closest('.btn-copy-slack');
-    if (copyBtn) {
-      e.preventDefault();
-      const code = copyBtn.dataset.code;
-      if (code) copyToClipboard(code);
+async function initApp() {
+    startClock();
+    
+    // Theme sync
+    if (localStorage.getItem('theme') === 'light') {
+        document.body.classList.add('light-mode');
     }
-  });
 
-  startBtn?.addEventListener('click', () => {
-    requestNotificationPermission();
-    overlay.classList.add('hidden');
-    app.classList.remove('hidden');
-    initApp();
-  });
-});
+    // Sound sync
+    if (!soundEnabled) {
+        const icon = document.querySelector('#sound-toggle-btn i');
+        if (icon) icon.setAttribute('data-lucide', 'volume-x');
+    }
 
-function initApp() {
-  const savedTheme = localStorage.getItem('aait_theme');
-  if (savedTheme === 'light') {
-    document.documentElement.classList.add('light-mode');
-  }
+    // Start Auto-Sync (10s interval is handled inside data.js)
+    startAutoSync((result) => {
+        activeMeetings = result.meetings;
+        renderUI(activeMeetings);
+    });
 
-  setupThemeToggle(); // Initialize Header Toggle
-  startClock();
-  setupSettingsModal();
-  setupSyncButton();
-  setupToolbar();
-  initSync();
-
-  // Start notification loop
-  startNotificationLoop(
-    () => currentMeetings,
-    formatTodayDate,
-    updateHeroSection
-  );
-
-  console.log('🚀 AAIT Mission Control initialized');
+    setInterval(() => updateDynamicState(), 1000);
 }
+
+document.addEventListener('DOMContentLoaded', initApp);
