@@ -12,7 +12,7 @@ const STORAGE_KEY_LAST_SYNC = 'aait_last_sync';
 
 const DEFAULT_SETTINGS = {
     sheetId: '', // User must provide this
-    refreshInterval: 0.5, // Minutes (30 seconds)
+    refreshInterval: 0.16, // Minutes (10 seconds)
     soundEnabled: true
 };
 
@@ -372,7 +372,7 @@ export function startAutoSync(callback) {
     stopAutoSync(); // Stop existing if any
 
     const { refreshInterval } = getSettings();
-    const intervalMs = Math.max(0.25, parseFloat(refreshInterval)) * 60 * 1000;
+    const intervalMs = Math.max(0.16, parseFloat(refreshInterval)) * 60 * 1000;
 
     // Concurrency & Stability Control
     let latestRequestTime = 0;
