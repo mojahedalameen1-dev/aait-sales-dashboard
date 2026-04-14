@@ -187,12 +187,11 @@ function forwardFillDates(rows) {
  * Detect if a row is a date header row (only date, rest empty)
  */
 function isDateHeaderRow(row) {
-    const dateField = (row[0] || '').trim();
-    if (!dateField || !/\d/.test(dateField)) return false;
+    const project = (row[1] || '').trim();
+    const time    = (row[3] || '').trim();  // D column (الوقت)
 
-    // If most other fields are empty, it's likely a date header
-    const nonEmptyFields = row.slice(1).filter(f => (f || '').trim() !== '');
-    return nonEmptyFields.length <= 1;
+    // If no project AND no time, it's a structural/header row
+    return !project && !time;
 }
 
 /**
@@ -274,23 +273,26 @@ function mapRowsToMeetings(rows) {
     const filledRows = forwardFillDates(dataRows);
 
     const meetings = [];
-    let id = 0;
+
 
     for (const row of filledRows) {
         if (isDateHeaderRow(row)) continue;
 
         // Check minimum columns existence
-        const project = (row[1] || '').trim();  // B column
-        const time = (row[3] || '').trim();     // C column (الساعة)
+        const project = (row[1] || '').trim();  // B column: اسم المشروع
+        const team    = (row[2] || '').trim();  // C column: الفريق / المهندس
+        const time    = (row[3] || '').trim();  // D column: الساعة (الوقت)
 
         if (!project && !time) continue;
 
-        id++;
+        // BUG-02: Stable ID Generation
+        const stableId = btoa(unescape(encodeURIComponent(`${row[0]}-${time}-${project}`))).substring(0, 12).replace(/\//g, '_');
+
         meetings.push({
-            id: `m-${id}`,
+            id: stableId,
             date: normalizeDate((row[0] || '').trim()),
             project: project,
-            team: (row[2] || '').trim(),
+            team: team,
             time: parseTimeStr(time),
             via: (row[4] || '').trim(),
             status: (row[5] || '').trim(),
@@ -523,74 +525,6 @@ export function isCancelled(meeting) {
     return /ملغ|لم يتم|cancel|postpone|مؤجل/i.test(s);
 }
 
-export function getNextMeeting(meetings) {
-    const today = formatTodayDate();
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-    // 1. Get Today's Meetings that are NOT "Done" and NOT "Cancelled"
-    const pendingToday = meetings.filter(m => {
-        if (m.date !== today) return false;
-        return !isDone(m) && !isCancelled(m);
-    });
-
-    if (pendingToday.length === 0) return null;
-
-    // 2. Split into FUTURE and OVERDUE groups
-    const futureMeetings = [];
-    const overdueMeetings = [];
-
-    for (const m of pendingToday) {
-        const [h, min] = m.time.split(':').map(Number);
-        const meetingMinutes = h * 60 + min;
-        if (meetingMinutes >= nowMinutes) {
-            futureMeetings.push(m);
-        } else if (meetingMinutes >= (nowMinutes - 60)) {
-            // Only include overdue if within last 60 min
-            overdueMeetings.push(m);
-        }
-    }
-
-    // 3. PRIORITY: Future meetings FIRST, then overdue as fallback
-    const sortByTime = (a, b) => {
-        const [h1, mm1] = a.time.split(':').map(Number);
-        const [h2, mm2] = b.time.split(':').map(Number);
-        return (h1 * 60 + mm1) - (h2 * 60 + mm2);
-    };
-
-    let targetMeetings;
-    let isOverdue = false;
-
-    if (futureMeetings.length > 0) {
-        // Show the nearest FUTURE meeting
-        futureMeetings.sort(sortByTime);
-        targetMeetings = futureMeetings;
-        isOverdue = false;
-    } else if (overdueMeetings.length > 0) {
-        // No future meetings — fall back to the most recent overdue
-        overdueMeetings.sort(sortByTime);
-        targetMeetings = overdueMeetings;
-        isOverdue = true;
-    } else {
-        return null;
-    }
-
-    const targetTime = targetMeetings[0].time;
-    const batch = targetMeetings.filter(m => m.time === targetTime);
-
-    // Metrics
-    const [hBatch, minBatch] = targetTime.split(':').map(Number);
-    const meetingMinutes = hBatch * 60 + minBatch;
-    const diff = meetingMinutes - nowMinutes;
-
-    return {
-        meetings: batch,
-        time: targetTime,
-        minutesUntil: diff,
-        totalMinutes: meetingMinutes,
-        isOverdue: isOverdue
-    };
-}
 
 export function getStatusIcon(via, status, hasMeetUrl = false) {
     // 1. Force Video if there's a meeting link

@@ -146,25 +146,20 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 const triggeredNotifications = new Set();
 let lastNotifiedDate = new Date().toDateString();
 
-function resetNotificationsIfNewDay() {
-    const today = new Date().toDateString();
-    if (today !== lastNotifiedDate) {
-        triggeredNotifications.clear();
-        lastNotifiedDate = today;
-        // console.log('🔄 Daily notification reset');
-    }
-}
+// FUNC-03: Periodic clear to prevent memory accumulation and allow re-notifying if needed (e.g. after a fix)
+setInterval(() => {
+    triggeredNotifications.clear();
+    // console.log('🕒 Hourly notification set cleanup');
+}, 60 * 60 * 1000);
 
 export function checkMeetingTimers(meetings, todayDate) {
-    resetNotificationsIfNewDay();
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
     const todayMeetings = meetings.filter(m => m.date === todayDate && m.time);
 
     for (const meeting of todayMeetings) {
-        const status = (meeting.status || '').trim();
-        if (status === "ملغي" || status === "لم يتم" || status === "تم") continue;
+        if (isDone(meeting) || isCancelled(meeting)) continue;
 
         const [h, min] = meeting.time.split(':').map(Number);
         if (isNaN(h) || isNaN(min)) continue;
@@ -172,26 +167,22 @@ export function checkMeetingTimers(meetings, todayDate) {
         const meetingMinutes = h * 60 + min;
         const diff = meetingMinutes - nowMinutes;
 
-        // console.log(`[Timer] ${meeting.id} (${meeting.time}): diff=${diff}m`); // Removed to save memory
-
         const prefix = getEngineerPrefix(meeting.team);
 
-        // Logic A: 30 Minutes Warning (29 <= diff <= 30)
-        if (diff >= 29 && diff <= 30) {
+        // Logic A: 30 Minutes Warning (Expanded window: 28 to 32)
+        if (diff >= 28 && diff <= 32) {
             const key = `${meeting.id}_30min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                console.log(`[Trigger] 30m Audio for ${meeting.id}`);
                 triggerAlert(meeting, prefix, 30, diff);
             }
         }
 
-        // Logic B: 5 Minutes Warning (4 <= diff <= 5)
-        if (diff >= 4 && diff <= 5) {
+        // Logic B: 5 Minutes Warning (Expanded window: 3 to 7)
+        if (diff >= 3 && diff <= 7) {
             const key = `${meeting.id}_5min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                console.log(`[Trigger] 5m Audio for ${meeting.id}`);
                 triggerAlert(meeting, prefix, 5, diff);
             }
         }

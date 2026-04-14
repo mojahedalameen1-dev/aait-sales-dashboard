@@ -20,19 +20,24 @@ export function escapeHTML(str) {
  */
 export function formatMeetingCount(count) {
     const parts = getArabicMeetingParts(count);
-    if (parts.isDual) return parts.text;
+    if (parts.isDual || parts.isZero || parts.isSingle) return parts.text;
     return `${parts.num} ${parts.text}`.trim();
 }
 
 /**
  * Returns meeting parts for UI logic (number/text/dual state)
  * @param {number} count 
- * @returns {{num: string, text: string, isDual: boolean}}
+ * @returns {{num: string, text: string, isDual: boolean, isZero: boolean, isSingle: boolean}}
  */
 export function getArabicMeetingParts(count) {
-    if (count === 0) return { num: '0', text: 'اجتماع', isDual: false };
-    if (count === 1) return { num: '1', text: 'اجتماع', isDual: false };
-    if (count === 2) return { num: '', text: 'اجتماعان', isDual: true };
-    if (count >= 3 && count <= 10) return { num: String(count), text: 'اجتماعات', isDual: false };
-    return { num: String(count), text: 'اجتماع', isDual: false };
+    if (count === 0) return { num: '0', text: 'لا اجتماعات', isDual: false, isZero: true, isSingle: false };
+    if (count === 1) return { num: '1', text: 'اجتماع واحد', isDual: false, isZero: false, isSingle: true };
+    if (count === 2) return { num: '', text: 'اجتماعان', isDual: true, isZero: false, isSingle: false };
+    
+    if (count >= 3 && count <= 10) {
+        return { num: String(count), text: 'اجتماعات', isDual: false, isZero: false, isSingle: false };
+    }
+    
+    // 11+ suffix becomes "اجتماعاً" (singular accusative)
+    return { num: String(count), text: 'اجتماع', isDual: false, isZero: false, isSingle: false };
 }

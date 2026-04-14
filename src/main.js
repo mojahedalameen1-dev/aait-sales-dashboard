@@ -8,6 +8,14 @@ import {
     isDone, 
     isCancelled 
 } from './data.js';
+import { 
+    startNotificationLoop, 
+    requestNotificationPermission 
+} from './notifications.js';
+import { 
+    escapeHTML, 
+    formatMeetingCount 
+} from './utils.js';
 
 // ========================================
 // 🌐 State & Constants
@@ -16,6 +24,10 @@ import {
 const DEFAULT_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 let activeMeetings = [];
 let soundEnabled = localStorage.getItem('sound_enabled') !== 'false';
+
+// BUG-03 tracker
+let clockIntervalId = null;
+let dynamicUpdateIntervalId = null;
 
 // ========================================
 // ⏰ Utilities
@@ -45,18 +57,29 @@ function getDeveloperGradient(team) {
 // 🎨 Rendering Logic
 // ========================================
 
+/**
+ * Safely get or update text content of an element by ID
+ */
+function setSafeText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
 function renderUI(meetings) {
     const grid = document.getElementById('meetings-grid');
-    if (!grid) return;
+    if (!grid) {
+        console.error('Missing #meetings-grid');
+        return;
+    }
 
     const today = getTodayDateStr();
     const todayMeetings = meetings.filter(m => m.date === today);
 
-    // Update Stats
-    document.getElementById('stat-total').textContent = toEn(todayMeetings.length);
-    document.getElementById('stat-done').textContent = toEn(todayMeetings.filter(m => isDone(m)).length);
-    document.getElementById('stat-pending').textContent = toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length);
-    document.getElementById('stat-urgent').textContent = toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m) && (m.status || '').includes('عاجل')).length);
+    // Update Stats (Arabic Grammar)
+    setSafeText('stat-total', formatMeetingCount(todayMeetings.length));
+    setSafeText('stat-done', formatMeetingCount(todayMeetings.filter(m => isDone(m)).length));
+    setSafeText('stat-pending', formatMeetingCount(todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length));
+    setSafeText('stat-urgent', toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m) && (m.status || '').includes('عاجل')).length));
 
     // Sorting: Pending First, then Done, then Cancelled
     const sorted = [...todayMeetings].sort((a, b) => {
@@ -84,8 +107,8 @@ function renderUI(meetings) {
                 ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
                 
                 <div class="card-content">
-                    <div class="mc-title">${m.project || '—'}</div>
-                    <div class="mc-subtitle">${m.team || ''} — ${m.via || 'اجتماع'}</div>
+                    <div class="mc-title">${escapeHTML(m.project || '—')}</div>
+                    <div class="mc-subtitle">${escapeHTML(m.team || '')} — ${escapeHTML(m.via || 'اجتماع')}</div>
                     
                     <div class="mc-time">
                         <i data-lucide="clock"></i>
@@ -93,15 +116,15 @@ function renderUI(meetings) {
                     </div>
 
                     <div class="mc-blocks">
-                        <div class="mc-block">
-                            <div class="mc-block-header">
-                                <span>انضم إلى جوجل ميت</span>
+                            <div class="mc-block">
+                                <div class="mc-block-header">
+                                    <span>انضم إلى جوجل ميت</span>
+                                </div>
+                                <a href="${m.meetUrl || '#'}" target="_blank" 
+                                   class="mc-btn gold-btn ${(!m.meetUrl || !/بعد|remote|zoom|meet|online/i.test(m.via || '')) ? 'not-available' : ''}">
+                                    <i data-lucide="video" class="btn-icon"></i> دخول
+                                </a>
                             </div>
-                            <a href="${m.meetUrl || '#'}" target="_blank" 
-                               class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
-                                <i data-lucide="video" class="btn-icon"></i> دخول
-                            </a>
-                        </div>
                         
                         ${ticketNum ? `
                         <div class="mc-block">
@@ -120,6 +143,8 @@ function renderUI(meetings) {
     }).join('');
 
     if (window.lucide) window.lucide.createIcons();
+
+
     updateDynamicState();
 }
 
@@ -128,16 +153,23 @@ function renderUI(meetings) {
 // ========================================
 
 function startClock() {
-    setInterval(() => {
+    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+    if (clockIntervalId) clearInterval(clockIntervalId);
+    clockIntervalId = setInterval(() => {
         const now = new Date();
         let h = now.getHours();
         const m = String(now.getMinutes()).padStart(2, '0');
         const s = String(now.getSeconds()).padStart(2, '0');
         const suffix = h < 12 ? 'ص' : 'م';
         h = h % 12 || 12;
-        document.getElementById('live-clock').textContent = toEn(`${h}:${m}:${s}`) + ' ' + suffix;
-        const dateStr = now.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-        document.getElementById('live-date').textContent = toEn(dateStr);
+        
+        setSafeText('live-clock', `${h}:${m}:${s} ${suffix}`);
+        
+        // FUNC-08: Manual Date building for English Digits
+        const dateStr = `${days[now.getDay()]}، ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+        setSafeText('live-date', dateStr);
     }, 1000);
 }
 
@@ -146,6 +178,8 @@ function updateCountdown(meeting) {
     const badge = document.getElementById('meeting-now-badge');
     const sideDetails = document.getElementById('sidebar-meeting-details');
     const label = document.querySelector('.countdown-label');
+
+    if (!timer || !badge || !sideDetails || !label) return;
 
     if (!meeting) {
         timer.textContent = "00:00";
@@ -181,8 +215,8 @@ function updateCountdown(meeting) {
     }
 
     sideDetails.style.display = 'block';
-    document.getElementById('side-m-title').textContent = meeting.project;
-    document.getElementById('side-m-meta').textContent = `${meeting.team} — ${formatTime12h(meeting.time)}`;
+    setSafeText('side-m-title', meeting.project);
+    setSafeText('side-m-meta', `${meeting.team} — ${formatTime12h(meeting.time)}`);
 }
 
 function updateDynamicState() {
@@ -218,42 +252,51 @@ function updateDynamicState() {
 
 window.manualRefresh = async () => {
     const btn = document.getElementById('refresh-now-btn');
-    btn.style.opacity = "0.5";
+    if (btn) btn.style.opacity = "0.5";
     const result = await fetchMeetings();
     activeMeetings = result.meetings;
     renderUI(activeMeetings);
-    setTimeout(() => btn.style.opacity = "1", 1000);
+    if (btn) setTimeout(() => btn.style.opacity = "1", 1000);
 };
 
 window.toggleTheme = () => {
     const isLight = document.body.classList.toggle('light-mode');
     localStorage.setItem('theme', isLight ? 'light' : 'dark');
-    const icon = document.querySelector('#theme-toggle-btn i');
+    // Important: Query for i OR svg because Lucide replaces them
+    const icon = document.querySelector('#theme-toggle-btn i, #theme-toggle-btn svg');
     if (icon) {
         icon.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
-        window.lucide.createIcons();
+        if (window.lucide) window.lucide.createIcons();
     }
 };
 
 window.toggleSound = () => {
-    soundEnabled = !soundEnabled;
-    localStorage.setItem('sound_enabled', soundEnabled);
+    const settings = getSettings();
+    const soundEnabled = !settings.soundEnabled;
+    updateSettings({ soundEnabled });
+    
     const btn = document.getElementById('sound-toggle-btn');
     if (btn) {
         btn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}"></i>`;
-        window.lucide.createIcons();
+        if (window.lucide) window.lucide.createIcons();
     }
 };
 
 window.toggleSettings = () => {
     const modal = document.getElementById('settings-modal');
+    if (!modal) return;
+    
     modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
     const settings = getSettings();
-    document.getElementById('sheet-key-input').value = settings.sheetId || DEFAULT_KEY;
+    const input = document.getElementById('sheet-key-input');
+    if (input) input.value = settings.sheetId || DEFAULT_KEY;
 };
 
 window.saveSettings = () => {
-    const val = document.getElementById('sheet-key-input').value.trim();
+    const input = document.getElementById('sheet-key-input');
+    if (!input) return;
+    
+    const val = input.value.trim();
     if (val) {
         updateSettings({ sheetId: val });
         window.toggleSettings();
@@ -262,12 +305,43 @@ window.saveSettings = () => {
 };
 
 window.copyToSlack = (btn, text) => {
-    navigator.clipboard.writeText(text).then(() => {
+    if (!btn || !text) return;
+
+    const showSuccess = () => {
         const toast = btn.querySelector('.copy-toast');
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 2000);
-    });
+        if (toast) {
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+    };
+
+    // FUNC-05: Clipboard API with Fallback
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(showSuccess).catch(err => {
+            console.warn('Clipboard API failed, trying fallback:', err);
+            fallbackCopy(text) ? showSuccess() : console.error('Copy failed');
+        });
+    } else {
+        fallbackCopy(text) ? showSuccess() : console.error('Copy failed');
+    }
 };
+
+function fallbackCopy(text) {
+    try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.setAttribute('readonly', '');
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(el);
+        return success;
+    } catch (err) {
+        return false;
+    }
+}
 
 // ========================================
 // 🚀 Initialization
@@ -276,16 +350,29 @@ window.copyToSlack = (btn, text) => {
 async function initApp() {
     startClock();
     
+    const settings = getSettings();
+
     // Theme sync
     if (localStorage.getItem('theme') === 'light') {
         document.body.classList.add('light-mode');
     }
 
     // Sound sync
-    if (!soundEnabled) {
-        const icon = document.querySelector('#sound-toggle-btn i');
-        if (icon) icon.setAttribute('data-lucide', 'volume-x');
+    if (!settings.soundEnabled) {
+        const icon = document.querySelector('#sound-toggle-btn i, #sound-toggle-btn svg');
+        if (icon) {
+            icon.setAttribute('data-lucide', 'volume-x');
+            if (window.lucide) window.lucide.createIcons();
+        }
     }
+
+    // BUG-01: Initialization of Notifications
+    requestNotificationPermission();
+    startNotificationLoop(
+        () => activeMeetings,
+        getTodayDateStr,
+        () => {} // onTick
+    );
 
     // Start Auto-Sync (10s interval is handled inside data.js)
     startAutoSync((result) => {
@@ -293,7 +380,9 @@ async function initApp() {
         renderUI(activeMeetings);
     });
 
-    setInterval(() => updateDynamicState(), 1000);
+    if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
+    dynamicUpdateIntervalId = setInterval(() => updateDynamicState(), 1000);
 }
 
 document.addEventListener('DOMContentLoaded', initApp);
+
