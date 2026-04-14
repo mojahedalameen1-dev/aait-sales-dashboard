@@ -26,8 +26,6 @@ import {
 
 const DEFAULT_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 let activeMeetings = [];
-let soundEnabled = localStorage.getItem('sound_enabled') !== 'false';
-
 // BUG-03 tracker
 let clockIntervalId = null;
 let dynamicUpdateIntervalId = null;
@@ -265,12 +263,20 @@ function updateDynamicState() {
 // ========================================
 
 window.manualRefresh = async () => {
+    if (window._isManualRefreshing) return;
+    window._isManualRefreshing = true;
+
     const btn = document.getElementById('refresh-now-btn');
-    if (btn) btn.style.opacity = "0.5";
-    const result = await fetchMeetings();
-    activeMeetings = result.meetings;
-    renderUI(activeMeetings);
-    if (btn) setTimeout(() => btn.style.opacity = "1", 1000);
+    if (btn) btn.style.opacity = '0.5';
+
+    try {
+        const result = await fetchMeetings();
+        activeMeetings = result.meetings;
+        renderUI(activeMeetings);
+    } finally {
+        window._isManualRefreshing = false;
+        if (btn) setTimeout(() => btn.style.opacity = '1', 1000);
+    }
 };
 
 window.toggleTheme = () => {

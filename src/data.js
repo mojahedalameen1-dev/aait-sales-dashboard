@@ -433,55 +433,56 @@ export function startAutoSync(callback) {
                 });
 
                 if (revertingMeetings.length > 0) {
-                    const now = Date.now();
                     const shouldSkipIds = new Set();
+                    const shouldVerifyIds = new Set();
+                    const now = Date.now();
 
                     for (const m of revertingMeetings) {
                         const history = reversionTracker.get(m.id) || [];
+                        
                         if (history.length >= 3) {
-                            // لا تُضف للعداد إذا المجتمع تجاوز الـ limit أصلاً
+                            // تجاوز الـ limit — لا تُضف للعداد، فقط تجاهل
+                            console.warn(`[Sync] Flap limit reached for meeting: ${m.project}. Ignoring.`);
                             shouldSkipIds.add(m.id);
                         } else {
+                            // لم يتجاوز — أضف للعداد وتحقق منه
                             history.push(now);
                             reversionTracker.set(m.id, history);
+                            shouldVerifyIds.add(m.id);
                         }
                     }
 
-                    // التحقق يكون لكل اجتماع على حدة
-                    const meetingsToVerify = revertingMeetings.filter(m => !shouldSkipIds.has(m.id));
-
-                    if (meetingsToVerify.length > 0) {
-                        console.warn(`[Sync] Detected state reversion for ${meetingsToVerify.length} meetings. Verifying...`);
-                        await new Promise(r => setTimeout(r, 1000)); // Minimum 1s gap
-                        
-                        const verifyResult = await fetchMeetings();
-                        if (thisRequestTime !== latestRequestTime) {
-                            isPolling = false;
-                            scheduleNext(defaultIntervalMs);
-                            return;
-                        }
-
-                        // تحقق فقط من الاجتماعات التي نُريد التحقق منها (غير المتجاوزة للـ limit)
-                        const isStillReverting = verifyResult.meetings.some(newM => {
-                            if (!meetingsToVerify.some(tm => tm.id === newM.id)) return false;
-                            const oldM = lastKnownMeetings.find(m => m.id === newM.id);
-                            return oldM && isDone(oldM) && !isDone(newM) && !isCancelled(newM);
-                        });
-
-                        if (isStillReverting) {
-                            console.log('[Sync] Reversion verified. Updates confirmed.');
-                            lastKnownMeetings = verifyResult.meetings;
-                            callback(verifyResult);
-                        } else {
-                            console.warn('[Sync] Reversion was a CDN glitch (Flap). Keeping "Done" state.');
-                        }
-                        
+                    // إذا لا يوجد شيء يحتاج تحقق، أكمل بشكل طبيعي
+                    if (shouldVerifyIds.size === 0) {
+                        lastKnownMeetings = result.meetings;
+                        callback(result);
                         isPolling = false;
                         scheduleNext(defaultIntervalMs);
                         return;
-                    } else if (revertingMeetings.length > 0) {
-                        console.warn('[Sync] All reverting meetings reached flap limit. Ignoring state reversion for this poll.');
                     }
+
+                    // تحقق فقط من الاجتماعات غير المتجاوزة
+                    console.warn('[Sync] Detected state reversion. Verifying...');
+                    await new Promise(r => setTimeout(r, 1000));
+                    const verifyResult = await fetchMeetings();
+
+                    const isStillReverting = verifyResult.meetings.some(newM => {
+                        if (!shouldVerifyIds.has(newM.id)) return false;
+                        const oldM = lastKnownMeetings.find(m => m.id === newM.id);
+                        return oldM && isDone(oldM) && !isDone(newM) && !isCancelled(newM);
+                    });
+
+                    if (isStillReverting) {
+                        console.log('[Sync] Reversion verified. Updates confirmed.');
+                        lastKnownMeetings = verifyResult.meetings;
+                        callback(verifyResult);
+                    } else {
+                        console.warn('[Sync] CDN glitch. Keeping Done state.');
+                    }
+
+                    isPolling = false;
+                    scheduleNext(defaultIntervalMs);
+                    return;
                 }
             }
 

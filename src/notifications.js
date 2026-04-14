@@ -48,17 +48,19 @@ export function unlockAudio() {
 
     const silentAudio = new Audio();
     silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
-    
+
     silentAudio.onended = () => {
         updateAudioState(AUDIO_STATE.ENABLED);
         processQueue();
     };
+
     silentAudio.onerror = () => {
-        console.error('[Audio] Unlock failed: audio error');
+        console.error('[Audio] Unlock failed: audio load error');
         updateAudioState(AUDIO_STATE.FAILED);
     };
+
     silentAudio.play().catch(err => {
-        console.error('[Audio] Unlock play() rejected:', err);
+        console.error('[Audio] Unlock play() rejected:', err.name);
         updateAudioState(AUDIO_STATE.FAILED);
     });
 }
