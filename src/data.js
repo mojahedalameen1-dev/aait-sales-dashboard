@@ -433,23 +433,25 @@ export function startAutoSync(callback) {
                 });
 
                 if (revertingMeetings.length > 0) {
-                    // Check if any meeting exceeded flap limit (3 times / 60s)
                     const now = Date.now();
-                    let shouldSkipVerification = false;
+                    const shouldSkipIds = new Set();
 
                     for (const m of revertingMeetings) {
                         const history = reversionTracker.get(m.id) || [];
-                        history.push(now);
-                        reversionTracker.set(m.id, history);
-
-                        if (history.length > 3) {
-                            console.warn(`[Sync] Flap limit reached for meeting: ${m.project}. Ignoring state reversion.`);
-                            shouldSkipVerification = true;
+                        if (history.length >= 3) {
+                            // لا تُضف للعداد إذا المجتمع تجاوز الـ limit أصلاً
+                            shouldSkipIds.add(m.id);
+                        } else {
+                            history.push(now);
+                            reversionTracker.set(m.id, history);
                         }
                     }
 
-                    if (!shouldSkipVerification) {
-                        console.warn('[Sync] Detected state reversion (Done -> Active). Verifying...');
+                    // التحقق يكون لكل اجتماع على حدة
+                    const meetingsToVerify = revertingMeetings.filter(m => !shouldSkipIds.has(m.id));
+
+                    if (meetingsToVerify.length > 0) {
+                        console.warn(`[Sync] Detected state reversion for ${meetingsToVerify.length} meetings. Verifying...`);
                         await new Promise(r => setTimeout(r, 1000)); // Minimum 1s gap
                         
                         const verifyResult = await fetchMeetings();
@@ -459,7 +461,9 @@ export function startAutoSync(callback) {
                             return;
                         }
 
+                        // تحقق فقط من الاجتماعات التي نُريد التحقق منها (غير المتجاوزة للـ limit)
                         const isStillReverting = verifyResult.meetings.some(newM => {
+                            if (!meetingsToVerify.some(tm => tm.id === newM.id)) return false;
                             const oldM = lastKnownMeetings.find(m => m.id === newM.id);
                             return oldM && isDone(oldM) && !isDone(newM) && !isCancelled(newM);
                         });
@@ -475,6 +479,8 @@ export function startAutoSync(callback) {
                         isPolling = false;
                         scheduleNext(defaultIntervalMs);
                         return;
+                    } else if (revertingMeetings.length > 0) {
+                        console.warn('[Sync] All reverting meetings reached flap limit. Ignoring state reversion for this poll.');
                     }
                 }
             }
