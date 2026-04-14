@@ -16,6 +16,16 @@
 
 <body class="dark-mode">
 
+    <!-- Audio Unlock Overlay -->
+    <div id="audio-unlock-overlay" class="audio-overlay active">
+        <div class="overlay-content">
+            <div class="pulse-icon"><i data-lucide="volume-2"></i></div>
+            <h2>تنبيهات الاجتماعات</h2>
+            <p>يرجى الضغط في أي مكان داخل لوحة التحكم لتفعيل صوت المنبهات</p>
+            <button class="btn-prime">تفعيل الصوت الآن</button>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settings-modal">
         <div class="modal-body">
@@ -39,6 +49,10 @@
         <div class="clock-section">
             <div id="live-clock" class="en-nums">--:--:--</div>
             <div id="live-date">-- --- ----</div>
+            <div id="audio-status" class="audio-status-badge locked">
+                <i data-lucide="volume-x"></i>
+                <span class="status-text">Audio Locked</span>
+            </div>
         </div>
 
         <div class="next-meeting-countdown">

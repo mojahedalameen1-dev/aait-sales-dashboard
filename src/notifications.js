@@ -9,78 +9,136 @@ import { getSettings, isDone, isCancelled } from './data.js';
 // 🔊 Audio System (Queue Based)
 // ========================================
 
+/**
+ * Audio States
+ */
+export const AUDIO_STATE = {
+    LOCKED: 'locked',
+    ENABLED: 'enabled',
+    FAILED: 'failed'
+};
+
 const playQueue = [];
 let isPlaying = false;
+let currentAudioState = AUDIO_STATE.LOCKED;
+let onStateChangeCallback = null;
+
+// Track recently warned meetings to avoid spamming fallbacks
+const recentlyWarnedMeetings = new Map(); // id -> timestamp
 
 /**
- * Add audio to queue and attempt to process
- * @param {string} filename - The name of the MP3 file in /public/sounds/
+ * Set a callback for UI updates when audio state changes
  */
-function playNotificationSound(filename) {
+export function setAudioStateListener(callback) {
+    onStateChangeCallback = callback;
+}
+
+function updateAudioState(newState) {
+    if (currentAudioState === newState) return;
+    currentAudioState = newState;
+    console.log(`[Audio] State changed to: ${newState}`);
+    if (onStateChangeCallback) onStateChangeCallback(newState);
+}
+
+/**
+ * "Unlock" audio context. Called from user interaction.
+ */
+export function unlockAudio() {
+    if (currentAudioState === AUDIO_STATE.ENABLED) return;
+
+    const silentAudio = new Audio();
+    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+    
+    silentAudio.play()
+        .then(() => {
+            updateAudioState(AUDIO_STATE.ENABLED);
+            processQueue();
+        })
+        .catch(err => {
+            console.error('[Audio] Unlock failed:', err);
+            updateAudioState(AUDIO_STATE.FAILED);
+        });
+}
+
+/**
+ * Add audio task to queue
+ */
+function enqueueAudio(task) {
     const { soundEnabled } = getSettings();
     if (!soundEnabled) return;
 
-    // Add to queue
-    playQueue.push(filename);
+    console.log(`[Queue] Queued: ${task.filename || task}`);
+    playQueue.push(task);
     processQueue();
 }
 
 /**
- * Process the next item in the Audio Queue
+ * Process the Audio Queue (STRICT MODE: Files Only)
  */
-function processQueue() {
-    // If already playing or empty, do nothing
+async function processQueue() {
     if (isPlaying || playQueue.length === 0) return;
+    
+    if (currentAudioState !== AUDIO_STATE.ENABLED) {
+        console.warn('[Queue] Waiting for Audio Unlock...');
+        return;
+    }
 
     isPlaying = true;
-    const filename = playQueue.shift();
-    const audioPath = `/sounds/${filename}`;
-
-    // console.log(`🔊 Processing Queue: ${audioPath} (Remaining: ${playQueue.length})`);
-
-    const audio = new Audio(audioPath);
-
-    const finish = () => {
-        // Small buffer before next track
+    const task = playQueue.shift();
+    const filename = task.filename || task;
+    
+    const finish = (delay = 2000) => {
         setTimeout(() => {
             isPlaying = false;
             processQueue();
-        }, 1000);
+        }, delay);
     };
 
-    // Play Logic (Double Replay)
-    let playCount = 1;
+    try {
+        const audioPath = `/sounds/${filename}`;
+        console.log(`[Queue] Stage: Playing -> ${filename}`);
+        
+        const audio = new Audio(audioPath);
+        let playCount = 1;
 
-    audio.onended = () => {
-        if (playCount < 2) {
-            playCount++;
-            setTimeout(() => {
-                // console.log(`🔊 Replaying: ${audioPath}`);
-                audio.play().catch(err => {
-                    console.error("Audio replay error:", err);
-                    finish();
-                });
-            }, 5000); // 5 seconds delay between loops
-        } else {
-            finish();
-        }
-    };
+        audio.onended = () => {
+            if (playCount < 2) {
+                playCount++;
+                setTimeout(() => {
+                    console.log(`[Queue] Stage: Replaying -> ${filename}`);
+                    audio.play().catch(e => {
+                        console.error('[Queue] Replay Failed:', e);
+                        finish(500);
+                    });
+                }, 5000);
+            } else {
+                console.log('[Queue] Stage: Completed');
+                finish(2000);
+            }
+        };
 
-    audio.onerror = (err) => {
-        console.error("Audio Load Error:", err);
-        finish();
-    };
+        audio.onerror = () => {
+            console.error(`[Queue] Stage: Failed (File NOT FOUND: ${filename}). Skipping.`);
+            finish(0); // Proceed immediately if file is missing
+        };
 
-    audio.play().catch(err => {
-        console.error("Audio play error:", err);
-        finish();
-    });
+        await audio.play().catch((err) => {
+            if (err.name === 'NotAllowedError') {
+                updateAudioState(AUDIO_STATE.LOCKED);
+            } else {
+                console.error('[Queue] Play Error:', err);
+            }
+            finish(500);
+        });
+    } catch (e) {
+        console.error('[Queue] Unexpected Error:', e);
+        finish(500);
+    }
 }
 
 /**
  * Map Arabic Name to Audio File Prefix
- * @param {string} teamName - The team string from the meeting
- * @returns {string|null} - 'm', 's', 'a', or null if no match
+ * UPDATED: Added Hossam ( حـسام ) -> 'a'
  */
 function getEngineerPrefix(teamName) {
     if (!teamName) return null;
@@ -88,7 +146,7 @@ function getEngineerPrefix(teamName) {
 
     if (lowerName.includes("مجاهد")) return 'm';
     if (lowerName.includes("شادي")) return 's';
-    if (lowerName.includes("أشرف") || lowerName.includes("اشرف")) return 'a';
+    if (lowerName.includes("أشرف") || lowerName.includes("اشرف") || lowerName.includes("حسام")) return 'a';
 
     return null;
 }
@@ -192,7 +250,9 @@ export function checkMeetingTimers(meetings, todayDate) {
 function triggerAlert(meeting, prefix, minutesType, diff) {
     if (prefix) {
         const filename = `${prefix}${minutesType}.mp3`;
-        playNotificationSound(filename);
+        enqueueAudio({ filename, meetingId: meeting.id });
+    } else {
+        console.warn(`[Audio] No mapping found for engineer: "${meeting.team}" (id: ${meeting.id}). Skipping sound.`);
     }
 
     const timeText = diff <= 1 ? 'سيبدأ الآن' : `بعد ${diff} دقيقة`;

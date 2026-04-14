@@ -358,95 +358,159 @@ export async function fetchMeetings() {
 }
 
 /**
- * Update logic for startAutoSync to allow restarting if interval changes
+ * 🛰️ SYNC ENGINE & STABILITY CONTROL
+ * 
+ * ROOT CAUSE ANALYSIS: 
+ * The synchronization loop issue ("Reversion Trap") occurs due to Google Sheets CDN/Cache lag.
+ * When a meeting is marked 'Done' in the spreadsheet, the published CSV might intermittently 
+ * serve an older version where the meeting is still 'Active'. This causes the app to flip-flop
+ * because it thinks a user manually reverted the state.
  */
-let syncIntervalId = null;
 
-export function stopAutoSync() {
-    if (syncIntervalId) {
-        clearInterval(syncIntervalId);
-        syncIntervalId = null;
+let syncTimeoutId = null;
+let consecutive400Errors = 0;
+const reversionTracker = new Map(); // meetingId -> [timestamps]
+
+/**
+ * Cleanup old reversion records (> 60s)
+ */
+function cleanupReversionTracker() {
+    const now = Date.now();
+    for (const [id, timestamps] of reversionTracker.entries()) {
+        const valid = timestamps.filter(t => now - t < 60000);
+        if (valid.length === 0) {
+            reversionTracker.delete(id);
+        } else if (valid.length !== timestamps.length) {
+            reversionTracker.set(id, valid);
+        }
     }
 }
 
+export function stopAutoSync() {
+    if (syncTimeoutId) {
+        clearTimeout(syncTimeoutId);
+        syncTimeoutId = null;
+    }
+}
 
 export function startAutoSync(callback) {
-    stopAutoSync(); // Stop existing if any
+    stopAutoSync();
 
     const { refreshInterval } = getSettings();
-    const intervalMs = Math.max(0.16, parseFloat(refreshInterval)) * 60 * 1000;
+    const defaultIntervalMs = Math.max(0.16, parseFloat(refreshInterval)) * 60 * 1000;
 
-    // Concurrency & Stability Control
     let latestRequestTime = 0;
-    let lastKnownMeetings = []; // Track state to detect erratic reversions
+    let lastKnownMeetings = [];
+    let isPolling = false;
 
     const poll = async () => {
+        if (isPolling) return;
+        isPolling = true;
+
         const thisRequestTime = Date.now();
         latestRequestTime = thisRequestTime;
 
+        cleanupReversionTracker();
+
         try {
             const result = await fetchMeetings();
+            
+            // On Success: Reset backoff
+            consecutive400Errors = 0;
 
-            // 🛡️ STALE CHECK: If a newer request started while we were fetching -> Ignore.
-            if (thisRequestTime !== latestRequestTime) return;
+            if (thisRequestTime !== latestRequestTime) {
+                isPolling = false;
+                scheduleNext(defaultIntervalMs);
+                return;
+            }
 
-            // 🛡️ ANTI-FLAP CHECK: Detect suspicious "Done" -> "Active" reversions
-            // If the sheet serves stale data (Active) after we already saw (Done), we must verify.
+            // 🛡️ ANTI-FLAP CHECK
             if (lastKnownMeetings.length > 0 && result.meetings.length > 0) {
-                const isReverting = result.meetings.some(newM => {
+                const revertingMeetings = result.meetings.filter(newM => {
                     const oldM = lastKnownMeetings.find(m => m.id === newM.id);
                     if (!oldM) return false;
-                    // Check: Was Done, Now NOT Done (and NOT Cancelled)
-                    // We treat "Cancelled" as a final state too, but "Done" -> "Active" is the main suspect.
                     return isDone(oldM) && !isDone(newM) && !isCancelled(newM);
                 });
 
-                if (isReverting) {
-                    console.warn('[Sync] Detected state reversion (Done -> Active). Verifying...');
+                if (revertingMeetings.length > 0) {
+                    // Check if any meeting exceeded flap limit (3 times / 60s)
+                    const now = Date.now();
+                    let shouldSkipVerification = false;
 
-                    // 🚀 DOUBLE-CHECK: Fetch again immediately to confirm it's not a CDN glitch
-                    // We wait a tiny bit (500ms) to hit a different server potentially
-                    await new Promise(r => setTimeout(r, 500));
+                    for (const m of revertingMeetings) {
+                        const history = reversionTracker.get(m.id) || [];
+                        history.push(now);
+                        reversionTracker.set(m.id, history);
 
-                    const verifyResult = await fetchMeetings();
-
-                    // If Verify failed or is stale, abort
-                    if (thisRequestTime !== latestRequestTime) return;
-
-                    // Compare again. If Verify *also* says it's reverted, then IT IS REAL.
-                    const isStillReverting = verifyResult.meetings.some(newM => {
-                        const oldM = lastKnownMeetings.find(m => m.id === newM.id);
-                        if (!oldM) return false;
-                        return isDone(oldM) && !isDone(newM) && !isCancelled(newM);
-                    });
-
-                    if (isStillReverting) {
-                        console.log('[Sync] Reversion verified. Updates confirmed.');
-                        lastKnownMeetings = verifyResult.meetings;
-                        callback(verifyResult);
-                    } else {
-                        console.warn('[Sync] Reversion was a FLAP. Ignoring stale data. Keeping "Done" state.');
-                        // Do NOT callback. Keep existing UI.
+                        if (history.length > 3) {
+                            console.warn(`[Sync] Flap limit reached for meeting: ${m.project}. Ignoring state reversion.`);
+                            shouldSkipVerification = true;
+                        }
                     }
-                    return; // Exit this poll cycle
+
+                    if (!shouldSkipVerification) {
+                        console.warn('[Sync] Detected state reversion (Done -> Active). Verifying...');
+                        await new Promise(r => setTimeout(r, 1000)); // Minimum 1s gap
+                        
+                        const verifyResult = await fetchMeetings();
+                        if (thisRequestTime !== latestRequestTime) {
+                            isPolling = false;
+                            scheduleNext(defaultIntervalMs);
+                            return;
+                        }
+
+                        const isStillReverting = verifyResult.meetings.some(newM => {
+                            const oldM = lastKnownMeetings.find(m => m.id === newM.id);
+                            return oldM && isDone(oldM) && !isDone(newM) && !isCancelled(newM);
+                        });
+
+                        if (isStillReverting) {
+                            console.log('[Sync] Reversion verified. Updates confirmed.');
+                            lastKnownMeetings = verifyResult.meetings;
+                            callback(verifyResult);
+                        } else {
+                            console.warn('[Sync] Reversion was a CDN glitch (Flap). Keeping "Done" state.');
+                        }
+                        
+                        isPolling = false;
+                        scheduleNext(defaultIntervalMs);
+                        return;
+                    }
                 }
             }
 
-            // Normal Flow
             lastKnownMeetings = result.meetings;
             callback(result);
+            isPolling = false;
+            scheduleNext(defaultIntervalMs);
 
         } catch (err) {
             console.error('[Sync] Poll error:', err);
+            isPolling = false;
+
+            // 🪜 BACKOFF STRATEGY for 400 Errors (Rate Limiting)
+            if (err.message.includes('400')) {
+                consecutive400Errors++;
+                let backoffDelay = defaultIntervalMs;
+                
+                if (consecutive400Errors === 1) backoffDelay = 60000;        // 1 minute
+                else if (consecutive400Errors === 2) backoffDelay = 120000;  // 2 minutes
+                else if (consecutive400Errors >= 3) backoffDelay = 300000;   // 5 minutes (Max)
+
+                console.warn(`[Sync] Rate limited (400). Backing off for ${backoffDelay / 1000}s...`);
+                scheduleNext(backoffDelay);
+            } else {
+                scheduleNext(defaultIntervalMs);
+            }
         }
     };
 
-    // Initial fetch called immediately
+    function scheduleNext(delay) {
+        if (syncTimeoutId) clearTimeout(syncTimeoutId);
+        syncTimeoutId = setTimeout(poll, delay);
+    }
+
     poll();
-
-    // Schedule next
-    syncIntervalId = setInterval(poll, intervalMs);
-
     return stopAutoSync;
 }
 

@@ -10,7 +10,10 @@ import {
 } from './data.js';
 import { 
     startNotificationLoop, 
-    requestNotificationPermission 
+    requestNotificationPermission,
+    unlockAudio,
+    setAudioStateListener,
+    AUDIO_STATE
 } from './notifications.js';
 import { 
     escapeHTML, 
@@ -303,6 +306,10 @@ window.toggleSettings = () => {
     if (input) input.value = settings.sheetId || DEFAULT_KEY;
 };
 
+window.unlockAudio = () => {
+    unlockAudio();
+};
+
 window.saveSettings = () => {
     const input = document.getElementById('sheet-key-input');
     if (!input) return;
@@ -376,6 +383,45 @@ async function initApp() {
             if (window.lucide) window.lucide.createIcons();
         }
     }
+
+    // Audio State UI Handling
+    const audioStatusBadge = document.getElementById('audio-status');
+    const audioOverlay = document.getElementById('audio-unlock-overlay');
+
+    setAudioStateListener((state) => {
+        if (!audioStatusBadge) return;
+        
+        // Remove all state classes
+        audioStatusBadge.classList.remove('locked', 'enabled', 'failed');
+        audioStatusBadge.classList.add(state);
+
+        const icon = audioStatusBadge.querySelector('i');
+        const text = audioStatusBadge.querySelector('.status-text');
+
+        if (state === AUDIO_STATE.ENABLED) {
+            if (icon) icon.setAttribute('data-lucide', 'volume-2');
+            if (text) text.textContent = 'Audio Enabled';
+            if (audioOverlay) audioOverlay.classList.remove('active');
+        } else if (state === AUDIO_STATE.FAILED) {
+            if (icon) icon.setAttribute('data-lucide', 'alert-circle');
+            if (text) text.textContent = 'Audio Failed';
+        } else {
+            if (icon) icon.setAttribute('data-lucide', 'volume-x');
+            if (text) text.textContent = 'Audio Locked';
+            if (audioOverlay) audioOverlay.classList.add('active');
+        }
+
+        if (window.lucide) window.lucide.createIcons();
+    });
+
+    // Audio Unlock Listener (CRITICAL for Autoplay policies)
+    const handleFirstInteraction = () => {
+        unlockAudio();
+        document.removeEventListener('click', handleFirstInteraction);
+        document.removeEventListener('keydown', handleFirstInteraction);
+    };
+    document.addEventListener('click', handleFirstInteraction);
+    document.addEventListener('keydown', handleFirstInteraction);
 
     // BUG-01: Initialization of Notifications
     requestNotificationPermission();
