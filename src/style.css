@@ -45,6 +45,9 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+.sidebar, .stats-section, .mc-block-header, h1, h2, h3, label, .lbl {
     user-select: none;
 }
 
@@ -72,6 +75,8 @@ body {
     position: relative;
     z-index: 10;
     box-shadow: 20px 0 50px rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .main-content {
@@ -145,6 +150,7 @@ body {
         inset 0 0 20px rgba(41, 98, 255, 0.05);
     animation: radar-pulse 4s infinite ease-in-out;
     max-height: 250px;
+    flex-shrink: 1;
 }
 
 @keyframes radar-pulse {
@@ -423,7 +429,6 @@ body {
 .gold-btn {
     background: linear-gradient(to bottom, #dcb96f, #b38b37);
     color: #2b1f06 !important;
-    border: none;
     box-shadow: 0 4px 15px rgba(184, 134, 11, 0.3);
     font-weight: 800;
     font-size: clamp(0.7rem, 7cqw, 1.15rem);
@@ -703,7 +708,7 @@ body {
    ======================================== */
 
 /* Large Screens (QHD / 4K) */
-@media (min-width: 1921px) {
+@media (min-width: 1701px) {
     #meetings-grid {
         grid-template-columns: repeat(5, 1fr);
         padding: 5vh 2vw;
@@ -713,12 +718,19 @@ body {
 /* Standard Desktops (Full HD) */
 @media (max-width: 1700px) {
     #meetings-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Mid-size desktops */
+@media (max-width: 1400px) {
+    #meetings-grid {
         grid-template-columns: repeat(3, 1fr);
     }
 }
 
 /* Smaller Desktops / Laptops */
-@media (max-width: 1300px) {
+@media (max-width: 1100px) {
     #meetings-grid {
         grid-template-columns: repeat(2, 1fr);
     }

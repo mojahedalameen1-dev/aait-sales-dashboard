@@ -125,7 +125,7 @@ function renderUI(meetings) {
                     </div>
 
                     <div class="mc-blocks">
-                        ${(/بعد|remote|zoom|meet|online/i.test(m.via || '')) ? `
+                        ${(/بعد|remote|zoom|google meet|online/i.test(m.via || '')) ? `
                             <div class="mc-block">
                                 <div class="mc-block-header">
                                     <span>انضم إلى جوجل ميت</span>

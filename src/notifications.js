@@ -3,7 +3,7 @@
  * REFACTORED: Audio Queue System + Performance Cleanup
  */
 
-import { getSettings, isDone } from './data.js';
+import { getSettings, isDone, isCancelled } from './data.js';
 
 // ========================================
 // 🔊 Audio System (Queue Based)
