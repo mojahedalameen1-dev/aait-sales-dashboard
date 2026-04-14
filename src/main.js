@@ -76,10 +76,19 @@ function renderUI(meetings) {
     const todayMeetings = meetings.filter(m => m.date === today);
 
     // Update Stats (Arabic Grammar)
+    const nowTime = new Date();
+    const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
+    const runningNow = todayMeetings.filter(m => {
+        if (isDone(m) || isCancelled(m)) return false;
+        const [h, mi] = (m.time || '00:00').split(':').map(Number);
+        const startMins = h * 60 + mi;
+        return nowMins >= startMins && nowMins <= (startMins + 60);
+    });
+
     setSafeText('stat-total', formatMeetingCount(todayMeetings.length));
     setSafeText('stat-done', formatMeetingCount(todayMeetings.filter(m => isDone(m)).length));
     setSafeText('stat-pending', formatMeetingCount(todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length));
-    setSafeText('stat-urgent', toEn(todayMeetings.filter(m => !isDone(m) && !isCancelled(m) && (m.status || '').includes('عاجل')).length));
+    setSafeText('stat-urgent', toEn(runningNow.length));
 
     // Sorting: Pending First, then Done, then Cancelled
     const sorted = [...todayMeetings].sort((a, b) => {

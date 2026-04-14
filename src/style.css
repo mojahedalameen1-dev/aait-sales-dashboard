@@ -201,18 +201,19 @@ body {
 }
 
 .stats-section {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.8rem;
     margin-bottom: 1.5rem;
 }
 
 .stat-card {
-    flex: 1;
-    padding: 1rem;
+    min-width: 60px;
+    padding: 0.8rem;
     border-radius: 15px;
     background: rgba(255, 255, 255, 0.03);
     text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .stat-card .val {
