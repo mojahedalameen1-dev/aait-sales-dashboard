@@ -47,7 +47,8 @@ export function unlockAudio() {
     if (currentAudioState === AUDIO_STATE.ENABLED) return;
 
     const silentAudio = new Audio();
-    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAA'
+        + 'ABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
     silentAudio.onended = () => {
         updateAudioState(AUDIO_STATE.ENABLED);

@@ -12,7 +12,7 @@ const STORAGE_KEY_LAST_SYNC = 'aait_last_sync';
 
 const DEFAULT_SETTINGS = {
     sheetId: '', // User must provide this
-    refreshInterval: 0.16, // Minutes (10 seconds)
+    refreshInterval: 1, // 1 minute (prevents 400 rate limiting)
     soundEnabled: true
 };
 
@@ -397,10 +397,10 @@ export function startAutoSync(callback) {
     stopAutoSync();
 
     const { refreshInterval } = getSettings();
-    const defaultIntervalMs = Math.max(0.16, parseFloat(refreshInterval)) * 60 * 1000;
+    const defaultIntervalMs = Math.max(1, parseFloat(refreshInterval)) * 60 * 1000;
 
     let latestRequestTime = 0;
-    let lastKnownMeetings = [];
+    let lastKnownMeetings = loadCachedMeetings() || [];
     let isPolling = false;
 
     const poll = async () => {
