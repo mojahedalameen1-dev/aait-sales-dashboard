@@ -37,7 +37,7 @@
 }
 
 /* Prevent any URL text showing in cards */
-.meeting-card a:not(.action-btn) {
+.meeting-card a:not(.mc-btn) {
     display: none !important;
 }
 
@@ -144,7 +144,7 @@ body {
         0 0 30px rgba(0, 0, 0, 0.2),
         inset 0 0 20px rgba(41, 98, 255, 0.05);
     animation: radar-pulse 4s infinite ease-in-out;
-    max-height: 35vh;
+    max-height: 250px;
 }
 
 @keyframes radar-pulse {
@@ -426,7 +426,8 @@ body {
     box-shadow: 0 4px 15px rgba(184, 134, 11, 0.3);
     font-weight: 800;
     font-size: clamp(0.7rem, 7cqw, 1.15rem);
-    text-shadow: 0 1px 1px rgba(255,255,255,0.4);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .gold-btn.not-available {
@@ -704,6 +705,7 @@ body {
 @media (min-width: 1921px) {
     #meetings-grid {
         grid-template-columns: repeat(5, 1fr);
+        padding: 5vh 2vw;
     }
 }
 

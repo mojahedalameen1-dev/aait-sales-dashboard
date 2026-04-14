@@ -116,15 +116,17 @@ function renderUI(meetings) {
                     </div>
 
                     <div class="mc-blocks">
+                        ${(/بعد|remote|zoom|meet|online/i.test(m.via || '')) ? `
                             <div class="mc-block">
                                 <div class="mc-block-header">
                                     <span>انضم إلى جوجل ميت</span>
                                 </div>
                                 <a href="${m.meetUrl || '#'}" target="_blank" 
-                                   class="mc-btn gold-btn ${(!m.meetUrl || !/بعد|remote|zoom|meet|online/i.test(m.via || '')) ? 'not-available' : ''}">
+                                   class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
                                     <i data-lucide="video" class="btn-icon"></i> دخول
                                 </a>
                             </div>
+                        ` : ''}
                         
                         ${ticketNum ? `
                         <div class="mc-block">
