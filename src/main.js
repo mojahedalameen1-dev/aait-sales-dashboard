@@ -257,20 +257,38 @@ function updateCountdown(meeting, overlappingCount = 0) {
     }
 
     sideDetails.style.display = 'block';
-    setSafeText('side-m-title', meeting.project);
     
-    // Overlapping message
-    let metaText = `${meeting.team} — ${formatTime12h(meeting.time)}`;
-    if (overlappingCount > 1) {
-        const extra = overlappingCount - 1;
-        const msgHtml = `<div class="overlapping-msg">+ ${extra} اجتماعات في نفس الوقت</div>`;
-        const metaEl = document.getElementById('side-m-meta');
-        if (metaEl) {
-            metaEl.innerHTML = `${escapeHTML(metaText)}${msgHtml}`;
-        }
-    } else {
-        setSafeText('side-m-meta', metaText);
+    // Ticket ID Extraction & Project Bold
+    const projectText = meeting.project || '';
+    const ticketMatch = projectText.match(/AA\d+/);
+    const ticketNum = ticketMatch ? ticketMatch[0] : '';
+    const cleanedTitle = projectText.replace(ticketNum, '').trim();
+    
+    const titleEl = document.getElementById('side-m-title');
+    if (titleEl) {
+        titleEl.innerHTML = `<span style="font-weight: 800;">${escapeHTML(cleanedTitle)}</span>` + 
+                            (ticketNum ? `<span class="ticket-pill">${ticketNum}</span>` : '');
     }
+    
+    // Overlapping message & Dimmed Meta
+    let metaText = `${meeting.team} — ${formatTime12h(meeting.time)}`;
+    const metaEl = document.getElementById('side-m-meta');
+    if (metaEl) {
+        metaEl.style.opacity = '0.6';
+        if (overlappingCount > 1) {
+            const extra = overlappingCount - 1;
+            const msgHtml = `<div class="overlapping-msg">+ ${extra} اجتماعات في نفس الوقت</div>`;
+            metaEl.innerHTML = `${escapeHTML(metaText)}${msgHtml}`;
+        } else {
+            metaEl.textContent = metaText;
+        }
+    }
+
+    // Automated Aurora Intensity & Position
+    const intensity = (diff > 0 && diff < 5 * 60000) ? 0.25 : 0.12;
+    const pos = (diff > 0 && diff < 5 * 60000) ? '50% 10%' : '50% 30%';
+    document.documentElement.style.setProperty('--aurora-intensity', intensity);
+    document.documentElement.style.setProperty('--aurora-pos', pos);
 }
 
 function updateDynamicState() {
@@ -463,9 +481,27 @@ async function initApp() {
     const audioOverlay = document.getElementById('audio-unlock-overlay');
 
     setAudioStateListener((state) => {
+        // Ensure LED exists next to #live-clock
+        let led = document.getElementById('audio-led');
+        if (!led) {
+            const clock = document.getElementById('live-clock');
+            if (clock) {
+                led = document.createElement('span');
+                led.id = 'audio-led';
+                clock.parentNode.insertBefore(led, clock.nextSibling);
+            }
+        }
+
         if (!audioStatusBadge) return;
         
-        // Remove all state classes
+        // Update LED color
+        if (led) {
+            if (state === AUDIO_STATE.ENABLED) led.style.background = '#22c55e';
+            else if (state === AUDIO_STATE.FAILED) led.style.background = '#f59e0b';
+            else led.style.background = '#ef4444';
+        }
+
+        // Remove all state classes (Legacy sync)
         audioStatusBadge.classList.remove('locked', 'enabled', 'failed');
         audioStatusBadge.classList.add(state);
 

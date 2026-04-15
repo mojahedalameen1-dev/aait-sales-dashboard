@@ -79,6 +79,11 @@ body {
     box-shadow: 20px 0 50px rgba(0, 0, 0, 0.5);
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-width: none;
+}
+
+.sidebar::-webkit-scrollbar {
+    display: none;
 }
 
 .sidebar::before {
@@ -89,12 +94,12 @@ body {
     pointer-events: none;
     border-radius: inherit;
     background: radial-gradient(
-        ellipse at 50% 30%,
+        ellipse at var(--aurora-pos, 50% 30%),
         var(--aurora-color, rgba(41,98,255,0.12)) 0%,
         transparent 70%
     );
     animation: aurora-shift 8s ease-in-out infinite alternate;
-    opacity: 0.6;
+    opacity: var(--aurora-intensity, 0.6);
 }
 
 .main-content {
@@ -131,7 +136,7 @@ body {
 }
 
 .clock-section {
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
     text-align: center;
     order: 2;
     position: relative;
@@ -154,22 +159,36 @@ body {
     font-weight: 500;
 }
 
+#audio-status {
+    display: none !important;
+}
+
+#audio-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    background: #ef4444; /* Default red/locked */
+    box-shadow: 0 0 6px currentColor;
+    vertical-align: middle;
+    transition: background 0.4s ease;
+}
+
 .next-meeting-countdown {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     padding: 1.5rem;
-    background: rgba(41, 98, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 20px;
     width: 100%;
-    border: 2px solid rgba(41, 98, 255, 0.1);
-    margin-bottom: clamp(1rem, 3vh, 2rem);
+    margin-bottom: 2.5rem;
     text-align: center;
     position: relative;
-    box-shadow: 
-        0 0 30px rgba(0, 0, 0, 0.2),
-        inset 0 0 20px rgba(41, 98, 255, 0.05);
     animation: radar-pulse 4s infinite ease-in-out;
     max-height: 250px;
     flex-shrink: 0;
@@ -185,6 +204,10 @@ body {
 .next-meeting-countdown.urgent {
     border-color: rgba(239, 68, 68, 0.4);
     animation: urgent-pulse 1.5s ease-in-out infinite;
+}
+
+.next-meeting-countdown.urgent:hover {
+    border-color: rgba(239, 68, 68, 0.4) !important;
 }
 
 .countdown-label {
@@ -225,20 +248,33 @@ body {
 
 .sidebar-meeting-details .title {
     font-size: 1.3rem;
-    font-weight: 700;
+    font-weight: 800;
     margin-bottom: 0.5rem;
 }
 
 .sidebar-meeting-details .meta {
     color: var(--text-dim);
     font-size: 1rem;
+    opacity: 0.6;
+}
+
+.ticket-pill {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    margin-left: 5px;
+    font-family: 'Outfit', sans-serif;
+    color: #fff;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .stats-section {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.8rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2.5rem;
     order: 4;
 }
 
@@ -246,9 +282,16 @@ body {
     min-width: 60px;
     padding: 0.8rem;
     border-radius: 15px;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     text-align: center;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.stat-card:hover {
+    transform: scale(1.02);
+    border-color: var(--aurora-color, rgba(41,98,255,0.4));
 }
 
 .stat-card .val {
@@ -646,7 +689,11 @@ body {
 }
 
 .overlapping-msg {
-    font-size: 0.8rem;
+    border: 1.5px dashed rgba(255,255,255,0.4);
+    background: transparent;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    padding: 3px 10px;
     color: var(--color-urgent);
     opacity: 0.8;
     margin-top: 0.3rem;
