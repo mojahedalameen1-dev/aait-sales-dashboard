@@ -19,6 +19,7 @@
     --radius-lg: 20px;
     --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     --sidebar-width: clamp(300px, 22vw, 450px);
+    --aurora-color: rgba(41,98,255,0.12);
 }
 
 .light-mode {
@@ -80,6 +81,22 @@ body {
     overflow-x: hidden;
 }
 
+.sidebar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: radial-gradient(
+        ellipse at 50% 30%,
+        var(--aurora-color, rgba(41,98,255,0.12)) 0%,
+        transparent 70%
+    );
+    animation: aurora-shift 8s ease-in-out infinite alternate;
+    opacity: 0.6;
+}
+
 .main-content {
     width: calc(100% - var(--sidebar-width));
     height: 100vh;
@@ -96,6 +113,7 @@ body {
     align-items: center;
     gap: 1rem;
     margin-bottom: 2rem;
+    order: 1;
 }
 
 .logo-section img {
@@ -115,11 +133,14 @@ body {
 .clock-section {
     margin-bottom: 2rem;
     text-align: center;
+    order: 2;
+    position: relative;
+    z-index: 10;
 }
 
 #live-clock {
     font-family: 'Outfit', sans-serif;
-    font-size: clamp(2.5rem, 8vh, 4rem);
+    font-size: clamp(2rem, 6vh, 3rem);
     font-weight: 800;
     letter-spacing: -2px;
     line-height: 1;
@@ -138,10 +159,10 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: clamp(1rem, 4vh, 2.5rem) 1.5rem;
+    padding: 1.5rem;
     background: rgba(41, 98, 255, 0.03);
-    border-radius: 50%;
-    aspect-ratio: 1/1;
+    border-radius: 20px;
+    width: 100%;
     border: 2px solid rgba(41, 98, 255, 0.1);
     margin-bottom: clamp(1rem, 3vh, 2rem);
     text-align: center;
@@ -151,13 +172,19 @@ body {
         inset 0 0 20px rgba(41, 98, 255, 0.05);
     animation: radar-pulse 4s infinite ease-in-out;
     max-height: 250px;
-    flex-shrink: 1;
+    flex-shrink: 0;
+    order: 3;
 }
 
 @keyframes radar-pulse {
     0% { box-shadow: 0 0 0 0 rgba(41, 98, 255, 0.2), inset 0 0 20px rgba(41, 98, 255, 0.05); }
     50% { box-shadow: 0 0 40px rgba(41, 98, 255, 0.1), inset 0 0 40px rgba(41, 98, 255, 0.1); }
     100% { box-shadow: 0 0 0 0 rgba(41, 98, 255, 0.2), inset 0 0 20px rgba(41, 98, 255, 0.05); }
+}
+
+.next-meeting-countdown.urgent {
+    border-color: rgba(239, 68, 68, 0.4);
+    animation: urgent-pulse 1.5s ease-in-out infinite;
 }
 
 .countdown-label {
@@ -212,6 +239,7 @@ body {
     grid-template-columns: repeat(2, 1fr);
     gap: 0.8rem;
     margin-bottom: 1.5rem;
+    order: 4;
 }
 
 .stat-card {
@@ -230,6 +258,11 @@ body {
     display: block;
 }
 
+#stat-done { color: #22c55e; }
+#stat-urgent { color: #ef4444; }
+#stat-pending { color: #3b82f6; }
+#stat-total { color: #ffffff; }
+
 .stat-card .lbl {
     font-size: 0.8rem;
     color: var(--text-dim);
@@ -239,6 +272,7 @@ body {
     display: flex;
     gap: 0.8rem;
     margin-top: auto;
+    order: 5;
 }
 
 .icon-btn {
@@ -597,6 +631,26 @@ body {
     0% { box-shadow: 0 0 30px rgba(255, 255, 255, 0.1); }
     50% { box-shadow: 0 0 60px rgba(255, 255, 255, 0.5); }
     100% { box-shadow: 0 0 30px rgba(255, 255, 255, 0.1); }
+}
+
+@keyframes aurora-shift {
+    0%   { transform: translateY(0) scale(1); opacity: 0.4; }
+    50%  { transform: translateY(-20px) scale(1.1); opacity: 0.7; }
+    100% { transform: translateY(10px) scale(0.95); opacity: 0.4; }
+}
+
+@keyframes urgent-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+    50%  { box-shadow: 0 0 30px 10px rgba(239, 68, 68, 0.15); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+}
+
+.overlapping-msg {
+    font-size: 0.8rem;
+    color: var(--color-urgent);
+    opacity: 0.8;
+    margin-top: 0.3rem;
+    font-weight: 600;
 }
 
 .en-nums {

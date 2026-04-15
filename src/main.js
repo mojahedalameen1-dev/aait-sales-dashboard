@@ -66,6 +66,28 @@ function setSafeText(id, text) {
     if (el) el.textContent = text;
 }
 
+function animateCount(id, targetValue, duration = 1500) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const start = parseInt(el.textContent) || 0;
+    const target = parseInt(targetValue) || 0;
+    if (start === target) return;
+    
+    const startTime = performance.now();
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // Ease out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(start + (target - start) * eased);
+        el.textContent = current;
+        if (progress < 1) requestAnimationFrame(update);
+    }
+    
+    requestAnimationFrame(update);
+}
+
 function renderUI(meetings) {
     const grid = document.getElementById('meetings-grid');
     if (!grid) {
@@ -86,10 +108,10 @@ function renderUI(meetings) {
         return nowMins >= startMins && nowMins <= (startMins + 60);
     });
 
-    setSafeText('stat-total', formatMeetingCount(todayMeetings.length));
-    setSafeText('stat-done', formatMeetingCount(todayMeetings.filter(m => isDone(m)).length));
-    setSafeText('stat-pending', formatMeetingCount(todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length));
-    setSafeText('stat-urgent', toEn(runningNow.length));
+    animateCount('stat-total', todayMeetings.length);
+    animateCount('stat-done', todayMeetings.filter(m => isDone(m)).length);
+    animateCount('stat-pending', todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length);
+    animateCount('stat-urgent', runningNow.length);
 
     // Sorting: Pending First, then Done, then Cancelled
     const sorted = [...todayMeetings].sort((a, b) => {
@@ -173,11 +195,10 @@ function startClock() {
         const now = new Date();
         let h = now.getHours();
         const m = String(now.getMinutes()).padStart(2, '0');
-        const s = String(now.getSeconds()).padStart(2, '0');
         const suffix = h < 12 ? 'ص' : 'م';
         h = h % 12 || 12;
         
-        setSafeText('live-clock', `${h}:${m}:${s} ${suffix}`);
+        setSafeText('live-clock', `${h}:${m} ${suffix}`);
         
         // FUNC-08: Manual Date building for English Digits
         const dateStr = `${days[now.getDay()]}، ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
@@ -185,19 +206,21 @@ function startClock() {
     }, 1000);
 }
 
-function updateCountdown(meeting) {
+function updateCountdown(meeting, overlappingCount = 0) {
     const timer = document.getElementById('countdown-timer');
     const badge = document.getElementById('meeting-now-badge');
     const sideDetails = document.getElementById('sidebar-meeting-details');
     const label = document.querySelector('.countdown-label');
+    const countdownContainer = document.querySelector('.next-meeting-countdown');
 
-    if (!timer || !badge || !sideDetails || !label) return;
+    if (!timer || !badge || !sideDetails || !label || !countdownContainer) return;
 
     if (!meeting) {
         timer.textContent = "00:00";
         badge.style.display = 'none';
         sideDetails.style.display = 'none';
         label.textContent = "لا اجتماعات متبقية اليوم";
+        countdownContainer.classList.remove('urgent');
         return;
     }
 
@@ -206,6 +229,15 @@ function updateCountdown(meeting) {
     const [h, mi] = meeting.time.split(':').map(Number);
     const target = new Date(); target.setHours(h, mi, 0, 0);
     const diff = target - now;
+
+    // Urgency handling (< 5 mins)
+    if (diff > 0 && diff < 5 * 60000) {
+        countdownContainer.classList.add('urgent');
+        timer.style.color = 'var(--color-urgent)';
+    } else {
+        countdownContainer.classList.remove('urgent');
+        timer.style.color = 'var(--text-white)';
+    }
 
     if (diff <= 0) {
         timer.style.display = 'none'; badge.style.display = 'block';
@@ -221,14 +253,24 @@ function updateCountdown(meeting) {
         } else {
             timeStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         }
-
         timer.textContent = toEn(timeStr);
-        timer.style.color = diff < 15 * 60000 ? "var(--color-urgent)" : "var(--text-white)";
     }
 
     sideDetails.style.display = 'block';
     setSafeText('side-m-title', meeting.project);
-    setSafeText('side-m-meta', `${meeting.team} — ${formatTime12h(meeting.time)}`);
+    
+    // Overlapping message
+    let metaText = `${meeting.team} — ${formatTime12h(meeting.time)}`;
+    if (overlappingCount > 1) {
+        const extra = overlappingCount - 1;
+        const msgHtml = `<div class="overlapping-msg">+ ${extra} اجتماعات في نفس الوقت</div>`;
+        const metaEl = document.getElementById('side-m-meta');
+        if (metaEl) {
+            metaEl.innerHTML = `${escapeHTML(metaText)}${msgHtml}`;
+        }
+    } else {
+        setSafeText('side-m-meta', metaText);
+    }
 }
 
 function updateDynamicState() {
@@ -243,7 +285,6 @@ function updateDynamicState() {
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     
-    let current = null;
     let pending = filtered
         .filter(m => !isDone(m))
         .map(m => { 
@@ -253,9 +294,36 @@ function updateDynamicState() {
         .sort((a, b) => a.mins - b.mins);
 
     const match = pending.find(x => x.mins >= nowMins - 30);
-    if (match) current = match.m;
+    let current = match ? match.m : null;
     
-    updateCountdown(current);
+    // Aurora Color Mapping
+    const engineerColorMap = {
+        'ashraf': '#00C853',
+        'ashraf_ar': 'أشرف',
+        'mojahed': '#2962FF',
+        'shady': '#C6242C',
+        'hossam': '#FF6D00'
+    };
+
+    let auroraColor = '#2962FF'; // Default Blue
+    if (current && current.team) {
+        const team = current.team.toLowerCase();
+        if (team.includes('أشرف') || team.includes('اشرف')) auroraColor = '#00C853';
+        else if (team.includes('مجاهد')) auroraColor = '#2962FF';
+        else if (team.includes('شادي')) auroraColor = '#C6242C';
+        else if (team.includes('حسام')) auroraColor = '#FF6D00';
+    }
+    document.documentElement.style.setProperty('--aurora-color', `${auroraColor}22`);
+
+    // Overlapping meetings detection (diff < 5 mins)
+    let overlappingCount = 0;
+    if (match) {
+        const baseMins = match.mins;
+        const overlaps = pending.filter(x => Math.abs(x.mins - baseMins) < 5);
+        overlappingCount = overlaps.length;
+    }
+    
+    updateCountdown(current, overlappingCount);
 }
 
 // ========================================

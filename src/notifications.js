@@ -210,13 +210,17 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 const triggeredNotifications = new Set();
 let lastNotifiedDate = new Date().toDateString();
 
-// FUNC-03: Periodic clear to prevent memory accumulation and allow re-notifying if needed (e.g. after a fix)
-setInterval(() => {
-    triggeredNotifications.clear();
-    // console.log('🕒 Hourly notification set cleanup');
-}, 60 * 60 * 1000);
+// FUNC-03: Daily clear to prevent memory accumulation and reset for the new day
+
 
 export function checkMeetingTimers(meetings, todayDate) {
+    // يُمسح عند تغيير اليوم فقط
+    const today = new Date().toDateString();
+    if (lastNotifiedDate !== today) {
+        triggeredNotifications.clear();
+        lastNotifiedDate = today;
+    }
+
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
