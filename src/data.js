@@ -132,38 +132,63 @@ async function fetchCSV() {
 }
 
 /**
- * Smarter CSV parser: splits by line then by comma, handling quoted fields
+ * Robust CSV parser using state machine to handle quoted fields and multiline values.
  */
 function parseCSV(csvText) {
-    const lines = csvText.trim().split('\n');
-    const result = [];
+    const records = [];
+    let fields = [];
+    let current = '';
+    let inQuotes = false;
 
-    for (const line of lines) {
-        const fields = [];
-        let current = '';
-        let inQuotes = false;
+    for (let i = 0; i < csvText.length; i++) {
+        const ch = csvText[i];
+        const next = csvText[i + 1];
 
-        for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-                if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (ch === ',' && !inQuotes) {
-                fields.push(current.trim());
-                current = '';
+        if (ch === '"') {
+            if (inQuotes && next === '"') {
+                // Escaped quote inside field
+                current += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (ch === ',' && !inQuotes) {
+            fields.push(current.trim());
+            current = '';
+        } else if ((ch === '\n' || (ch === '\r' && next === '\n')) && !inQuotes) {
+            // End of record — only when NOT inside quotes
+            if (ch === '\r') i++; // skip \n after \r
+            fields.push(current.trim());
+            // Clean \r\n from any field values before pushing
+            records.push(fields.map(f => f.replace(/\r\n|\r|\n/g, ' ').trim()));
+            fields = [];
+            current = '';
+        } else if (ch === '\r' && !inQuotes) {
+            // standalone \r
+            fields.push(current.trim());
+            records.push(fields.map(f => f.replace(/\r\n|\r|\n/g, ' ').trim()));
+            fields = [];
+            current = '';
+        } else {
+            // Inside quoted field: replace \r\n with space to clean the value
+            if (ch === '\r' && next === '\n' && inQuotes) {
+                current += ' ';
+                i++;
+            } else if ((ch === '\n' || ch === '\r') && inQuotes) {
+                current += ' ';
             } else {
                 current += ch;
             }
         }
-        fields.push(current.trim());
-        result.push(fields);
     }
 
-    return result;
+    // Push last record if file doesn't end with newline
+    if (current || fields.length > 0) {
+        fields.push(current.trim());
+        records.push(fields.map(f => f.replace(/\r\n|\r|\n/g, ' ').trim()));
+    }
+
+    return records;
 }
 
 /**
