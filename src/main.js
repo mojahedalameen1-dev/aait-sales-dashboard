@@ -249,7 +249,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
 
         let timeStr = "";
         if (hours > 0) {
-            timeStr = `${String(hours).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+            timeStr = `${hours}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         } else {
             timeStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         }
