@@ -6,7 +6,8 @@ import {
     updateSettings, 
     formatTime12h, 
     isDone, 
-    isCancelled 
+    isCancelled,
+    formatTodayDate
 } from './data.js';
 import { 
     startNotificationLoop, 
@@ -17,7 +18,8 @@ import {
 } from './notifications.js';
 import { 
     escapeHTML, 
-    formatMeetingCount 
+    formatMeetingCount,
+    getEngineerShortName
 } from './utils.js';
 
 // ========================================
@@ -40,11 +42,8 @@ function toEn(str) {
     return str.toString().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
 }
 
-function getTodayDateStr() {
-    const now = new Date();
-    return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-}
-
+// ⚠️ NOTE: Engineer name matching is also handled in utils.js → getEngineerShortName()
+// If you add or rename an engineer, update BOTH functions.
 function getDeveloperGradient(team) {
     const t = (team || '').toLowerCase();
     if (/أشرف|اشرف|ashraf/i.test(t)) return 'linear-gradient(135deg, #00C853, #1de9b6)';
@@ -95,7 +94,7 @@ function renderUI(meetings) {
         return;
     }
 
-    const today = getTodayDateStr();
+    const today = formatTodayDate();
     const todayMeetings = meetings.filter(m => m.date === today);
 
     // Update Stats (Arabic Grammar)
@@ -122,6 +121,8 @@ function renderUI(meetings) {
         return (a.time || '').localeCompare(b.time || '');
     });
 
+    // TODO: grid-is-crowded CSS rules are not yet implemented.
+    // Reserved for future compact layout when meeting count exceeds 20.
     if (sorted.length > 20) grid.classList.add('grid-is-crowded');
     else grid.classList.remove('grid-is-crowded');
 
@@ -131,47 +132,52 @@ function renderUI(meetings) {
         const gradient = getDeveloperGradient(m.team);
         const ticketMatch = m.project?.match(/AA\d+/);
         const ticketNum = ticketMatch ? ticketMatch[0] : '';
-        
-        return `
-            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}" 
-                 style="background: ${gradient}">
-                <div class="card-bg-pattern"></div>
-                ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
-                
-                <div class="card-content">
-                    <div class="mc-title">${escapeHTML(m.project || '—')}</div>
-                    <div class="mc-subtitle">${escapeHTML(m.team || '')} — ${escapeHTML(m.via || 'اجتماع')}</div>
-                    
-                    <div class="mc-time">
-                        <i data-lucide="clock"></i>
-                        <span class="en-nums">${formatTime12h(m.time)}</span>
-                    </div>
+        const cleanTitle = (m.project || '').replace(ticketNum, '').trim();
+        const engineerLabel = getEngineerShortName(m.team);
 
-                    <div class="mc-blocks">
-                        ${(/بعد|remote|zoom|google meet|online/i.test(m.via || '')) ? `
-                            <div class="mc-block">
-                                <div class="mc-block-header">
-                                    <span>انضم إلى جوجل ميت</span>
-                                </div>
-                                <a href="${m.meetUrl || '#'}" target="_blank" 
-                                   class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
-                                    <i data-lucide="video" class="btn-icon"></i> دخول
-                                </a>
-                            </div>
-                        ` : ''}
-                        
-                        ${ticketNum ? `
-                        <div class="mc-block">
-                            <button class="mc-btn gold-btn" onclick="window.copyToSlack(this, '${ticketNum}')">
-                                <i data-lucide="copy" class="btn-icon"></i> نسخ ${ticketNum}
-                                <div class="copy-toast">تم النسخ !</div>
-                            </button>
-                        </div>
-                        ` : ''}
-                    </div>
+        return `
+            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}"
+                 style="background: ${gradient}">
+              <div class="card-bg-pattern"></div>
+              ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
+
+              <div class="card-content">
+
+                <div class="mc-engineer">اجتماع ${escapeHTML(engineerLabel)}</div>
+
+                <div class="mc-title">${escapeHTML(cleanTitle || '—')}</div>
+
+                ${ticketNum ? `<div class="mc-ticket-pill">${ticketNum}</div>` : ''}
+
+                <div class="mc-time">
+                  <i data-lucide="clock"></i>
+                  <span class="en-nums">${formatTime12h(m.time)}</span>
                 </div>
-                
-                ${done ? '<div class="completed-icon"><i data-lucide="check-circle-2"></i></div>' : ''}
+
+                <div class="mc-blocks">
+                  ${(/بعد|remote|zoom|google meet|online/i.test(m.via || '')) ? `
+                    <div class="mc-block">
+                      <div class="mc-block-header"><span>انضم إلى جوجل ميت</span></div>
+                      <a href="${m.meetUrl || '#'}" target="_blank"
+                         class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
+                        <i data-lucide="video" class="btn-icon"></i> دخول
+                      </a>
+                    </div>
+                  ` : ''}
+
+                  ${ticketNum ? `
+                    <div class="mc-block">
+                      <button class="mc-btn gold-btn" onclick="window.copyToSlack(this, '${ticketNum}')">
+                        <i data-lucide="copy" class="btn-icon"></i> نسخ ${ticketNum}
+                        <div class="copy-toast">تم النسخ !</div>
+                      </button>
+                    </div>
+                  ` : ''}
+                </div>
+
+              </div>
+
+              ${done ? '<div class="completed-icon"><i data-lucide="check-circle-2"></i></div>' : ''}
             </div>
         `;
     }).join('');
@@ -537,7 +543,7 @@ async function initApp() {
     requestNotificationPermission();
     startNotificationLoop(
         () => activeMeetings,
-        getTodayDateStr,
+        formatTodayDate,
         () => {} // onTick
     );
 

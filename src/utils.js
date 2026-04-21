@@ -41,3 +41,15 @@ export function getArabicMeetingParts(count) {
     // 11+ suffix becomes "اجتماعاً" (singular accusative)
     return { num: String(count), text: 'اجتماع', isDual: false, isZero: false, isSingle: false };
 }
+/**
+ * Returns a short engineer label from a team name string.
+ * Used for display in meeting cards.
+ */
+export function getEngineerShortName(team) {
+    if (!team) return '';
+    if (/مجاهد/i.test(team))       return 'م.مجاهد';
+    if (/أشرف|اشرف/i.test(team))   return 'م.أشرف';
+    if (/شادي/i.test(team))         return 'م.شادي';
+    if (/حسام/i.test(team))         return 'م.حسام';
+    return team;
+}

@@ -245,7 +245,12 @@ function parseTimeStr(timeStr) {
             // If hour < 10, treat as PM (e.g. 8:00 -> 20:00)
             // If hour >= 10, treat as AM (e.g. 10:00 -> 10:00, 11:00 -> 11:00)
             // Note: 12:00 remains 12:00 (Noon)
-            if (h < 10) {
+            // ⚠️ HEURISTIC: Hours below 10 are assumed PM (e.g. 8:00 → 20:00).
+        // This works because all current meetings are in the afternoon.
+        // If a morning meeting (before 10 AM) is ever added to the sheet,
+        // it MUST include an explicit AM/ص indicator, otherwise it will be 
+        // incorrectly converted to PM.
+        if (h < 10) {
                 h += 12;
             } else if (h === 12) {
                 h = 12; // 12 PM (Noon) explicitly
@@ -631,6 +636,8 @@ export function isCancelled(meeting) {
 }
 
 
+// NOTE: getStatusIcon is not currently used in main.js rendering.
+// Kept for potential future status badge feature.
 export function getStatusIcon(via, status, hasMeetUrl = false) {
     // 1. Force Video if there's a meeting link
     if (hasMeetUrl) return 'video';
