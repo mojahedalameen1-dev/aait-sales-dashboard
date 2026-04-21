@@ -222,7 +222,8 @@ export function checkMeetingTimers(meetings, todayDate) {
     }
 
     const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // حساب بالثواني لدقة أعلى
+    const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
 
     const todayMeetings = meetings.filter(m => m.date === todayDate && m.time);
 
@@ -232,26 +233,26 @@ export function checkMeetingTimers(meetings, todayDate) {
         const [h, min] = meeting.time.split(':').map(Number);
         if (isNaN(h) || isNaN(min)) continue;
 
-        const meetingMinutes = h * 60 + min;
-        const diff = meetingMinutes - nowMinutes;
+        const meetingSeconds = h * 3600 + min * 60;
+        const diffSeconds = meetingSeconds - nowSeconds;
 
         const prefix = getEngineerPrefix(meeting.team);
 
-        // Logic A: 30 Minutes Warning (Expanded window: 28 to 32)
-        if (diff >= 28 && diff <= 32) {
+        // Logic A: 30 Minutes Warning (نافذة ±15 ثانية حول 1800 ثانية)
+        if (diffSeconds >= 1785 && diffSeconds <= 1815) {
             const key = `${meeting.id}_30min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 30, diff);
+                triggerAlert(meeting, prefix, 30, Math.round(diffSeconds / 60));
             }
         }
 
-        // Logic B: 5 Minutes Warning (Expanded window: 3 to 7)
-        if (diff >= 3 && diff <= 7) {
+        // Logic B: 5 Minutes Warning (نافذة ±15 ثانية حول 300 ثانية)
+        if (diffSeconds >= 285 && diffSeconds <= 315) {
             const key = `${meeting.id}_5min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 5, diff);
+                triggerAlert(meeting, prefix, 5, Math.round(diffSeconds / 60));
             }
         }
     }
@@ -304,12 +305,13 @@ let timerInterval = null;
 export function startNotificationLoop(getMeetings, getTodayDate, onTick) {
     if (timerInterval) clearInterval(timerInterval);
 
+    // لوب كل 10 ثواني لدقة ±10 ثواني بدل من ±30 ثانية
     timerInterval = setInterval(() => {
         const meetings = getMeetings();
         const today = getTodayDate();
         checkMeetingTimers(meetings, today);
         if (onTick) onTick();
-    }, 30 * 1000);
+    }, 10 * 1000);
 
     const meetings = getMeetings();
     const today = getTodayDate();
