@@ -390,6 +390,9 @@ export async function fetchMeetings() {
  * When a meeting is marked 'Done' in the spreadsheet, the published CSV might intermittently 
  * serve an older version where the meeting is still 'Active'. This causes the app to flip-flop
  * because it thinks a user manually reverted the state.
+ *
+ * FIX: Empty-status meetings (no decision yet) are never flagged as reversions.
+ * An empty cell means the meeting hasn't been processed — not that it was reverted from Done.
  */
 
 let syncTimeoutId = null;
@@ -454,6 +457,9 @@ export function startAutoSync(callback) {
                 const revertingMeetings = result.meetings.filter(newM => {
                     const oldM = lastKnownMeetings.find(m => m.id === newM.id);
                     if (!oldM) return false;
+                    // 🔧 FIX: Empty status = meeting not yet processed, not a reversion
+                    const newState = (newM.status || '').trim();
+                    if (!newState) return false;
                     return isDone(oldM) && !isDone(newM) && !isCancelled(newM);
                 });
 
@@ -494,6 +500,9 @@ export function startAutoSync(callback) {
                     const isStillReverting = verifyResult.meetings.some(newM => {
                         if (!shouldVerifyIds.has(newM.id)) return false;
                         const oldM = lastKnownMeetings.find(m => m.id === newM.id);
+                        // 🔧 FIX: Same guard in verification pass
+                        const newState = (newM.status || '').trim();
+                        if (!newState) return false;
                         return oldM && isDone(oldM) && !isDone(newM) && !isCancelled(newM);
                     });
 
