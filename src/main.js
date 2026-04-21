@@ -164,15 +164,6 @@ function renderUI(meetings) {
                       </a>
                     </div>
                   ` : ''}
-
-                  ${ticketNum ? `
-                    <div class="mc-block">
-                      <button class="mc-btn gold-btn" onclick="window.copyToSlack(this, '${ticketNum}')">
-                        <i data-lucide="copy" class="btn-icon"></i> نسخ ${ticketNum}
-                        <div class="copy-toast">تم النسخ !</div>
-                      </button>
-                    </div>
-                  ` : ''}
                 </div>
 
               </div>
