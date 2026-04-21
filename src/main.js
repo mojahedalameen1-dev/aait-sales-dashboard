@@ -303,7 +303,7 @@ function updateDynamicState() {
         return;
     }
 
-    const today = getTodayDateStr();
+    const today = formatTodayDate();
     const filtered = activeMeetings.filter(m => m.date === today && !isCancelled(m));
     
     const now = new Date();
@@ -317,7 +317,7 @@ function updateDynamicState() {
         })
         .sort((a, b) => a.mins - b.mins);
 
-    const match = pending.find(x => x.mins >= nowMins - 30);
+    const match = pending.find(x => x.mins >= nowMins - 120);
     let current = match ? match.m : null;
     
     // Aurora Color Mapping
