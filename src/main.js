@@ -136,7 +136,27 @@ function renderUI(meetings) {
         const isHossam = /حسام|hossam/i.test(m.team || '');
         const ticketMatch = m.project?.match(/AA\d+/);
         const ticketNum = ticketMatch ? ticketMatch[0] : '';
-        const cleanTitle = (m.project || '').replace(ticketNum, '').trim();
+        
+        // Meeting Type Classification (Sourced ONLY from m.via)
+        let meetingType = (m.via || '').trim();
+        let typeClass = 'type-online';
+        if (/حضوري|مكتب|مقر/i.test(meetingType)) typeClass = 'type-office';
+        else if (/خارجي|زيارة|عميل/i.test(meetingType)) typeClass = 'type-external';
+
+        // Clean project description from meeting type keywords
+        const typeKeywords = /اون لاين|أون لاين|online|remote|حضوري|خارجي|زيارة|مكتب|مقر/gi;
+        const rawTitle = (m.project || '')
+            .replace(ticketNum, '')
+            .replace(typeKeywords, '')
+            .replace(/[-_]+/g, ' ') // Remove dashes/underscores early
+            .trim();
+        
+        // Simplified Parsing: Client (first part) - Project (rest)
+        const parts = rawTitle.split(/\s{2,}| - | _ /).map(p => p.trim()).filter(p => p.length > 0);
+        let client = parts[0] || '—';
+        let projectDesc = parts.slice(1).join(' ').trim();
+
+        const isOnline = /بعد|remote|zoom|google meet|online|اون لاين/i.test(meetingType) || typeClass === 'type-online';
         const engineerLabel = getEngineerShortName(m.team);
 
         return `
@@ -147,29 +167,27 @@ function renderUI(meetings) {
               <div class="card-bg-pattern"></div>
               ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
 
+              ${(isOnline && m.meetUrl) ? `
+                <a href="${m.meetUrl}" target="_blank" class="mc-quick-join" title="انضمام سريع">
+                  <i data-lucide="video"></i>
+                </a>
+              ` : ''}
+
               <div class="card-content">
 
                 <div class="mc-engineer">اجتماع ${escapeHTML(engineerLabel)}</div>
 
-                <div class="mc-title">${escapeHTML(cleanTitle || '—')}</div>
+                <div class="mc-client">${escapeHTML(client)}</div>
+
+                ${projectDesc ? `<div class="mc-project-desc">${escapeHTML(projectDesc)}</div>` : ''}
+
+                ${meetingType ? `<div class="mc-type-badge ${typeClass}">${escapeHTML(meetingType)}</div>` : ''}
 
                 ${ticketNum ? `<div class="mc-ticket-pill">${ticketNum}</div>` : ''}
 
                 <div class="mc-time">
                   <i data-lucide="clock"></i>
                   <span class="en-nums">${formatTime12h(m.time)}</span>
-                </div>
-
-                <div class="mc-blocks">
-                  ${(/بعد|remote|zoom|google meet|online/i.test(m.via || '')) ? `
-                    <div class="mc-block">
-                      <div class="mc-block-header"><span>انضم إلى جوجل ميت</span></div>
-                      <a href="${m.meetUrl || '#'}" target="_blank"
-                         class="mc-btn gold-btn ${!m.meetUrl ? 'not-available' : ''}">
-                        <i data-lucide="video" class="btn-icon"></i> دخول
-                      </a>
-                    </div>
-                  ` : ''}
                 </div>
 
               </div>
