@@ -380,6 +380,119 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* --- Engineer Shady Al Ahly Theme --- */
+.meeting-card.theme-shady {
+    background: linear-gradient(135deg, #c6242c, #80161a) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.meeting-card.theme-shady::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('/al_ahly_logo.png');
+    background-size: contain; /* Show full dimensions without cropping */
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.12; /* Subtle, "hidden" effect */
+    z-index: 1;
+    pointer-events: none;
+    transition: var(--transition);
+}
+
+.meeting-card.theme-shady:hover::after {
+    opacity: 0.2; /* Slightly more visible on hover */
+    transform: scale(1.05);
+}
+
+.meeting-card.theme-shady .card-content {
+    z-index: 10; /* Ensure content stays on top */
+}
+
+.meeting-card.theme-shady .card-bg-pattern,
+.meeting-card.theme-ashraf .card-bg-pattern,
+.meeting-card.theme-mojahed .card-bg-pattern,
+.meeting-card.theme-hossam .card-bg-pattern {
+    display: none; /* Hide default pattern to keep it clean */
+}
+
+/* --- Engineer Ashraf Sudan Theme --- */
+.meeting-card.theme-ashraf {
+    background: linear-gradient(135deg, #0c7036, #14532d) !important;
+    position: relative;
+    overflow: hidden;
+}
+.meeting-card.theme-ashraf::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('/sudan_logo.png');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.15;
+    z-index: 1;
+    pointer-events: none;
+    transition: var(--transition);
+}
+
+/* --- Engineer Mojahed Al Hilal Theme --- */
+.meeting-card.theme-mojahed {
+    background: linear-gradient(135deg, #afc2ff, rgb(85, 123, 228)) !important;
+    position: relative;
+    overflow: hidden;
+}
+.meeting-card.theme-mojahed::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('/al_hilal_logo.png');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.15;
+    z-index: 1;
+    pointer-events: none;
+    transition: var(--transition);
+}
+
+/* --- Engineer Hossam Egypt Theme --- */
+.meeting-card.theme-hossam {
+    background: linear-gradient(135deg, #FF6D00, #E65100) !important;
+    position: relative;
+    overflow: hidden;
+}
+.meeting-card.theme-hossam::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('/egypt_logo.png');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.15;
+    z-index: 1;
+    pointer-events: none;
+    transition: var(--transition);
+}
+
+/* Shared Theme Effects */
+.meeting-card.theme-ashraf:hover::after,
+.meeting-card.theme-mojahed:hover::after,
+.meeting-card.theme-hossam:hover::after,
+.meeting-card.theme-shady:hover::after {
+    opacity: 0.25;
+    transform: scale(1.05);
+}
+
+.meeting-card.theme-ashraf .card-content,
+.meeting-card.theme-mojahed .card-content,
+.meeting-card.theme-hossam .card-content,
+.meeting-card.theme-shady .card-content {
+    z-index: 10;
+}
+
 /* --- New Card Design Blocks --- */
 .card-bg-pattern {
     position: absolute;

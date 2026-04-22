@@ -130,13 +130,19 @@ function renderUI(meetings) {
         const done = isDone(m);
         const cancelled = isCancelled(m);
         const gradient = getDeveloperGradient(m.team);
+        const isShady = /شادي|shady/i.test(m.team || '');
+        const isAshraf = /أشرف|اشرف|ashraf/i.test(m.team || '');
+        const isMojahed = /مجاهد|mojahed/i.test(m.team || '');
+        const isHossam = /حسام|hossam/i.test(m.team || '');
         const ticketMatch = m.project?.match(/AA\d+/);
         const ticketNum = ticketMatch ? ticketMatch[0] : '';
         const cleanTitle = (m.project || '').replace(ticketNum, '').trim();
         const engineerLabel = getEngineerShortName(m.team);
 
         return `
-            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}"
+            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''} 
+                 ${isShady ? 'theme-shady' : ''} ${isAshraf ? 'theme-ashraf' : ''} 
+                 ${isMojahed ? 'theme-mojahed' : ''} ${isHossam ? 'theme-hossam' : ''}"
                  style="background: ${gradient}">
               <div class="card-bg-pattern"></div>
               ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
