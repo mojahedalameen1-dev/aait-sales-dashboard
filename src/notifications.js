@@ -115,7 +115,7 @@ async function processQueue() {
         console.warn('[Queue] Safety timeout — force releasing isPlaying');
         isPlaying = false;
         processQueue();
-    }, 30000);
+    }, 90000);
 
     const task = playQueue.shift();
     const filename = task.filename || task;
