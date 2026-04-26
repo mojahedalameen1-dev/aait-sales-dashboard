@@ -22,6 +22,7 @@ const playQueue = [];
 let isPlaying = false;
 let currentAudioState = AUDIO_STATE.LOCKED;
 let onStateChangeCallback = null;
+let _audioCtx = null;
 
 // Track recently warned meetings to avoid spamming fallbacks
 const recentlyWarnedMeetings = new Map(); // id -> timestamp
@@ -44,26 +45,37 @@ function updateAudioState(newState) {
  * "Unlock" audio context. Called from user interaction.
  */
 export function unlockAudio() {
-    if (currentAudioState === AUDIO_STATE.ENABLED) return;
+    if (currentAudioState === AUDIO_STATE.ENABLED || _audioCtx) return;
 
-    const silentAudio = new Audio();
-    silentAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAA'
-        + 'ABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
-
-    silentAudio.onended = () => {
-        updateAudioState(AUDIO_STATE.ENABLED);
-        processQueue();
-    };
-
-    silentAudio.onerror = () => {
-        console.error('[Audio] Unlock failed: audio load error');
-        updateAudioState(AUDIO_STATE.FAILED);
-    };
-
-    silentAudio.play().catch(err => {
-        console.error('[Audio] Unlock play() rejected:', err.name);
-        updateAudioState(AUDIO_STATE.FAILED);
-    });
+    try {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === 'running') {
+            updateAudioState(AUDIO_STATE.ENABLED);
+            _audioCtx.close();
+            _audioCtx = null;
+            processQueue();
+            return;
+        }
+        _audioCtx.resume().then(() => {
+            updateAudioState(AUDIO_STATE.ENABLED);
+            _audioCtx.close();
+            _audioCtx = null;
+            processQueue();
+        }).catch(() => {
+            updateAudioState(AUDIO_STATE.FAILED);
+            _audioCtx = null;
+        });
+    } catch (e) {
+        _audioCtx = null;
+        const silent = new Audio();
+        silent.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        const fallback = setTimeout(() => {
+            updateAudioState(AUDIO_STATE.ENABLED);
+            processQueue();
+        }, 300);
+        silent.onended = () => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.ENABLED); processQueue(); };
+        silent.play().catch(() => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.FAILED); });
+    }
 }
 
 /**
@@ -89,16 +101,24 @@ async function processQueue() {
         return;
     }
 
-    isPlaying = true;
-    const task = playQueue.shift();
-    const filename = task.filename || task;
-    
+    let safetyTimeout = null;
     const finish = (delay = 2000) => {
+        if (safetyTimeout) clearTimeout(safetyTimeout);
         setTimeout(() => {
             isPlaying = false;
             processQueue();
         }, delay);
     };
+
+    isPlaying = true;
+    safetyTimeout = setTimeout(() => {
+        console.warn('[Queue] Safety timeout — force releasing isPlaying');
+        isPlaying = false;
+        processQueue();
+    }, 30000);
+
+    const task = playQueue.shift();
+    const filename = task.filename || task;
 
     try {
         const audioPath = `/sounds/${filename}`;

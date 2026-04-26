@@ -533,6 +533,10 @@ async function initApp() {
             if (icon) icon.setAttribute('data-lucide', 'volume-2');
             if (text) text.textContent = 'Audio Enabled';
             if (audioOverlay) audioOverlay.classList.remove('active');
+            
+            // Remove first-interaction listeners only after confirmed success
+            document.removeEventListener('click', handleFirstInteraction);
+            document.removeEventListener('keydown', handleFirstInteraction);
         } else if (state === AUDIO_STATE.FAILED) {
             if (icon) icon.setAttribute('data-lucide', 'alert-circle');
             if (text) text.textContent = 'Audio Failed';
@@ -548,8 +552,6 @@ async function initApp() {
     // Audio Unlock Listener (CRITICAL for Autoplay policies)
     const handleFirstInteraction = () => {
         unlockAudio();
-        document.removeEventListener('click', handleFirstInteraction);
-        document.removeEventListener('keydown', handleFirstInteraction);
     };
     document.addEventListener('click', handleFirstInteraction);
     document.addEventListener('keydown', handleFirstInteraction);
