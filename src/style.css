@@ -426,19 +426,15 @@ body {
 .meeting-card.theme-ashraf::after {
     content: '';
     position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 250%;
-    height: 250%;
+    inset: 0;
     background-image: url('/sudan_logo.png');
-    background-size: cover;
+    background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    opacity: 0.25;
+    opacity: 0.15;
     z-index: 1;
     pointer-events: none;
     transition: var(--transition);
-    transform: translate(-50%, -50%) rotate(90deg);
 }
 
 /* --- Engineer Mojahed Al Hilal Theme --- */
@@ -470,36 +466,24 @@ body {
 .meeting-card.theme-hossam::after {
     content: '';
     position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 250%;
-    height: 250%;
+    inset: 0;
     background-image: url('/egypt_logo.png');
-    background-size: cover;
+    background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    opacity: 0.25;
+    opacity: 0.15;
     z-index: 1;
     pointer-events: none;
     transition: var(--transition);
-    transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 /* Shared Theme Effects */
+.meeting-card.theme-ashraf:hover::after,
 .meeting-card.theme-mojahed:hover::after,
+.meeting-card.theme-hossam:hover::after,
 .meeting-card.theme-shady:hover::after {
     opacity: 0.25;
     transform: scale(1.05);
-}
-
-.meeting-card.theme-ashraf:hover::after {
-    opacity: 0.4;
-    transform: translate(-50%, -50%) rotate(90deg) scale(1.1);
-}
-
-.meeting-card.theme-hossam:hover::after {
-    opacity: 0.4;
-    transform: translate(-50%, -50%) rotate(-90deg) scale(1.1);
 }
 
 .meeting-card.theme-ashraf .card-content,
