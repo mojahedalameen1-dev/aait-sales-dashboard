@@ -1,6 +1,4 @@
-/**
- * Utility functions for AAIT Sales Dashboard
- */
+import { getEngineerLabel } from './config.js';
 
 /**
  * Escapes HTML characters to prevent XSS attacks.
@@ -46,10 +44,15 @@ export function getArabicMeetingParts(count) {
  * Used for display in meeting cards.
  */
 export function getEngineerShortName(team) {
-    if (!team) return '';
-    if (/مجاهد/i.test(team))       return 'م.مجاهد';
-    if (/أشرف|اشرف/i.test(team))   return 'م.أشرف';
-    if (/شادي/i.test(team))         return 'م.شادي';
-    if (/حسام/i.test(team))         return 'م.حسام';
-    return team;
+    return getEngineerLabel(team);
+}
+
+export function isSafeMeetingUrl(value) {
+    if (!value) return false;
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:';
+    } catch {
+        return false;
+    }
 }

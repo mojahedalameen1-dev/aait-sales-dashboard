@@ -1,4 +1,25 @@
+import '@fontsource/ibm-plex-sans-arabic/300.css';
+import '@fontsource/ibm-plex-sans-arabic/400.css';
+import '@fontsource/ibm-plex-sans-arabic/500.css';
+import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './style.css';
+import {
+    createIcons,
+    AlertCircle,
+    CalendarCheck2,
+    CheckCircle2,
+    Clock,
+    CloudOff,
+    Info,
+    LoaderCircle,
+    Moon,
+    RefreshCw,
+    Settings,
+    Sun,
+    Video,
+    Volume2,
+    VolumeX
+} from 'lucide';
 import { 
     startAutoSync, 
     fetchMeetings, 
@@ -7,20 +28,25 @@ import {
     formatTime12h, 
     isDone, 
     isCancelled,
-    formatTodayDate
+    formatTodayDate,
+    getCurrentTimeParts,
+    getMeetingTimingState
 } from './data.js';
 import { 
     startNotificationLoop, 
     requestNotificationPermission,
     unlockAudio,
     setAudioStateListener,
-    AUDIO_STATE
+    AUDIO_STATE,
+    playTestAlert
 } from './notifications.js';
 import { 
     escapeHTML, 
     formatMeetingCount,
-    getEngineerShortName
+    getEngineerShortName,
+    isSafeMeetingUrl
 } from './utils.js';
+import { APP_TIME_ZONE, getEngineerColor, getEngineerTheme } from './config.js';
 
 // ========================================
 // 🌐 State & Constants
@@ -28,9 +54,31 @@ import {
 
 const DEFAULT_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 let activeMeetings = [];
+let activeSyncResult = null;
 // BUG-03 tracker
 let clockIntervalId = null;
 let dynamicUpdateIntervalId = null;
+
+function refreshIcons() {
+    createIcons({
+        icons: {
+            AlertCircle,
+            CalendarCheck2,
+            CheckCircle2,
+            Clock,
+            CloudOff,
+            Info,
+            LoaderCircle,
+            Moon,
+            RefreshCw,
+            Settings,
+            Sun,
+            Video,
+            Volume2,
+            VolumeX
+        }
+    });
+}
 
 // ========================================
 // ⏰ Utilities
@@ -45,12 +93,8 @@ function toEn(str) {
 // ⚠️ NOTE: Engineer name matching is also handled in utils.js → getEngineerShortName()
 // If you add or rename an engineer, update BOTH functions.
 function getDeveloperGradient(team) {
-    const t = (team || '').toLowerCase();
-    if (/أشرف|اشرف|ashraf/i.test(t)) return 'linear-gradient(135deg, #00C853, #1de9b6)';
-    if (/مجاهد|mojahed/i.test(t)) return 'linear-gradient(135deg, #2962FF, #00B0FF)';
-    if (/شادي|shady/i.test(t)) return 'linear-gradient(135deg, #C6242C, #9B1B22)';
-    if (/حسام|hossam/i.test(t)) return 'linear-gradient(135deg, #FF6D00, #FFAB00)';
-    return 'linear-gradient(135deg, #334155, #1e293b)';
+    const color = getEngineerColor(team);
+    return `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 68%, #08111f))`;
 }
 
 // ========================================
@@ -98,18 +142,13 @@ function renderUI(meetings) {
     const todayMeetings = meetings.filter(m => m.date === today);
 
     // Update Stats (Arabic Grammar)
-    const nowTime = new Date();
-    const nowMins = nowTime.getHours() * 60 + nowTime.getMinutes();
-    const runningNow = todayMeetings.filter(m => {
-        if (isDone(m) || isCancelled(m)) return false;
-        const [h, mi] = (m.time || '00:00').split(':').map(Number);
-        const startMins = h * 60 + mi;
-        return nowMins >= startMins && nowMins <= (startMins + 60);
-    });
+    const meetingStates = todayMeetings.map(meeting => ({ meeting, timing: getMeetingTimingState(meeting) }));
+    const runningNow = meetingStates.filter(item => item.timing.state === 'running');
+    const upcoming = meetingStates.filter(item => item.timing.state === 'upcoming');
 
     animateCount('stat-total', todayMeetings.length);
     animateCount('stat-done', todayMeetings.filter(m => isDone(m)).length);
-    animateCount('stat-pending', todayMeetings.filter(m => !isDone(m) && !isCancelled(m)).length);
+    animateCount('stat-pending', upcoming.length);
     animateCount('stat-urgent', runningNow.length);
 
     // Sorting: Pending First, then Done, then Cancelled
@@ -121,19 +160,22 @@ function renderUI(meetings) {
         return (a.time || '').localeCompare(b.time || '');
     });
 
-    // TODO: grid-is-crowded CSS rules are not yet implemented.
-    // Reserved for future compact layout when meeting count exceeds 20.
     if (sorted.length > 20) grid.classList.add('grid-is-crowded');
     else grid.classList.remove('grid-is-crowded');
+
+    if (sorted.length === 0) {
+        renderEmptyState(grid);
+        refreshIcons();
+        updateDynamicState();
+        return;
+    }
 
     grid.innerHTML = sorted.map(m => {
         const done = isDone(m);
         const cancelled = isCancelled(m);
+        const timingState = getMeetingTimingState(m).state;
         const gradient = getDeveloperGradient(m.team);
-        const isShady = /شادي|shady/i.test(m.team || '');
-        const isAshraf = /أشرف|اشرف|ashraf/i.test(m.team || '');
-        const isMojahed = /مجاهد|mojahed/i.test(m.team || '');
-        const isHossam = /حسام|hossam/i.test(m.team || '');
+        const engineerTheme = getEngineerTheme(m.team);
         const ticketMatch = m.project?.match(/AA\d+/);
         const ticketNum = ticketMatch ? ticketMatch[0] : '';
         
@@ -157,18 +199,19 @@ function renderUI(meetings) {
         let projectDesc = parts.slice(1).join(' ').trim();
 
         const isOnline = /بعد|remote|zoom|google meet|online|اون لاين/i.test(meetingType) || typeClass === 'type-online';
+        const hasSafeMeetingUrl = isOnline && isSafeMeetingUrl(m.meetUrl);
         const engineerLabel = getEngineerShortName(m.team);
 
         return `
-            <div class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''} 
-                 ${isShady ? 'theme-shady' : ''} ${isAshraf ? 'theme-ashraf' : ''} 
-                 ${isMojahed ? 'theme-mojahed' : ''} ${isHossam ? 'theme-hossam' : ''}"
+            <article class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}
+                 ${timingState === 'running' ? 'current' : ''} ${timingState === 'overdue' ? 'overdue' : ''}
+                 ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
                  style="background: ${gradient}">
               <div class="card-bg-pattern"></div>
               ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
 
-              ${(isOnline && m.meetUrl) ? `
-                <a href="${m.meetUrl}" target="_blank" class="mc-quick-join" title="انضمام سريع">
+              ${hasSafeMeetingUrl ? `
+                <a href="${escapeHTML(m.meetUrl)}" target="_blank" rel="noopener noreferrer" class="mc-quick-join" aria-label="الانضمام إلى اجتماع ${escapeHTML(client)}">
                   <i data-lucide="video"></i>
                 </a>
               ` : ''}
@@ -193,14 +236,35 @@ function renderUI(meetings) {
               </div>
 
               ${done ? '<div class="completed-icon"><i data-lucide="check-circle-2"></i></div>' : ''}
-            </div>
+            </article>
         `;
     }).join('');
 
-    if (window.lucide) window.lucide.createIcons();
+    refreshIcons();
 
 
     updateDynamicState();
+}
+
+function renderEmptyState(grid) {
+    const hasError = Boolean(activeSyncResult?.error);
+    const hasCache = Boolean(activeSyncResult?.hasCache);
+    const title = hasError
+        ? 'تعذر تحديث اجتماعات اليوم'
+        : 'لا توجد اجتماعات مسجلة اليوم';
+    const message = hasError
+        ? (hasCache ? 'نعرض آخر نسخة محفوظة، وسيُعاد المحاولة تلقائيًا.' : 'تحقق من نشر تبويب الشهر أو الاتصال بمصدر البيانات.')
+        : `تمت مراجعة تبويب ${activeSyncResult?.sheetName || 'الشهر الحالي'} ولا توجد اجتماعات لهذا اليوم.`;
+
+    grid.innerHTML = `
+        <div class="empty-state ${hasError ? 'has-error' : ''}">
+            <i data-lucide="${hasError ? 'cloud-off' : 'calendar-check-2'}"></i>
+            <h2>${title}</h2>
+            <p>${escapeHTML(message)}</p>
+            ${hasError ? '<button class="btn-prime" id="empty-retry-btn" type="button">إعادة المحاولة</button>' : ''}
+        </div>
+    `;
+    document.getElementById('empty-retry-btn')?.addEventListener('click', window.manualRefresh);
 }
 
 // ========================================
@@ -208,23 +272,28 @@ function renderUI(meetings) {
 // ========================================
 
 function startClock() {
-    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-
     if (clockIntervalId) clearInterval(clockIntervalId);
-    clockIntervalId = setInterval(() => {
+    const tick = () => {
         const now = new Date();
-        let h = now.getHours();
-        const m = String(now.getMinutes()).padStart(2, '0');
+        const timeParts = getCurrentTimeParts(now);
+        let h = timeParts.hours;
+        const m = String(timeParts.minutes).padStart(2, '0');
         const suffix = h < 12 ? 'ص' : 'م';
         h = h % 12 || 12;
-        
+
         setSafeText('live-clock', `${h}:${m} ${suffix}`);
-        
-        // FUNC-08: Manual Date building for English Digits
-        const dateStr = `${days[now.getDay()]}، ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+
+        const dateStr = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+            timeZone: APP_TIME_ZONE,
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        }).format(now);
         setSafeText('live-date', dateStr);
-    }, 1000);
+    };
+    tick();
+    clockIntervalId = setInterval(tick, 1000);
 }
 
 function updateCountdown(meeting, overlappingCount = 0) {
@@ -246,10 +315,8 @@ function updateCountdown(meeting, overlappingCount = 0) {
     }
 
     label.textContent = "متبقى على الاجتماع القادم :";
-    const now = new Date();
-    const [h, mi] = meeting.time.split(':').map(Number);
-    const target = new Date(); target.setHours(h, mi, 0, 0);
-    const diff = target - now;
+    const timing = getMeetingTimingState(meeting);
+    const diff = timing.minutesUntil * 60000;
 
     // Urgency handling (< 5 mins)
     if (diff > 0 && diff < 5 * 60000) {
@@ -260,8 +327,12 @@ function updateCountdown(meeting, overlappingCount = 0) {
         timer.style.color = 'var(--text-white)';
     }
 
-    if (diff <= 0) {
+    if (timing.state === 'running') {
         timer.style.display = 'none'; badge.style.display = 'block';
+        badge.textContent = 'الاجتماع جاري الآن';
+    } else if (timing.state === 'overdue') {
+        timer.style.display = 'none'; badge.style.display = 'block';
+        badge.textContent = 'اجتماع متأخر الإغلاق';
     } else {
         timer.style.display = 'block'; badge.style.display = 'none';
         const hours = Math.floor(diff / 3600000);
@@ -321,44 +392,28 @@ function updateDynamicState() {
     const today = formatTodayDate();
     const filtered = activeMeetings.filter(m => m.date === today && !isCancelled(m));
     
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
-    
-    let pending = filtered
+    const pending = filtered
         .filter(m => !isDone(m))
-        .map(m => { 
-            const [h, mi] = m.time.split(':').map(Number); 
-            return { m, mins: h * 60 + mi }; 
-        })
-        .sort((a, b) => a.mins - b.mins);
+        .map(m => ({ m, timing: getMeetingTimingState(m) }))
+        .filter(item => ['running', 'upcoming'].includes(item.timing.state))
+        .sort((a, b) => {
+            if (a.timing.state === 'running' && b.timing.state !== 'running') return -1;
+            if (b.timing.state === 'running' && a.timing.state !== 'running') return 1;
+            return a.timing.minutesUntil - b.timing.minutesUntil;
+        });
 
-    const match = pending.find(x => x.mins >= nowMins - 120);
-    let current = match ? match.m : null;
+    const match = pending[0] || null;
+    const current = match?.m || null;
     
     // Aurora Color Mapping
-    const engineerColorMap = {
-        'ashraf': '#00C853',
-        'ashraf_ar': 'أشرف',
-        'mojahed': '#2962FF',
-        'shady': '#C6242C',
-        'hossam': '#FF6D00'
-    };
-
-    let auroraColor = '#2962FF'; // Default Blue
-    if (current && current.team) {
-        const team = current.team.toLowerCase();
-        if (team.includes('أشرف') || team.includes('اشرف')) auroraColor = '#00C853';
-        else if (team.includes('مجاهد')) auroraColor = '#2962FF';
-        else if (team.includes('شادي')) auroraColor = '#C6242C';
-        else if (team.includes('حسام')) auroraColor = '#FF6D00';
-    }
+    const auroraColor = current ? getEngineerColor(current.team) : '#2962FF';
     document.documentElement.style.setProperty('--aurora-color', `${auroraColor}22`);
 
     // Overlapping meetings detection (diff < 5 mins)
     let overlappingCount = 0;
     if (match) {
-        const baseMins = match.mins;
-        const overlaps = pending.filter(x => Math.abs(x.mins - baseMins) < 5);
+        const baseMins = match.timing.startMinutes;
+        const overlaps = pending.filter(x => Math.abs(x.timing.startMinutes - baseMins) < 5);
         overlappingCount = overlaps.length;
     }
     
@@ -369,20 +424,62 @@ function updateDynamicState() {
 // 🔘 UI Handlers
 // ========================================
 
+function updateSyncStatus(result, isLoading = false) {
+    const container = document.getElementById('sync-status');
+    const text = document.getElementById('sync-status-text');
+    const meta = document.getElementById('sync-status-meta');
+    if (!container || !text || !meta) return;
+
+    container.className = 'sync-status';
+    if (isLoading) {
+        container.classList.add('is-loading');
+        text.textContent = 'جاري تحديث البيانات';
+        meta.textContent = result?.sheetName || 'مصدر الاجتماعات';
+        return;
+    }
+
+    if (result?.error) {
+        container.classList.add(result.stale ? 'has-error' : 'is-cached');
+        text.textContent = result.stale ? 'البيانات قديمة' : 'نعرض نسخة محفوظة';
+        meta.textContent = result.error;
+        return;
+    }
+
+    container.classList.add('is-online');
+    text.textContent = 'البيانات محدثة';
+    const lastSyncText = result?.lastSync
+        ? new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', {
+            timeZone: APP_TIME_ZONE,
+            hour: 'numeric',
+            minute: '2-digit'
+        }).format(new Date(result.lastSync))
+        : 'الآن';
+    meta.textContent = `${result?.sheetName || 'الشهر الحالي'} • ${lastSyncText}`;
+}
+
 window.manualRefresh = async () => {
     if (window._isManualRefreshing) return;
     window._isManualRefreshing = true;
 
     const btn = document.getElementById('refresh-now-btn');
-    if (btn) btn.style.opacity = '0.5';
+    if (btn) {
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+    }
+    updateSyncStatus(activeSyncResult, true);
 
     try {
         const result = await fetchMeetings();
+        activeSyncResult = result;
         activeMeetings = result.meetings;
+        updateSyncStatus(result);
         renderUI(activeMeetings);
     } finally {
         window._isManualRefreshing = false;
-        if (btn) setTimeout(() => btn.style.opacity = '1', 1000);
+        if (btn) {
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+        }
     }
 };
 
@@ -393,7 +490,7 @@ window.toggleTheme = () => {
     const icon = document.querySelector('#theme-toggle-btn i, #theme-toggle-btn svg');
     if (icon) {
         icon.setAttribute('data-lucide', isLight ? 'sun' : 'moon');
-        if (window.lucide) window.lucide.createIcons();
+        refreshIcons();
     }
 };
 
@@ -401,19 +498,31 @@ window.toggleSound = () => {
     const settings = getSettings();
     const soundEnabled = !settings.soundEnabled;
     updateSettings({ soundEnabled });
+    if (soundEnabled) {
+        unlockAudio();
+        requestNotificationPermission();
+    }
     
     const btn = document.getElementById('sound-toggle-btn');
     if (btn) {
         btn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}"></i>`;
-        if (window.lucide) window.lucide.createIcons();
+        refreshIcons();
     }
 };
 
+let settingsReturnFocus = null;
 window.toggleSettings = () => {
     const modal = document.getElementById('settings-modal');
     if (!modal) return;
-    
-    modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+
+    const isOpen = modal.classList.toggle('active');
+    modal.setAttribute('aria-hidden', String(!isOpen));
+    if (isOpen) {
+        settingsReturnFocus = document.activeElement;
+        queueMicrotask(() => document.getElementById('sheet-key-input')?.focus());
+    } else {
+        settingsReturnFocus?.focus?.();
+    }
     const settings = getSettings();
     const input = document.getElementById('sheet-key-input');
     if (input) input.value = settings.sheetId || DEFAULT_KEY;
@@ -421,6 +530,7 @@ window.toggleSettings = () => {
 
 window.unlockAudio = () => {
     unlockAudio();
+    requestNotificationPermission();
 };
 
 window.saveSettings = () => {
@@ -428,10 +538,14 @@ window.saveSettings = () => {
     if (!input) return;
     
     const val = input.value.trim();
-    if (val) {
+    if (/^2PACX-[A-Za-z0-9_-]+$/.test(val)) {
+        input.removeAttribute('aria-invalid');
         updateSettings({ sheetId: val });
         window.toggleSettings();
         window.manualRefresh();
+    } else {
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
     }
 };
 
@@ -483,6 +597,13 @@ async function initApp() {
     
     const settings = getSettings();
 
+    document.getElementById('refresh-now-btn')?.addEventListener('click', window.manualRefresh);
+    document.getElementById('theme-toggle-btn')?.addEventListener('click', window.toggleTheme);
+    document.getElementById('sound-toggle-btn')?.addEventListener('click', window.toggleSound);
+    document.getElementById('settings-toggle-btn')?.addEventListener('click', window.toggleSettings);
+    document.getElementById('save-settings-btn')?.addEventListener('click', window.saveSettings);
+    document.getElementById('cancel-settings-btn')?.addEventListener('click', window.toggleSettings);
+
     // Theme sync
     if (localStorage.getItem('theme') === 'light') {
         document.body.classList.add('light-mode');
@@ -493,13 +614,40 @@ async function initApp() {
         const icon = document.querySelector('#sound-toggle-btn i, #sound-toggle-btn svg');
         if (icon) {
             icon.setAttribute('data-lucide', 'volume-x');
-            if (window.lucide) window.lucide.createIcons();
+            refreshIcons();
         }
     }
 
     // Audio State UI Handling
     const audioStatusBadge = document.getElementById('audio-status');
     const audioOverlay = document.getElementById('audio-unlock-overlay');
+    const audioEnableButton = audioOverlay?.querySelector('.btn-prime');
+    const continueWithoutSoundButton = document.getElementById('continue-without-sound');
+
+    const setAudioOverlayVisible = visible => {
+        if (!audioOverlay) return;
+        audioOverlay.hidden = !visible;
+        audioOverlay.classList.toggle('active', visible);
+        audioOverlay.setAttribute('aria-hidden', String(!visible));
+        if (visible) audioOverlay.removeAttribute('inert');
+        else audioOverlay.setAttribute('inert', '');
+    };
+
+    audioEnableButton?.addEventListener('click', () => {
+        unlockAudio();
+        requestNotificationPermission();
+    });
+
+    continueWithoutSoundButton?.addEventListener('click', () => {
+        updateSettings({ soundEnabled: false });
+        setAudioOverlayVisible(false);
+        const soundButton = document.getElementById('sound-toggle-btn');
+        if (soundButton) soundButton.innerHTML = '<i data-lucide="volume-x"></i>';
+        refreshIcons();
+    });
+
+    if (!settings.soundEnabled) setAudioOverlayVisible(false);
+    else queueMicrotask(() => audioEnableButton?.focus());
 
     setAudioStateListener((state) => {
         // Ensure LED exists next to #live-clock
@@ -531,33 +679,20 @@ async function initApp() {
 
         if (state === AUDIO_STATE.ENABLED) {
             if (icon) icon.setAttribute('data-lucide', 'volume-2');
-            if (text) text.textContent = 'Audio Enabled';
-            if (audioOverlay) audioOverlay.classList.remove('active');
-            
-            // Remove first-interaction listeners only after confirmed success
-            document.removeEventListener('click', handleFirstInteraction);
-            document.removeEventListener('keydown', handleFirstInteraction);
+            if (text) text.textContent = 'الصوت مفعّل';
+            setAudioOverlayVisible(false);
         } else if (state === AUDIO_STATE.FAILED) {
             if (icon) icon.setAttribute('data-lucide', 'alert-circle');
-            if (text) text.textContent = 'Audio Failed';
+            if (text) text.textContent = 'تعذر تشغيل الصوت';
         } else {
             if (icon) icon.setAttribute('data-lucide', 'volume-x');
-            if (text) text.textContent = 'Audio Locked';
-            if (audioOverlay) audioOverlay.classList.add('active');
+            if (text) text.textContent = 'الصوت غير مفعّل';
+            if (getSettings().soundEnabled) setAudioOverlayVisible(true);
         }
 
-        if (window.lucide) window.lucide.createIcons();
+        refreshIcons();
     });
 
-    // Audio Unlock Listener (CRITICAL for Autoplay policies)
-    const handleFirstInteraction = () => {
-        unlockAudio();
-    };
-    document.addEventListener('click', handleFirstInteraction);
-    document.addEventListener('keydown', handleFirstInteraction);
-
-    // BUG-01: Initialization of Notifications
-    requestNotificationPermission();
     startNotificationLoop(
         () => activeMeetings,
         formatTodayDate,
@@ -566,12 +701,47 @@ async function initApp() {
 
     // Start Auto-Sync (10s interval is handled inside data.js)
     startAutoSync((result) => {
+        activeSyncResult = result;
         activeMeetings = result.meetings;
+        updateSyncStatus(result);
         renderUI(activeMeetings);
     });
 
     if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
     dynamicUpdateIntervalId = setInterval(() => updateDynamicState(), 1000);
+
+    document.getElementById('test-sound-btn')?.addEventListener('click', () => {
+        unlockAudio();
+        playTestAlert();
+    });
+
+    document.addEventListener('keydown', event => {
+        const modal = document.getElementById('settings-modal');
+        if (!modal?.classList.contains('active')) return;
+        if (event.key === 'Escape') {
+            window.toggleSettings();
+            return;
+        }
+        if (event.key === 'Tab') {
+            const focusable = [...modal.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
+                .filter(element => !element.disabled);
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+            }
+        }
+    });
+
+    document.getElementById('settings-modal')?.addEventListener('click', event => {
+        if (event.target.id === 'settings-modal') window.toggleSettings();
+    });
+
+    refreshIcons();
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

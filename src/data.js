@@ -1,6 +1,4 @@
-/**
- * data.js — Data layer: Settings management, CSV fetch, robust parsing, local cache
- */
+import { APP_TIME_ZONE, DEFAULT_MEETING_DURATION_MINUTES } from './config.js';
 
 // ========================================
 // 🔧 SETTINGS & CONFIG
@@ -9,10 +7,21 @@
 const STORAGE_KEY_SETTINGS = 'aait_settings';
 const STORAGE_KEY_DATA = 'aait_meetings_data';
 const STORAGE_KEY_LAST_SYNC = 'aait_last_sync';
+const STORAGE_KEY_SOURCE = 'aait_meetings_source';
+const FETCH_TIMEOUT_MS = 15000;
+const STALE_AFTER_MS = 5 * 60 * 1000;
+const LOCAL_TAB_GIDS = {
+    '2026-02': '951085024',
+    '2026-03': '1826079126',
+    '2026-04': '507439430',
+    '2026-05': '1614080437',
+    '2026-07': '1446268678',
+    '2026-08': '474705831'
+};
 
 const DEFAULT_SETTINGS = {
     sheetId: '', // User must provide this
-    refreshInterval: 1, // 1 minute (prevents 400 rate limiting)
+    refreshInterval: 1,
     soundEnabled: true
 };
 
@@ -63,43 +72,39 @@ export function updateSettings(newSettings) {
 // Default Publish Key (for /d/e/ format — only this works publicly)
 const DEFAULT_PUBLISH_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 
-/**
- * 🗓️ خريطة التبويبات الشهرية — MONTHLY TAB MAP
- * أضف GID كل شهر جديد هنا بسطر واحد فقط:
- * 'YYYY-MM': 'GID'
- *
- * كيف تجد رقم GID؟
- * 1. افتح Google Sheets
- * 2. انتقل للتبويب الذي تريده
- * 3. انظر للرابط في المتصفح: ?gid=XXXXXXXX
- * 4. الرقم بعد gid= هو ما تحتاجه
- */
-const SHEET_TAB_GIDS = {
-    '2026-02': '951085024',    // فبراير 2026
-    '2026-03': '1826079126',   // مارس 2026 ✅
-    '2026-04': '507439430',    // أبريل 2026 
-    '2026-05': '1614080437',   // مايو 2026 🆕
-};
+const ARABIC_MONTH_NAMES = [
+    'يناير', 'فبراير', 'مارس', 'ابريل', 'مايو', 'يونيو',
+    'يوليو', 'اغسطس', 'سبتمبر', 'اكتوبر', 'نوفمبر', 'ديسمبر'
+];
 
-/**
- * اختر GID بناءً على الشهر الحالي تلقائياً.
- * إذا لم يوجد GID للشهر الحالي، يرجع لآخر شهر مُعرَّف.
- */
-function getCurrentMonthGID() {
-    const now = new Date();
-    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+function getZonedDateParts(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: APP_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(date);
+    return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+}
 
-    // بحث مباشر عن الشهر الحالي
-    if (SHEET_TAB_GIDS[key]) {
-        console.log(`[Sheets] ✅ تبويب الشهر الحالي: ${key} → GID: ${SHEET_TAB_GIDS[key]}`);
-        return SHEET_TAB_GIDS[key];
-    }
+export function getCurrentMonthInfo(date = new Date()) {
+    const parts = getZonedDateParts(date);
+    const monthIndex = Number(parts.month) - 1;
+    return {
+        key: `${parts.year}-${parts.month}`,
+        sheetName: `${ARABIC_MONTH_NAMES[monthIndex]} ${parts.year}`,
+        year: parts.year,
+        month: parts.month
+    };
+}
 
-    // Fallback: آخر شهر مُعرَّف في الخريطة
-    const keys = Object.keys(SHEET_TAB_GIDS).sort();
-    const lastKey = keys[keys.length - 1];
-    console.warn(`[Sheets] ⚠️ لا يوجد GID للشهر ${key}، جاري استخدام آخر تبويب: ${lastKey}`);
-    return SHEET_TAB_GIDS[lastKey] || null;
+function getActivePublishKey() {
+    const { sheetId } = getSettings();
+    return (sheetId && /^2PACX-[A-Za-z0-9_-]+$/.test(sheetId)) ? sheetId : DEFAULT_PUBLISH_KEY;
 }
 
 /**
@@ -107,35 +112,48 @@ function getCurrentMonthGID() {
  * Regular sheet IDs require auth and cause CORS errors, so only 2PACX- keys are accepted.
  */
 async function fetchCSV() {
-    const { sheetId } = getSettings();
+    const activeKey = getActivePublishKey();
+    const monthInfo = getCurrentMonthInfo();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    // Only use user ID if it's a valid publish key (starts with 2PACX-)
-    const activeKey = (sheetId && sheetId.startsWith('2PACX-')) ? sheetId : DEFAULT_PUBLISH_KEY;
+    try {
+        const apiResponse = await fetch(`/api/meetings?key=${encodeURIComponent(activeKey)}`, {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+        const contentType = apiResponse.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const payload = await apiResponse.json();
+            if (!apiResponse.ok) throw new Error(payload.error || 'تعذر جلب بيانات الاجتماعات');
+            return {
+                text: payload.csvText,
+                monthInfo,
+                sourceKey: `${activeKey}:${monthInfo.key}`,
+                sheetName: payload.sheetName || monthInfo.sheetName
+            };
+        }
 
-    // 🗓️ اختيار GID تلقائياً بناءً على الشهر الحالي
-    const activeGID = getCurrentMonthGID();
-    const url = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?gid=${activeGID}&single=true&output=csv`;
-
-    const response = await fetch(`${url}&_t=${Date.now()}`, { cache: "no-store" });
-
-    if (!response.ok) {
-        throw new Error(`فشل الاتصال: ${response.status}`);
+        const localGid = LOCAL_TAB_GIDS[monthInfo.key];
+        if (!localGid) throw new Error(`تعذر العثور على تبويب ${monthInfo.sheetName}`);
+        const fallbackUrl = `https://docs.google.com/spreadsheets/d/e/${activeKey}/pub?gid=${localGid}&single=true&output=csv&_t=${Date.now()}`;
+        const response = await fetch(fallbackUrl, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`فشل الاتصال: ${response.status}`);
+        const text = await response.text();
+        if (text.trim().startsWith('<')) throw new Error('الملف غير متاح أو غير منشور');
+        return { text, monthInfo, sourceKey: `${activeKey}:${monthInfo.key}`, sheetName: monthInfo.sheetName };
+    } catch (error) {
+        if (error.name === 'AbortError') throw new Error('انتهت مهلة الاتصال بمصدر البيانات');
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
-
-    const text = await response.text();
-
-    // 🛡️ Safety Check: Google Sheets sometimes returns HTML (200 OK) if the sheet is not found/private
-    if (text.trim().startsWith('<')) {
-        throw new Error('الملف غير متاح أو غير منشور (HTML Response)');
-    }
-
-    return text;
 }
 
 /**
  * Robust CSV parser using state machine to handle quoted fields and multiline values.
  */
-function parseCSV(csvText) {
+export function parseCSV(csvText) {
     const records = [];
     let fields = [];
     let current = '';
@@ -223,10 +241,24 @@ function isDateHeaderRow(row) {
 /**
  * Parse time string to 24h format with AM/PM support
  */
-function parseTimeStr(timeStr) {
+function createStableMeetingId(value) {
+    let hashA = 0xdeadbeef;
+    let hashB = 0x41c6ce57;
+    for (let index = 0; index < value.length; index++) {
+        const code = value.charCodeAt(index);
+        hashA = Math.imul(hashA ^ code, 2654435761);
+        hashB = Math.imul(hashB ^ code, 1597334677);
+    }
+    hashA = Math.imul(hashA ^ (hashA >>> 16), 2246822507) ^ Math.imul(hashB ^ (hashB >>> 13), 3266489909);
+    hashB = Math.imul(hashB ^ (hashB >>> 16), 2246822507) ^ Math.imul(hashA ^ (hashA >>> 13), 3266489909);
+    return `m-${(hashB >>> 0).toString(36)}${(hashA >>> 0).toString(36)}`;
+}
+
+export function parseTimeStr(timeStr) {
     if (!timeStr) return '';
 
     let cleaned = timeStr.trim();
+    const originalHourToken = cleaned.match(/\d{1,2}/)?.[0] || '';
 
     // Check for AM/PM indicators before stripping non-digits
     const isPM = /pm|م|مساء/i.test(cleaned);
@@ -241,21 +273,10 @@ function parseTimeStr(timeStr) {
         let h = parseInt(match[1], 10);
         const m = match[2];
 
-        // Smarter Heuristic (The 10 AM Rule)
+        // جدول التشغيل يستخدم 1:00..9:00 للفترة المسائية، بينما 08:00 صيغة 24 ساعة صباحية.
         if (!isPM && !isAM) {
-            // If hour < 10, treat as PM (e.g. 8:00 -> 20:00)
-            // If hour >= 10, treat as AM (e.g. 10:00 -> 10:00, 11:00 -> 11:00)
-            // Note: 12:00 remains 12:00 (Noon)
-            // ⚠️ HEURISTIC: Hours below 10 are assumed PM (e.g. 8:00 → 20:00).
-        // This works because all current meetings are in the afternoon.
-        // If a morning meeting (before 10 AM) is ever added to the sheet,
-        // it MUST include an explicit AM/ص indicator, otherwise it will be 
-        // incorrectly converted to PM.
-        if (h < 10) {
-                h += 12;
-            } else if (h === 12) {
-                h = 12; // 12 PM (Noon) explicitly
-            }
+            if (h > 23) return '';
+            if (originalHourToken.length === 1 && h >= 1 && h <= 9) h += 12;
         } else {
             // 12-hour to 24-hour conversion if indicator IS present
             if (isPM && h < 12) h += 12;
@@ -271,7 +292,7 @@ function parseTimeStr(timeStr) {
 /**
  * Normalize date to YYYY/MM/DD to ensure correct sorting
  */
-function normalizeDate(dateStr) {
+export function normalizeDate(dateStr) {
     if (!dateStr) return '';
     const parts = dateStr.trim().split(/[/\-]/);
 
@@ -297,10 +318,10 @@ function normalizeDate(dateStr) {
  * Map parsed CSV rows to Meeting objects
  */
 function mapRowsToMeetings(rows) {
-    // Skip header row usually, but sometimes Google Sheets CSV includes title first.
-    // We'll rely on smart filtering below.
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('مصدر البيانات فارغ');
+    if (rows[0].length < 6) throw new Error('بنية أعمدة جدول الاجتماعات غير صحيحة');
 
-    const dataRows = rows.slice(1); // Assume row 1 is headers
+    const dataRows = rows.slice(1);
     const filledRows = forwardFillDates(dataRows);
 
     const meetings = [];
@@ -316,15 +337,21 @@ function mapRowsToMeetings(rows) {
 
         if (!project && !time) continue;
 
-        // BUG-02: Stable ID Generation
-        const stableId = btoa(unescape(encodeURIComponent(`${row[0]}-${time}-${project}`))).substring(0, 12).replace(/\//g, '_');
+        const identitySource = (row[6] || '').trim() || `${row[0]}|${time}|${project}|${team}`;
+        const stableId = createStableMeetingId(identitySource);
+
+        const normalizedTime = parseTimeStr(time);
+        if (!normalizedTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(normalizedTime)) {
+            console.warn('[Data] تم تجاهل اجتماع بوقت غير صالح:', { project, time });
+            continue;
+        }
 
         meetings.push({
             id: stableId,
             date: normalizeDate((row[0] || '').trim()),
             project: project,
             team: team,
-            time: parseTimeStr(time),
+            time: normalizedTime,
             via: (row[4] || '').trim(),
             status: (row[5] || '').trim(),
             ticketUrl: (row[6] || '').trim(),
@@ -340,17 +367,19 @@ function mapRowsToMeetings(rows) {
 // 💾 Local Storage Cache
 // ========================================
 
-function saveMeetings(meetings) {
+function saveMeetings(meetings, sourceKey) {
     try {
         localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(meetings));
         localStorage.setItem(STORAGE_KEY_LAST_SYNC, new Date().toISOString());
+        localStorage.setItem(STORAGE_KEY_SOURCE, sourceKey);
     } catch (e) {
         console.warn('LocalStorage save failed:', e);
     }
 }
 
-function loadCachedMeetings() {
+function loadCachedMeetings(sourceKey = null) {
     try {
+        if (sourceKey && localStorage.getItem(STORAGE_KEY_SOURCE) !== sourceKey) return null;
         const data = localStorage.getItem(STORAGE_KEY_DATA);
         return data ? JSON.parse(data) : null;
     } catch {
@@ -370,20 +399,42 @@ function getLastSyncTime() {
  * Fetch and parse meetings
  */
 export async function fetchMeetings() {
+    const activeKey = getActivePublishKey();
+    const monthInfo = getCurrentMonthInfo();
+    const sourceKey = `${activeKey}:${monthInfo.key}`;
+
     try {
-        const csvText = await fetchCSV();
-        const rows = parseCSV(csvText);
+        const csvResult = await fetchCSV();
+        const rows = parseCSV(csvResult.text);
         const meetings = mapRowsToMeetings(rows);
 
-        saveMeetings(meetings);
-        return { meetings, fromCache: false, error: null };
+        const meetingsFromAnotherMonth = meetings.filter(meeting => meeting.date && !meeting.date.startsWith(`${monthInfo.year}/${monthInfo.month}/`));
+        if (meetings.length > 0 && meetingsFromAnotherMonth.length === meetings.length) {
+            throw new Error(`تعذر العثور على تبويب ${csvResult.sheetName}`);
+        }
+
+        saveMeetings(meetings, sourceKey);
+        return {
+            meetings,
+            fromCache: false,
+            stale: false,
+            error: null,
+            lastSync: getLastSyncTime(),
+            sheetName: csvResult.sheetName
+        };
     } catch (error) {
         console.error('Fetch error:', error);
-        const cached = loadCachedMeetings();
+        const cached = loadCachedMeetings(sourceKey);
+        const lastSync = getLastSyncTime();
+        const cacheAge = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
         return {
-            meetings: cached || getDemoMeetings(),
+            meetings: cached || [],
             fromCache: true,
-            error: error.message
+            stale: cacheAge > STALE_AFTER_MS,
+            hasCache: Boolean(cached),
+            error: error.message || 'تعذر تحديث البيانات',
+            lastSync,
+            sheetName: monthInfo.sheetName
         };
     }
 }
@@ -434,7 +485,7 @@ export function startAutoSync(callback) {
     const defaultIntervalMs = Math.max(1, parseFloat(refreshInterval)) * 60 * 1000;
 
     let latestRequestTime = 0;
-    let lastKnownMeetings = loadCachedMeetings() || [];
+    let lastKnownMeetings = loadCachedMeetings(`${getActivePublishKey()}:${getCurrentMonthInfo().key}`) || [];
     let isPolling = false;
 
     const poll = async () => {
@@ -448,8 +499,20 @@ export function startAutoSync(callback) {
 
         try {
             const result = await fetchMeetings();
-            
-            // On Success: Reset backoff
+
+            if (result.error) {
+                consecutive400Errors++;
+                callback(result);
+                isPolling = false;
+                const backoffDelay = consecutive400Errors === 1
+                    ? Math.max(defaultIntervalMs, 60000)
+                    : consecutive400Errors === 2
+                        ? Math.max(defaultIntervalMs, 120000)
+                        : Math.max(defaultIntervalMs, 300000);
+                scheduleNext(backoffDelay);
+                return;
+            }
+
             consecutive400Errors = 0;
 
             if (thisRequestTime !== latestRequestTime) {
@@ -602,12 +665,40 @@ export function groupByDate(meetings) {
     return groups;
 }
 
-export function formatTodayDate() {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}/${m}/${d}`; // YYYY/MM/DD
+export function formatTodayDate(date = new Date()) {
+    const parts = getZonedDateParts(date);
+    return `${parts.year}/${parts.month}/${parts.day}`;
+}
+
+export function getCurrentTimeParts(date = new Date()) {
+    const parts = getZonedDateParts(date);
+    return {
+        hours: Number(parts.hour),
+        minutes: Number(parts.minute),
+        seconds: Number(parts.second)
+    };
+}
+
+export function getMeetingTimingState(meeting, date = new Date()) {
+    if (!meeting?.time) return { state: 'invalid', minutesUntil: Infinity };
+    if (isCancelled(meeting)) return { state: 'cancelled', minutesUntil: Infinity };
+    if (isDone(meeting)) return { state: 'done', minutesUntil: Infinity };
+
+    const today = formatTodayDate(date);
+    if (meeting.date !== today) return { state: 'other-day', minutesUntil: Infinity };
+
+    const [hours, minutes] = meeting.time.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return { state: 'invalid', minutesUntil: Infinity };
+
+    const nowParts = getCurrentTimeParts(date);
+    const nowMinutes = nowParts.hours * 60 + nowParts.minutes + nowParts.seconds / 60;
+    const startMinutes = hours * 60 + minutes;
+    const duration = Number(meeting.durationMinutes) || DEFAULT_MEETING_DURATION_MINUTES;
+    const minutesUntil = startMinutes - nowMinutes;
+
+    if (minutesUntil > 0) return { state: 'upcoming', minutesUntil, startMinutes, duration };
+    if (nowMinutes < startMinutes + duration) return { state: 'running', minutesUntil, startMinutes, duration };
+    return { state: 'overdue', minutesUntil, startMinutes, duration };
 }
 
 /**

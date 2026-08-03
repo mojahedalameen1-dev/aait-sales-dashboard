@@ -5,36 +5,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>أوامر الشبكة — لوحة تحكم المبيعات</title>
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <!-- Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
 </head>
 
 <body class="dark-mode">
 
     <!-- Audio Unlock Overlay -->
-    <div id="audio-unlock-overlay" class="audio-overlay active">
-        <div class="overlay-content">
+    <div id="audio-unlock-overlay" class="audio-overlay active" role="dialog" aria-modal="true" aria-labelledby="audio-overlay-title" aria-hidden="false">
+        <div class="overlay-content" tabindex="-1">
             <div class="pulse-icon"><i data-lucide="volume-2"></i></div>
-            <h2>تنبيهات الاجتماعات</h2>
+            <h2 id="audio-overlay-title">تنبيهات الاجتماعات</h2>
             <p>يرجى الضغط في أي مكان داخل لوحة التحكم لتفعيل صوت المنبهات</p>
             <button class="btn-prime">تفعيل الصوت الآن</button>
+            <button class="btn-link" id="continue-without-sound">المتابعة بدون صوت</button>
         </div>
     </div>
 
     <!-- Settings Modal -->
-    <div id="settings-modal">
-        <div class="modal-body">
-            <h2>⚙️ إعدادات الربط</h2>
+    <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+        <div class="modal-body" tabindex="-1">
+            <h2 id="settings-title">⚙️ إعدادات الربط</h2>
             <p style="margin-bottom: 1rem; color: var(--text-dim);">أدخل معرّف النشر (Google Sheets Publish Key):</p>
+            <label class="sr-only" for="sheet-key-input">معرّف نشر Google Sheets</label>
             <input type="text" id="sheet-key-input" placeholder="2PACX-...">
             <div class="modal-actions">
-                <button class="btn-prime" onclick="window.saveSettings()">حفظ وتحديث</button>
-                <button class="btn-cancel" onclick="window.toggleSettings()">إلغاء</button>
+                <button class="btn-prime" id="save-settings-btn" type="button">حفظ وتحديث</button>
+                <button class="btn-secondary" id="test-sound-btn" type="button">اختبار الصوت</button>
+                <button class="btn-cancel" id="cancel-settings-btn" type="button">إلغاء</button>
             </div>
         </div>
     </div>
@@ -52,6 +49,14 @@
             <div id="audio-status" class="audio-status-badge locked">
                 <i data-lucide="volume-x"></i>
                 <span class="status-text">Audio Locked</span>
+            </div>
+        </div>
+
+        <div id="sync-status" class="sync-status is-loading" role="status" aria-live="polite">
+            <span class="sync-dot"></span>
+            <div>
+                <strong id="sync-status-text">جاري تحديث البيانات</strong>
+                <small id="sync-status-meta">—</small>
             </div>
         </div>
 
@@ -86,16 +91,16 @@
         </div>
 
         <div class="controls">
-            <button class="icon-btn" id="refresh-now-btn" title="تحديث" onclick="window.manualRefresh()">
+            <button class="icon-btn" id="refresh-now-btn" title="تحديث">
                 <i data-lucide="refresh-cw"></i>
             </button>
-            <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع" onclick="window.toggleTheme()">
+            <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع">
                 <i data-lucide="moon"></i>
             </button>
-            <button class="icon-btn" id="sound-toggle-btn" title="كتم الصوت" onclick="window.toggleSound()">
+            <button class="icon-btn" id="sound-toggle-btn" title="كتم الصوت">
                 <i data-lucide="volume-2"></i>
             </button>
-            <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات" onclick="window.toggleSettings()">
+            <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات">
                 <i data-lucide="settings"></i>
             </button>
         </div>
@@ -104,12 +109,16 @@
     <!-- Main Grid -->
     <main class="main-content">
         <div id="meetings-grid">
-            <!-- Cards injected here by main.js -->
+            <div class="empty-state is-loading" id="meetings-empty-state">
+                <i data-lucide="loader-circle"></i>
+                <h2>جاري تحميل اجتماعات اليوم</h2>
+                <p>يتم الآن الاتصال بمصدر البيانات.</p>
+            </div>
         </div>
     </main>
 
     <!-- Notifications Container -->
-    <div id="notification-container"></div>
+    <div id="notification-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <!-- Entry Point -->
     <script type="module" src="/src/main.js"></script>

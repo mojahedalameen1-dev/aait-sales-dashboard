@@ -3,7 +3,9 @@
  * REFACTORED: Audio Queue System + Performance Cleanup
  */
 
-import { getSettings, isDone, isCancelled } from './data.js';
+import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
+import { getEngineerAudioPrefix } from './config.js';
+import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
 
 // ========================================
 // 🔊 Audio System (Queue Based)
@@ -26,6 +28,9 @@ let _audioCtx = null;
 
 // Track recently warned meetings to avoid spamming fallbacks
 const recentlyWarnedMeetings = new Map(); // id -> timestamp
+const DELIVERED_STORAGE_KEY = 'aait_delivered_notifications';
+const ALERT_CATCHUP_MS = 10 * 60 * 1000;
+const AUDIO_FILES = ['a30.mp3', 'a5.mp3', 'm30.mp3', 'm5.mp3', 's30.mp3', 's5.mp3'];
 
 /**
  * Set a callback for UI updates when audio state changes
@@ -53,6 +58,7 @@ export function unlockAudio() {
             updateAudioState(AUDIO_STATE.ENABLED);
             _audioCtx.close();
             _audioCtx = null;
+            preloadAudioFiles();
             processQueue();
             return;
         }
@@ -60,6 +66,7 @@ export function unlockAudio() {
             updateAudioState(AUDIO_STATE.ENABLED);
             _audioCtx.close();
             _audioCtx = null;
+            preloadAudioFiles();
             processQueue();
         }).catch(() => {
             updateAudioState(AUDIO_STATE.FAILED);
@@ -76,6 +83,18 @@ export function unlockAudio() {
         silent.onended = () => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.ENABLED); processQueue(); };
         silent.play().catch(() => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.FAILED); });
     }
+}
+
+function preloadAudioFiles() {
+    for (const filename of AUDIO_FILES) {
+        const audio = new Audio(`/sounds/${filename}`);
+        audio.preload = 'auto';
+        audio.load();
+    }
+}
+
+export function playTestAlert() {
+    enqueueAudio({ filename: 'm5.mp3', meetingId: 'audio-test' });
 }
 
 /**
@@ -125,22 +144,9 @@ async function processQueue() {
         console.log(`[Queue] Stage: Playing -> ${filename}`);
         
         const audio = new Audio(audioPath);
-        let playCount = 1;
-
         audio.onended = () => {
-            if (playCount < 2) {
-                playCount++;
-                setTimeout(() => {
-                    console.log(`[Queue] Stage: Replaying -> ${filename}`);
-                    audio.play().catch(e => {
-                        console.error('[Queue] Replay Failed:', e);
-                        finish(500);
-                    });
-                }, 5000);
-            } else {
-                console.log('[Queue] Stage: Completed');
-                finish(2000);
-            }
+            console.log('[Queue] Stage: Completed');
+            finish(500);
         };
 
         audio.onerror = () => {
@@ -167,14 +173,7 @@ async function processQueue() {
  * UPDATED: Added Hossam ( حـسام ) -> 'a'
  */
 function getEngineerPrefix(teamName) {
-    if (!teamName) return null;
-    const lowerName = teamName.toLowerCase();
-
-    if (lowerName.includes("مجاهد")) return 'm';
-    if (lowerName.includes("شادي")) return 's';
-    if (lowerName.includes("أشرف") || lowerName.includes("اشرف") || lowerName.includes("حسام")) return 'a';
-
-    return null;
+    return getEngineerAudioPrefix(teamName);
 }
 
 // ========================================
@@ -203,17 +202,19 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
       <div class="toast-title"></div>
       <div class="toast-message"></div>
     </div>
-    <button class="toast-close" onclick="this.closest('.notification-toast').classList.add('exiting'); setTimeout(() => this.closest('.notification-toast')?.remove(), 300)">✕</button>
+    <button class="toast-close" type="button" aria-label="إغلاق التنبيه">✕</button>
   `;
 
     toast.querySelector('.toast-title').textContent = title;
     toast.querySelector('.toast-message').textContent = message;
+    toast.querySelector('.toast-close').addEventListener('click', () => {
+        toast.classList.add('exiting');
+        setTimeout(() => toast.remove(), 300);
+    });
 
     container.prepend(toast);
 
-    if (window.lucide) {
-        window.lucide.createIcons();
-    }
+    createIcons({ icons: { AlertCircle, AlertTriangle, Bell, Info } });
 
     setTimeout(() => {
         if (toast.parentElement) {
@@ -227,23 +228,38 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 // ⏰ Meeting Timer / Notification Engine
 // ========================================
 
-const triggeredNotifications = new Set();
-let lastNotifiedDate = new Date().toDateString();
+const triggeredNotifications = new Set(loadDeliveredNotifications());
+let lastNotifiedDate = formatTodayDate();
 
-// FUNC-03: Daily clear to prevent memory accumulation and reset for the new day
+function loadDeliveredNotifications() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(DELIVERED_STORAGE_KEY) || '{}');
+        const today = formatTodayDate();
+        return stored.date === today && Array.isArray(stored.keys) ? stored.keys : [];
+    } catch {
+        return [];
+    }
+}
 
+function persistDeliveredNotifications() {
+    localStorage.setItem(DELIVERED_STORAGE_KEY, JSON.stringify({
+        date: formatTodayDate(),
+        keys: [...triggeredNotifications]
+    }));
+}
 
 export function checkMeetingTimers(meetings, todayDate) {
     // يُمسح عند تغيير اليوم فقط
-    const today = new Date().toDateString();
+    const today = todayDate;
     if (lastNotifiedDate !== today) {
         triggeredNotifications.clear();
         lastNotifiedDate = today;
+        persistDeliveredNotifications();
     }
 
     const now = new Date();
-    // حساب بالثواني لدقة أعلى
-    const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const nowParts = getCurrentTimeParts(now);
+    const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
 
     const todayMeetings = meetings.filter(m => m.date === todayDate && m.time);
 
@@ -258,21 +274,26 @@ export function checkMeetingTimers(meetings, todayDate) {
 
         const prefix = getEngineerPrefix(meeting.team);
 
-        // Logic A: 30 Minutes Warning (نافذة ±15 ثانية حول 1800 ثانية)
-        if (diffSeconds >= 1785 && diffSeconds <= 1815) {
+        const shouldTrigger = thresholdSeconds => {
+            const alertAgeMs = (thresholdSeconds - diffSeconds) * 1000;
+            return diffSeconds >= 0 && alertAgeMs >= 0 && alertAgeMs <= ALERT_CATCHUP_MS;
+        };
+
+        if (shouldTrigger(30 * 60)) {
             const key = `${meeting.id}_30min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 30, Math.round(diffSeconds / 60));
+                persistDeliveredNotifications();
+                triggerAlert(meeting, prefix, 30, Math.max(0, Math.round(diffSeconds / 60)));
             }
         }
 
-        // Logic B: 5 Minutes Warning (نافذة ±15 ثانية حول 300 ثانية)
-        if (diffSeconds >= 285 && diffSeconds <= 315) {
+        if (shouldTrigger(5 * 60)) {
             const key = `${meeting.id}_5min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
-                triggerAlert(meeting, prefix, 5, Math.round(diffSeconds / 60));
+                persistDeliveredNotifications();
+                triggerAlert(meeting, prefix, 5, Math.max(0, Math.round(diffSeconds / 60)));
             }
         }
     }
@@ -339,8 +360,10 @@ export function startNotificationLoop(getMeetings, getTodayDate, onTick) {
 }
 
 export function requestNotificationPermission() {
-    if (!("Notification" in window)) return;
-    Notification.requestPermission().then(permission => {
+    if (!("Notification" in window)) return Promise.resolve('unsupported');
+    if (Notification.permission !== 'default') return Promise.resolve(Notification.permission);
+    return Notification.requestPermission().then(permission => {
         console.log('🔔 Notification permission:', permission);
+        return permission;
     });
 }
