@@ -173,7 +173,8 @@ function renderUI(meetings) {
     grid.innerHTML = sorted.map(m => {
         const done = isDone(m);
         const cancelled = isCancelled(m);
-        const timingState = getMeetingTimingState(m).state;
+        const timing = getMeetingTimingState(m);
+        const timingState = timing.state;
         const gradient = getDeveloperGradient(m.team);
         const engineerTheme = getEngineerTheme(m.team);
         const ticketMatch = m.project?.match(/AA\d+/);
@@ -201,6 +202,15 @@ function renderUI(meetings) {
         const isOnline = /بعد|remote|zoom|google meet|online|اون لاين/i.test(meetingType) || typeClass === 'type-online';
         const hasSafeMeetingUrl = isOnline && isSafeMeetingUrl(m.meetUrl);
         const engineerLabel = getEngineerShortName(m.team);
+        const statusMeta = done
+            ? { label: 'مكتمل', className: 'is-done', icon: 'check-circle-2' }
+            : cancelled
+                ? { label: 'ملغي / تعديل', className: 'is-cancelled', icon: 'info' }
+                : timingState === 'running'
+                    ? { label: `جارٍ الآن · منذ ${Math.max(0, Math.abs(timing.minutesUntil))} د`, className: 'is-running', icon: 'loader-circle' }
+                    : timingState === 'overdue'
+                        ? { label: 'يحتاج متابعة', className: 'is-overdue', icon: 'alert-circle' }
+                        : { label: 'قادم', className: 'is-upcoming', icon: 'clock' };
 
         return `
             <article class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}
@@ -208,19 +218,20 @@ function renderUI(meetings) {
                  ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
                  style="background: ${gradient}">
               <div class="card-bg-pattern"></div>
-              ${cancelled ? '<div class="move-alert"><i data-lucide="info"></i> ملغي / تعديل</div>' : ''}
+              <div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>
 
               ${hasSafeMeetingUrl ? `
                 <a href="${escapeHTML(m.meetUrl)}" target="_blank" rel="noopener noreferrer" class="mc-quick-join" aria-label="الانضمام إلى اجتماع ${escapeHTML(client)}">
                   <i data-lucide="video"></i>
+                  <span>دخول</span>
                 </a>
               ` : ''}
 
               <div class="card-content">
 
-                <div class="mc-engineer">اجتماع ${escapeHTML(engineerLabel)}</div>
-
                 <div class="mc-client">${escapeHTML(client)}</div>
+
+                <div class="mc-engineer">مع ${escapeHTML(engineerLabel)}</div>
 
                 ${projectDesc ? `<div class="mc-project-desc">${escapeHTML(projectDesc)}</div>` : ''}
 
@@ -235,7 +246,6 @@ function renderUI(meetings) {
 
               </div>
 
-              ${done ? '<div class="completed-icon"><i data-lucide="check-circle-2"></i></div>' : ''}
             </article>
         `;
     }).join('');
@@ -302,6 +312,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
     const sideDetails = document.getElementById('sidebar-meeting-details');
     const label = document.querySelector('.countdown-label');
     const countdownContainer = document.querySelector('.next-meeting-countdown');
+    const joinLink = document.getElementById('side-join-link');
 
     if (!timer || !badge || !sideDetails || !label || !countdownContainer) return;
 
@@ -311,10 +322,10 @@ function updateCountdown(meeting, overlappingCount = 0) {
         sideDetails.style.display = 'none';
         label.textContent = "لا اجتماعات متبقية اليوم";
         countdownContainer.classList.remove('urgent');
+        if (joinLink) joinLink.hidden = true;
         return;
     }
 
-    label.textContent = "متبقى على الاجتماع القادم :";
     const timing = getMeetingTimingState(meeting);
     const diff = timing.minutesUntil * 60000;
 
@@ -328,12 +339,17 @@ function updateCountdown(meeting, overlappingCount = 0) {
     }
 
     if (timing.state === 'running') {
+        label.textContent = 'الاجتماع الجاري';
         timer.style.display = 'none'; badge.style.display = 'block';
         badge.textContent = 'الاجتماع جاري الآن';
     } else if (timing.state === 'overdue') {
+        label.textContent = 'اجتماع يحتاج متابعة';
         timer.style.display = 'none'; badge.style.display = 'block';
         badge.textContent = 'اجتماع متأخر الإغلاق';
     } else {
+        label.textContent = timing.minutesUntil <= 60
+            ? `الاجتماع التالي خلال ${Math.max(0, timing.minutesUntil)} دقيقة`
+            : 'الاجتماع التالي';
         timer.style.display = 'block'; badge.style.display = 'none';
         const hours = Math.floor(diff / 3600000);
         const mm = Math.floor((diff % 3600000) / 60000);
@@ -349,6 +365,13 @@ function updateCountdown(meeting, overlappingCount = 0) {
     }
 
     sideDetails.style.display = 'block';
+
+    if (joinLink) {
+        const canJoin = isSafeMeetingUrl(meeting.meetUrl);
+        joinLink.hidden = !canJoin;
+        if (canJoin) joinLink.href = meeting.meetUrl;
+        else joinLink.removeAttribute('href');
+    }
     
     // Ticket ID Extraction & Project Bold
     const projectText = meeting.project || '';
