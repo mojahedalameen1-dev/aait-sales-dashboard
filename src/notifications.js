@@ -6,6 +6,7 @@
 import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
 import { getEngineerAudioPrefix } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
+import { ALERT_CATCHUP_MS, shouldTriggerAlert } from './alert-timing.js';
 
 // ========================================
 // 🔊 Audio System (Queue Based)
@@ -25,11 +26,12 @@ let isPlaying = false;
 let currentAudioState = AUDIO_STATE.LOCKED;
 let onStateChangeCallback = null;
 let _audioCtx = null;
+let retainedAudioPlayer = null;
+const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
 // Track recently warned meetings to avoid spamming fallbacks
 const recentlyWarnedMeetings = new Map(); // id -> timestamp
 const DELIVERED_STORAGE_KEY = 'aait_delivered_notifications';
-const ALERT_CATCHUP_MS = 10 * 60 * 1000;
 const AUDIO_FILES = ['a30.mp3', 'a5.mp3', 'm30.mp3', 'm5.mp3', 's30.mp3', 's5.mp3'];
 
 /**
@@ -53,16 +55,18 @@ export function unlockAudio() {
     if (currentAudioState === AUDIO_STATE.ENABLED || _audioCtx) return;
 
     try {
+        retainedAudioPlayer ||= new Audio();
+        retainedAudioPlayer.preload = 'auto';
+        retainedAudioPlayer.src = SILENT_AUDIO;
+        const mediaUnlock = retainedAudioPlayer.play().then(() => {
+            retainedAudioPlayer.pause();
+            retainedAudioPlayer.currentTime = 0;
+        });
+
         _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (_audioCtx.state === 'running') {
-            updateAudioState(AUDIO_STATE.ENABLED);
-            _audioCtx.close();
-            _audioCtx = null;
-            preloadAudioFiles();
-            processQueue();
-            return;
-        }
-        _audioCtx.resume().then(() => {
+        const contextUnlock = _audioCtx.state === 'running' ? Promise.resolve() : _audioCtx.resume();
+
+        Promise.all([mediaUnlock, contextUnlock]).then(() => {
             updateAudioState(AUDIO_STATE.ENABLED);
             _audioCtx.close();
             _audioCtx = null;
@@ -70,12 +74,14 @@ export function unlockAudio() {
             processQueue();
         }).catch(() => {
             updateAudioState(AUDIO_STATE.FAILED);
+            _audioCtx?.close?.();
             _audioCtx = null;
         });
     } catch (e) {
         _audioCtx = null;
-        const silent = new Audio();
-        silent.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        const silent = retainedAudioPlayer || new Audio();
+        retainedAudioPlayer = silent;
+        silent.src = SILENT_AUDIO;
         const fallback = setTimeout(() => {
             updateAudioState(AUDIO_STATE.ENABLED);
             processQueue();
@@ -142,8 +148,13 @@ async function processQueue() {
     try {
         const audioPath = `/sounds/${filename}`;
         console.log(`[Queue] Stage: Playing -> ${filename}`);
-        
-        const audio = new Audio(audioPath);
+
+        const audio = retainedAudioPlayer || new Audio();
+        retainedAudioPlayer = audio;
+        audio.pause();
+        audio.currentTime = 0;
+        audio.src = audioPath;
+        audio.load();
         audio.onended = () => {
             console.log('[Queue] Stage: Completed');
             finish(500);
@@ -274,12 +285,7 @@ export function checkMeetingTimers(meetings, todayDate) {
 
         const prefix = getEngineerPrefix(meeting.team);
 
-        const shouldTrigger = thresholdSeconds => {
-            const alertAgeMs = (thresholdSeconds - diffSeconds) * 1000;
-            return diffSeconds >= 0 && alertAgeMs >= 0 && alertAgeMs <= ALERT_CATCHUP_MS;
-        };
-
-        if (shouldTrigger(30 * 60)) {
+        if (shouldTriggerAlert(diffSeconds, 30 * 60, ALERT_CATCHUP_MS)) {
             const key = `${meeting.id}_30min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
@@ -288,7 +294,7 @@ export function checkMeetingTimers(meetings, todayDate) {
             }
         }
 
-        if (shouldTrigger(5 * 60)) {
+        if (shouldTriggerAlert(diffSeconds, 5 * 60, ALERT_CATCHUP_MS)) {
             const key = `${meeting.id}_5min`;
             if (!triggeredNotifications.has(key)) {
                 triggeredNotifications.add(key);
@@ -332,7 +338,7 @@ function sendPushNotification(meeting, timeText) {
     if (Notification.permission === "granted") {
         new Notification(`تنبيه: ${meeting.project}`, {
             body: `${meeting.team || 'الفريق'} - ${timeText}`,
-            silent: true
+            silent: currentAudioState === AUDIO_STATE.ENABLED
         });
     }
 }

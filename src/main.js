@@ -191,12 +191,13 @@ function renderUI(meetings) {
         const rawTitle = (m.project || '')
             .replace(ticketNum, '')
             .replace(typeKeywords, '')
-            .replace(/[-_]+/g, ' ') // Remove dashes/underscores early
             .trim();
         
         // Simplified Parsing: Client (first part) - Project (rest)
-        const parts = rawTitle.split(/\s{2,}| - | _ /).map(p => p.trim()).filter(p => p.length > 0);
-        let client = parts[0] || '—';
+        const parts = rawTitle.split(/\s+-\s+|\s{2,}|[_|]+/).map(p => p.trim()).filter(Boolean);
+        const vagueTitle = /^(?:غير\s*محدد|اجتماع(?:\s*[اأإآ])?|عميل|تطبيق|[-—])$/i;
+        let client = parts[0] || '';
+        if (!client || vagueTitle.test(client)) client = 'اجتماع عميل';
         let projectDesc = parts.slice(1).join(' ').trim();
 
         const isOnline = /بعد|remote|zoom|google meet|online|اون لاين/i.test(meetingType) || typeClass === 'type-online';
@@ -347,9 +348,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
         timer.style.display = 'none'; badge.style.display = 'block';
         badge.textContent = 'اجتماع متأخر الإغلاق';
     } else {
-        label.textContent = timing.minutesUntil <= 60
-            ? `الاجتماع التالي خلال ${Math.max(0, timing.minutesUntil)} دقيقة`
-            : 'الاجتماع التالي';
+        label.textContent = timing.minutesUntil <= 5 ? 'يبدأ الاجتماع قريباً' : 'الاجتماع التالي';
         timer.style.display = 'block'; badge.style.display = 'none';
         const hours = Math.floor(diff / 3600000);
         const mm = Math.floor((diff % 3600000) / 60000);
