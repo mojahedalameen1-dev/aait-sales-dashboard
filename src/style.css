@@ -1223,6 +1223,277 @@ input[aria-invalid="true"] {
     background: rgba(239, 68, 68, .12);
     border-color: rgba(239, 68, 68, .3);
 }
+
+/* ========================================
+   Sidebar composition hardening
+   Keeps dynamic meeting content contained without changing the cards grid.
+   ======================================== */
+
+.sidebar {
+    --sidebar-section-gap: clamp(0.65rem, 1.25vh, 0.9rem);
+    gap: var(--sidebar-section-gap);
+    padding: clamp(1rem, 2.1vh, 1.55rem) clamp(1.15rem, 1.7vw, 1.7rem);
+    overscroll-behavior: contain;
+}
+
+.sidebar > * {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    flex-shrink: 0;
+}
+
+.logo-section,
+.clock-section,
+.sync-status,
+.next-meeting-countdown,
+.pressure-summary,
+.stats-section,
+.controls {
+    margin: 0;
+}
+
+.logo-section {
+    justify-content: flex-start;
+    gap: 0.7rem;
+    min-height: 42px;
+}
+
+.logo-section img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+}
+
+.logo-section h1 {
+    min-width: 0;
+    font-size: clamp(1.25rem, 1.8vw, 1.55rem);
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.clock-section {
+    padding-block: clamp(0.35rem, 0.8vh, 0.65rem);
+}
+
+#live-clock {
+    margin-bottom: 0.4rem;
+    font-size: clamp(2.45rem, 5.4vh, 3.15rem);
+    line-height: 1.05;
+}
+
+#live-date {
+    font-size: clamp(0.8rem, 1.35vh, 0.95rem);
+    line-height: 1.5;
+}
+
+.day-summary {
+    margin-top: 0.3rem;
+    line-height: 1.45;
+}
+
+#audio-status {
+    margin-top: 0.55rem;
+    min-height: 32px;
+    padding: 0.35rem 0.7rem;
+}
+
+.sync-status {
+    width: 100%;
+    min-height: 54px;
+    align-items: center;
+    padding: 0.65rem 0.8rem;
+    border-radius: 13px;
+}
+
+.sync-status > div {
+    min-width: 0;
+    flex: 1;
+}
+
+.sync-status strong {
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.sync-status small {
+    margin-top: 0.12rem;
+    font-size: 0.65rem;
+    line-height: 1.4;
+}
+
+.next-meeting-countdown {
+    width: 100%;
+    min-height: 0;
+    max-height: none;
+    justify-content: flex-start;
+    align-items: stretch;
+    overflow: visible;
+    padding: clamp(0.85rem, 1.7vh, 1.05rem);
+    border-radius: 16px;
+}
+
+.countdown-label {
+    display: block;
+    margin: 0 0 0.4rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    text-align: right;
+}
+
+#countdown-timer {
+    margin: 0;
+    font-size: clamp(2.35rem, 5.8vh, 3.15rem);
+    line-height: 1;
+}
+
+.countdown-caption {
+    margin-top: 0.3rem;
+    line-height: 1.3;
+}
+
+#meeting-now-badge {
+    max-width: 100%;
+    margin-top: 0.2rem;
+    text-align: center;
+}
+
+.sidebar-meeting-details {
+    width: 100%;
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top-color: rgba(148, 163, 184, 0.16);
+}
+
+.sidebar-meeting-details .title {
+    margin: 0;
+    font-size: 0.96rem;
+    line-height: 1.45;
+}
+
+.sidebar-meeting-details .title .side-client {
+    font-size: 0.96rem;
+    line-height: 1.45;
+}
+
+.sidebar-meeting-details .title small {
+    margin-top: 0.15rem;
+    font-size: 0.68rem;
+    line-height: 1.45;
+}
+
+.sidebar-meeting-details .meta {
+    margin-top: 0.35rem;
+    font-size: 0.72rem;
+    line-height: 1.4;
+}
+
+.sidebar-meeting-details .ticket-pill {
+    margin-top: 0.35rem;
+}
+
+.overlap-switcher {
+    min-height: 34px;
+    margin-top: 0.6rem;
+    padding: 0.42rem 0.65rem;
+    line-height: 1.35;
+}
+
+.side-join-link {
+    width: 100%;
+    min-height: 38px;
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.8rem;
+    box-shadow: 0 7px 18px rgba(37, 99, 235, 0.2);
+}
+
+.pressure-summary {
+    width: 100%;
+    min-height: 36px;
+    margin: 0;
+    padding: 0.45rem 0.65rem;
+    line-height: 1.45;
+}
+
+.pressure-summary span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.stats-section {
+    width: 100%;
+    gap: 0.45rem;
+}
+
+.stat-card {
+    min-height: 62px;
+    padding: 0.55rem 0.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-card .val {
+    font-size: 1.25rem;
+    line-height: 1.1;
+}
+
+.stat-card .lbl {
+    margin-top: 0.18rem;
+    font-size: 0.62rem;
+    line-height: 1.25;
+}
+
+.controls {
+    width: 100%;
+    margin-top: auto;
+    padding-top: 0.25rem;
+}
+
+.icon-btn {
+    min-width: 0;
+    height: 44px;
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+    .sidebar {
+        --sidebar-section-gap: 0.48rem;
+        padding-block: 0.75rem;
+    }
+
+    .logo-section { min-height: 34px; }
+    .logo-section img { width: 34px; height: 34px; }
+    .logo-section h1 { font-size: 1.15rem; }
+    .clock-section { padding-block: 0.15rem; }
+    #live-clock { font-size: 2.2rem; }
+    #live-date { font-size: 0.75rem; }
+    .day-summary { font-size: 0.66rem; }
+    #audio-status { min-height: 28px; margin-top: 0.35rem; }
+    .sync-status { min-height: 44px; padding-block: 0.45rem; }
+    .next-meeting-countdown { padding: 0.72rem; }
+    #countdown-timer { font-size: 2.35rem; }
+    .sidebar-meeting-details { margin-top: 0.5rem; padding-top: 0.5rem; }
+    .sidebar-meeting-details .title,
+    .sidebar-meeting-details .title .side-client { font-size: 0.86rem; }
+    .overlap-switcher,
+    .side-join-link { min-height: 32px; margin-top: 0.45rem; }
+    .pressure-summary { min-height: 32px; padding-block: 0.35rem; }
+    .stat-card { min-height: 54px; padding-block: 0.4rem; }
+    .icon-btn { height: 40px; }
+}
+
+@media (max-width: 760px) {
+    .sidebar { gap: 0.8rem; }
+    .logo-section,
+    .clock-section,
+    .sync-status,
+    .next-meeting-countdown,
+    .pressure-summary,
+    .stats-section,
+    .controls { margin: 0; }
+    .next-meeting-countdown { max-height: none; }
+}
 .pressure-summary { order: 5; }
 .stats-section { order: 6; }
 .controls { order: 7; }
@@ -1737,4 +2008,57 @@ html, body { max-width: 100%; overflow-x: hidden; }
     color: #fb7185;
     background: rgba(239, 68, 68, .12);
     border-color: rgba(239, 68, 68, .3);
+}
+
+/* Authoritative sidebar layout overrides. */
+.sidebar {
+    gap: var(--sidebar-section-gap);
+    padding: clamp(1rem, 2.1vh, 1.55rem) clamp(1.15rem, 1.7vw, 1.7rem);
+}
+.logo-section,
+.clock-section,
+.sync-status,
+.next-meeting-countdown,
+.pressure-summary,
+.stats-section,
+.controls { margin: 0; }
+.logo-section img { width: 42px; height: 42px; }
+.logo-section h1 { font-size: clamp(1.25rem, 1.8vw, 1.55rem); }
+.clock-section { padding-block: clamp(0.35rem, 0.8vh, 0.65rem); }
+#live-clock { font-size: clamp(2.45rem, 5.4vh, 3.15rem); }
+#live-date { font-size: clamp(0.8rem, 1.35vh, 0.95rem); }
+.sync-status { min-height: 54px; padding: 0.65rem 0.8rem; }
+.next-meeting-countdown {
+    max-height: none;
+    margin: 0;
+    padding: clamp(0.85rem, 1.7vh, 1.05rem);
+}
+.countdown-label { margin: 0 0 0.4rem; font-size: 0.78rem; }
+#countdown-timer { font-size: clamp(2.35rem, 5.8vh, 3.15rem); }
+.sidebar-meeting-details { margin-top: 0.7rem; padding-top: 0.7rem; }
+.sidebar-meeting-details .title,
+.sidebar-meeting-details .title .side-client { font-size: 0.96rem; }
+.sidebar-meeting-details .meta { font-size: 0.72rem; }
+.side-join-link { width: 100%; min-height: 38px; margin-top: 0.6rem; }
+.stats-section { gap: 0.45rem; margin: 0; }
+.stat-card { min-height: 62px; padding: 0.55rem 0.2rem; }
+.stat-card .val { font-size: 1.25rem; }
+.stat-card .lbl { font-size: 0.62rem; }
+.controls { margin-top: auto; padding-top: 0.25rem; }
+
+@media (max-height: 820px) and (min-width: 761px) {
+    .sidebar { gap: 0.48rem; padding-block: 0.75rem; }
+    .logo-section img { width: 34px; height: 34px; }
+    .logo-section h1 { font-size: 1.15rem; }
+    .clock-section { padding-block: 0.15rem; }
+    #live-clock { font-size: 2.2rem; }
+    #live-date { font-size: 0.75rem; }
+    .sync-status { min-height: 44px; padding-block: 0.45rem; }
+    .next-meeting-countdown { padding: 0.72rem; }
+    #countdown-timer { font-size: 2.35rem; }
+    .sidebar-meeting-details { margin-top: 0.5rem; padding-top: 0.5rem; }
+    .sidebar-meeting-details .title,
+    .sidebar-meeting-details .title .side-client { font-size: 0.86rem; }
+    .stat-card { min-height: 54px; padding-block: 0.4rem; }
+    .icon-btn { height: 40px; }
 }
