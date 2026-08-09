@@ -284,7 +284,9 @@ function renderUI(meetings) {
                  ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
                  style="background: ${gradient}">
               <div class="card-bg-pattern"></div>
-              <div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>
+              ${timingState !== 'running'
+                ? `<div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
+                : ''}
 
               ${hasSafeMeetingUrl ? `
                 <a href="${escapeHTML(m.meetUrl)}" target="_blank" rel="noopener noreferrer" class="mc-quick-join" aria-label="الانضمام إلى اجتماع ${escapeHTML(client)}">
