@@ -46,10 +46,11 @@
         <div class="clock-section">
             <div id="live-clock" class="en-nums">--:--:--</div>
             <div id="live-date">-- --- ----</div>
-            <div id="audio-status" class="audio-status-badge locked">
+            <div id="day-summary" class="day-summary">أهلاً بك</div>
+            <button id="audio-status" class="audio-status-badge locked" type="button" aria-label="تفعيل صوت التنبيهات">
                 <i data-lucide="volume-x"></i>
-                <span class="status-text">Audio Locked</span>
-            </div>
+                <span class="status-text">اضغط لتفعيل الصوت</span>
+            </button>
         </div>
 
         <div id="sync-status" class="sync-status is-loading" role="status" aria-live="polite">
@@ -63,11 +64,13 @@
         <div class="next-meeting-countdown">
             <span class="countdown-label">متبقى على الاجتماع القادم :</span>
             <div id="countdown-timer" class="en-nums">00:00</div>
+            <div id="countdown-caption" class="countdown-caption">دقيقة : ثانية</div>
             <div id="meeting-now-badge">الاجتماع جاري الآن</div>
 
             <div id="sidebar-meeting-details" class="sidebar-meeting-details">
                 <div class="title" id="side-m-title">--</div>
                 <div class="meta" id="side-m-meta">--</div>
+                <button id="overlap-switcher" class="overlap-switcher" type="button" hidden></button>
                 <a id="side-join-link" class="side-join-link" href="#" target="_blank" rel="noopener noreferrer" hidden>
                     <i data-lucide="video"></i>
                     <span>دخول الاجتماع</span>
@@ -75,37 +78,45 @@
             </div>
         </div>
 
+        <div id="pressure-summary" class="pressure-summary" aria-live="polite">
+            <i data-lucide="clock"></i>
+            <span>جاري تحليل جدول اليوم</span>
+        </div>
+
         <div class="stats-section">
             <div class="stat-card">
-                <span class="val en-nums" id="stat-total">0</span>
-                <span class="lbl">إجمالي</span>
-            </div>
-            <div class="stat-card">
-                <span class="val en-nums" id="stat-done">0</span>
-                <span class="lbl">مكتمل</span>
+                <span class="val en-nums" id="stat-urgent">0</span>
+                <span class="lbl">جاري الآن</span>
             </div>
             <div class="stat-card">
                 <span class="val en-nums" id="stat-pending">0</span>
                 <span class="lbl">قادم</span>
             </div>
             <div class="stat-card">
-                <span class="val en-nums" id="stat-urgent">0</span>
-                <span class="lbl">جاري الآن</span>
+                <span class="val en-nums" id="stat-done">0</span>
+                <span class="lbl">مكتمل</span>
+            </div>
+            <div class="stat-card">
+                <span class="val en-nums" id="stat-total">0</span>
+                <span class="lbl">إجمالي</span>
             </div>
         </div>
 
         <div class="controls">
-            <button class="icon-btn" id="refresh-now-btn" title="تحديث">
+            <button class="icon-btn" id="refresh-now-btn" title="تحديث" aria-label="تحديث البيانات" data-tooltip="تحديث البيانات">
                 <i data-lucide="refresh-cw"></i>
             </button>
-            <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع">
+            <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع" aria-label="تبديل الوضع" data-tooltip="تبديل الوضع">
                 <i data-lucide="moon"></i>
             </button>
-            <button class="icon-btn" id="sound-toggle-btn" title="كتم الصوت">
+            <button class="icon-btn" id="sound-toggle-btn" title="كتم الصوت" aria-label="تبديل الصوت" data-tooltip="تبديل الصوت">
                 <i data-lucide="volume-2"></i>
             </button>
-            <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات">
+            <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات" aria-label="الإعدادات" data-tooltip="الإعدادات">
                 <i data-lucide="settings"></i>
+            </button>
+            <button class="icon-btn" id="display-mode-btn" title="وضع شاشة العرض" aria-label="تشغيل وضع شاشة العرض" data-tooltip="شاشة العرض">
+                <i data-lucide="maximize-2"></i>
             </button>
         </div>
     </aside>

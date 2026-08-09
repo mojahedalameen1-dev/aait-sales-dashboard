@@ -108,11 +108,16 @@ export function playTestAlert() {
  */
 function enqueueAudio(task) {
     const { soundEnabled } = getSettings();
-    if (!soundEnabled) return;
+    if (!soundEnabled) return false;
 
     console.log(`[Queue] Queued: ${task.filename || task}`);
-    playQueue.push(task);
+    playQueue.push({
+        ...task,
+        repetitionsRemaining: Math.max(1, task.repetitionsRemaining || 2),
+        deliveryConfirmed: false
+    });
     processQueue();
+    return true;
 }
 
 /**
@@ -136,14 +141,28 @@ async function processQueue() {
     };
 
     isPlaying = true;
-    safetyTimeout = setTimeout(() => {
-        console.warn('[Queue] Safety timeout — force releasing isPlaying');
-        isPlaying = false;
-        processQueue();
-    }, 90000);
-
     const task = playQueue.shift();
     const filename = task.filename || task;
+    let settled = false;
+
+    const confirmDelivery = success => {
+        if (task.deliveryConfirmed) return;
+        task.deliveryConfirmed = true;
+        task.onDelivered?.(success);
+    };
+
+    const settle = (delay = 500) => {
+        if (settled) return;
+        settled = true;
+        finish(delay);
+    };
+
+    safetyTimeout = setTimeout(() => {
+        console.warn('[Queue] Safety timeout — skipping stalled audio task');
+        retainedAudioPlayer?.pause?.();
+        confirmDelivery(false);
+        settle(0);
+    }, 90000);
 
     try {
         const audioPath = `/sounds/${filename}`;
@@ -157,25 +176,39 @@ async function processQueue() {
         audio.load();
         audio.onended = () => {
             console.log('[Queue] Stage: Completed');
-            finish(500);
+            confirmDelivery(true);
+            if (task.repetitionsRemaining > 1) {
+                playQueue.unshift({
+                    ...task,
+                    repetitionsRemaining: task.repetitionsRemaining - 1,
+                    deliveryConfirmed: true
+                });
+                settle(2500);
+            } else {
+                settle(500);
+            }
         };
 
         audio.onerror = () => {
             console.error(`[Queue] Stage: Failed (File NOT FOUND: ${filename}). Skipping.`);
-            finish(0); // Proceed immediately if file is missing
+            confirmDelivery(false);
+            settle(0);
         };
 
         await audio.play().catch((err) => {
             if (err.name === 'NotAllowedError') {
+                playQueue.unshift(task);
                 updateAudioState(AUDIO_STATE.LOCKED);
             } else {
                 console.error('[Queue] Play Error:', err);
+                confirmDelivery(false);
             }
-            finish(500);
+            settle(500);
         });
     } catch (e) {
         console.error('[Queue] Unexpected Error:', e);
-        finish(500);
+        confirmDelivery(false);
+        settle(500);
     }
 }
 
@@ -240,6 +273,7 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 // ========================================
 
 const triggeredNotifications = new Set(loadDeliveredNotifications());
+const pendingNotifications = new Set();
 let lastNotifiedDate = formatTodayDate();
 
 function loadDeliveredNotifications() {
@@ -259,11 +293,18 @@ function persistDeliveredNotifications() {
     }));
 }
 
+function markNotificationDelivered(key) {
+    pendingNotifications.delete(key);
+    triggeredNotifications.add(key);
+    persistDeliveredNotifications();
+}
+
 export function checkMeetingTimers(meetings, todayDate) {
     // يُمسح عند تغيير اليوم فقط
     const today = todayDate;
     if (lastNotifiedDate !== today) {
         triggeredNotifications.clear();
+        pendingNotifications.clear();
         lastNotifiedDate = today;
         persistDeliveredNotifications();
     }
@@ -287,28 +328,29 @@ export function checkMeetingTimers(meetings, todayDate) {
 
         if (shouldTriggerAlert(diffSeconds, 30 * 60, ALERT_CATCHUP_MS)) {
             const key = `${meeting.id}_30min`;
-            if (!triggeredNotifications.has(key)) {
-                triggeredNotifications.add(key);
-                persistDeliveredNotifications();
-                triggerAlert(meeting, prefix, 30, Math.max(0, Math.round(diffSeconds / 60)));
+            if (!triggeredNotifications.has(key) && !pendingNotifications.has(key)) {
+                pendingNotifications.add(key);
+                const queued = triggerAlert(meeting, prefix, 30, Math.max(0, Math.round(diffSeconds / 60)), () => markNotificationDelivered(key));
+                if (!queued) markNotificationDelivered(key);
             }
         }
 
         if (shouldTriggerAlert(diffSeconds, 5 * 60, ALERT_CATCHUP_MS)) {
             const key = `${meeting.id}_5min`;
-            if (!triggeredNotifications.has(key)) {
-                triggeredNotifications.add(key);
-                persistDeliveredNotifications();
-                triggerAlert(meeting, prefix, 5, Math.max(0, Math.round(diffSeconds / 60)));
+            if (!triggeredNotifications.has(key) && !pendingNotifications.has(key)) {
+                pendingNotifications.add(key);
+                const queued = triggerAlert(meeting, prefix, 5, Math.max(0, Math.round(diffSeconds / 60)), () => markNotificationDelivered(key));
+                if (!queued) markNotificationDelivered(key);
             }
         }
     }
 }
 
-function triggerAlert(meeting, prefix, minutesType, diff) {
+function triggerAlert(meeting, prefix, minutesType, diff, onDelivered) {
+    let audioQueued = false;
     if (prefix) {
         const filename = `${prefix}${minutesType}.mp3`;
-        enqueueAudio({ filename, meetingId: meeting.id });
+        audioQueued = enqueueAudio({ filename, meetingId: meeting.id, repetitionsRemaining: 2, onDelivered });
     } else {
         console.warn(`[Audio] No mapping found for engineer: "${meeting.team}" (id: ${meeting.id}). Skipping sound.`);
     }
@@ -330,6 +372,7 @@ function triggerAlert(meeting, prefix, minutesType, diff) {
     });
 
     sendPushNotification(meeting, timeText);
+    return audioQueued;
 }
 
 function sendPushNotification(meeting, timeText) {
