@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
     formatTodayDate,
     getMeetingTimingState,
+    isCancelled,
+    isDone,
     normalizeDate,
     parseCSV,
     parseTimeStr
@@ -33,4 +35,18 @@ test('meeting state uses one consistent 60 minute duration', () => {
     assert.equal(getMeetingTimingState({ date, time: '13:00', status: '' }, now).state, 'upcoming');
     assert.equal(getMeetingTimingState({ date, time: '12:00', status: '' }, now).state, 'running');
     assert.equal(getMeetingTimingState({ date, time: '11:00', status: '' }, now).state, 'overdue');
+});
+
+
+test('Arabic numerals and explicit meridiem parse consistently', () => {
+    assert.equal(parseTimeStr('٨:٠٠ م'), '20:00');
+    assert.equal(parseTimeStr('٨:٠٠ ص'), '08:00');
+});
+
+test('status classification keeps postponed meetings out of completed counts', () => {
+    assert.equal(isDone({ status: 'لم تتم' }), false);
+    assert.equal(isCancelled({ status: 'لم تتم' }), true);
+    assert.equal(isDone({ status: 'تم التأجيل' }), false);
+    assert.equal(isCancelled({ status: 'تم التأجيل' }), true);
+    assert.equal(isDone({ status: 'مكتمل' }), true);
 });
