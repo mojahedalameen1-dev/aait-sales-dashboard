@@ -727,7 +727,7 @@ export function isCancelled(meeting) {
         .replace(/[\u064B-\u065F\u0670]/g, '')
         .trim()
         .toLowerCase();
-    return /^(ملغي|ملغى|ملغاة|لم يتم|لم تتم|مؤجل|مؤجلة|تأجيل|تم التأجيل|تم الإلغاء|cancelled?|postponed?)$/.test(s);
+    return /^(ملغي|ملغى|ملغاة|لم يتم|لم تتم|مؤجل|مؤجلة|تأجيل|تم التأجيل|تم الإلغاء|ملغي\s*\/\s*تعديل|مؤجل\s*\/\s*تعديل|cancelled?|postponed?)$/.test(s);
 }
 
 
