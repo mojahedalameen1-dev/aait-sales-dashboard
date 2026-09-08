@@ -4,7 +4,7 @@
  */
 
 import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
-import { getEngineerAudioPrefix } from './config.js';
+import { getEngineerAudioPrefix, getEngineerProfile } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
 import { ALERT_CATCHUP_MS, shouldTriggerAlert } from './alert-timing.js';
 
@@ -367,7 +367,8 @@ export function checkMeetingTimers(meetings, todayDate) {
         const meetingSeconds = h * 3600 + min * 60;
         const diffSeconds = meetingSeconds - nowSeconds;
         const prefix = getEngineerPrefix(meeting.team);
-        const engineerKey = prefix || String(meeting.team || 'unknown')
+        const engineerProfile = getEngineerProfile(meeting.team);
+        const engineerKey = engineerProfile?.id || String(meeting.team || 'unknown')
             .normalize('NFKD')
             .replace(/[\u064B-\u065F\u0670]/g, '')
             .trim()
