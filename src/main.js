@@ -190,18 +190,28 @@ function updatePressureSummary(meetings) {
     const summary = document.getElementById('pressure-summary');
     const text = summary?.querySelector('span');
     if (!summary || !text) return;
-    const active = meetings.filter(meeting => !isDone(meeting) && !isCancelled(meeting) && meeting.time);
-    const counts = active.reduce((map, meeting) => {
-        map.set(meeting.time, (map.get(meeting.time) || 0) + 1);
-        return map;
-    }, new Map());
-    const peak = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-    summary.classList.toggle('has-pressure', Boolean(peak && peak[1] > 1));
-    text.textContent = peak && peak[1] > 1
-        ? `أعلى ضغط: ${peak[1]} اجتماعات الساعة ${formatTime12h(peak[0])}`
+
+    const active = meetings
+        .map(meeting => ({ meeting, timing: getMeetingTimingState(meeting) }))
+        .filter(item => ['upcoming', 'running'].includes(item.timing.state));
+    let peak = null;
+
+    for (const item of active) {
+        const overlapping = active.filter(other => (
+            item.timing.startMinutes < other.timing.endMinutes &&
+            other.timing.startMinutes < item.timing.endMinutes
+        ));
+        if (!peak || overlapping.length > peak.count) {
+            peak = { item, count: overlapping.length };
+        }
+    }
+
+    const hasPressure = Boolean(peak && peak.count > 1);
+    summary.classList.toggle('has-pressure', hasPressure);
+    text.textContent = hasPressure
+        ? `أعلى ضغط: ${peak.count} اجتماعات متداخلة من ${formatTime12h(peak.item.meeting.time)}`
         : 'جدول اليوم موزع بدون تعارضات';
 }
-
 function renderUI(meetings) {
     const grid = document.getElementById('meetings-grid');
     if (!grid) {
@@ -512,7 +522,12 @@ function updateDynamicState() {
 
     const match = pending[0] || null;
     const overlaps = match
-        ? pending.filter(item => Math.abs(item.timing.startMinutes - match.timing.startMinutes) < 5).map(item => item.m)
+        ? pending
+            .filter(item => (
+                item.timing.startMinutes < match.timing.endMinutes &&
+                match.timing.startMinutes < item.timing.endMinutes
+            ))
+            .map(item => item.m)
         : [];
     const overlapKey = overlaps.map(meeting => meeting.id).join('|');
     if (overlapKey !== sidebarOverlapKey) {
