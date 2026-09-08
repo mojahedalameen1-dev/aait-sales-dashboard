@@ -27,6 +27,7 @@ let currentAudioState = AUDIO_STATE.LOCKED;
 let onStateChangeCallback = null;
 let _audioCtx = null;
 let retainedAudioPlayer = null;
+let activeAudioTask = null;
 const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
 // Track recently warned meetings to avoid spamming fallbacks
@@ -120,6 +121,22 @@ function enqueueAudio(task) {
     return true;
 }
 
+export function stopAudioPlayback() {
+    const cancelled = playQueue.splice(0);
+    if (activeAudioTask) cancelled.push(activeAudioTask);
+    const seen = new Set();
+    for (const task of cancelled) {
+        if (seen.has(task)) continue;
+        seen.add(task);
+        task.onDelivered?.(false);
+    }
+    retainedAudioPlayer?.pause?.();
+    if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
+    activeAudioTask = null;
+    isPlaying = false;
+    updateAudioState(AUDIO_STATE.LOCKED);
+}
+
 /**
  * Process the Audio Queue (STRICT MODE: Files Only)
  */
@@ -140,8 +157,14 @@ async function processQueue() {
         }, delay);
     };
 
+    if (!getSettings().soundEnabled) {
+        stopAudioPlayback();
+        return;
+    }
+
     isPlaying = true;
     const task = playQueue.shift();
+    activeAudioTask = task;
     const filename = task.filename || task;
     let settled = false;
 
@@ -176,21 +199,24 @@ async function processQueue() {
         audio.load();
         audio.onended = () => {
             console.log('[Queue] Stage: Completed');
-            confirmDelivery(true);
             if (task.repetitionsRemaining > 1) {
                 playQueue.unshift({
                     ...task,
                     repetitionsRemaining: task.repetitionsRemaining - 1,
-                    deliveryConfirmed: true
+                    deliveryConfirmed: false
                 });
+                activeAudioTask = null;
                 settle(2500);
             } else {
+                activeAudioTask = null;
+                confirmDelivery(true);
                 settle(500);
             }
         };
 
         audio.onerror = () => {
             console.error(`[Queue] Stage: Failed (File NOT FOUND: ${filename}). Skipping.`);
+            activeAudioTask = null;
             confirmDelivery(false);
             settle(0);
         };
@@ -201,12 +227,14 @@ async function processQueue() {
                 updateAudioState(AUDIO_STATE.LOCKED);
             } else {
                 console.error('[Queue] Play Error:', err);
+                activeAudioTask = null;
                 confirmDelivery(false);
             }
             settle(500);
         });
     } catch (e) {
         console.error('[Queue] Unexpected Error:', e);
+        activeAudioTask = null;
         confirmDelivery(false);
         settle(500);
     }
@@ -293,18 +321,36 @@ function persistDeliveredNotifications() {
     }));
 }
 
-function markNotificationDelivered(key) {
+const notificationAttempts = new Map();
+const notificationRetryAt = new Map();
+
+function canAttemptNotification(key) {
+    const now = Date.now();
+    if ((notificationRetryAt.get(key) || 0) > now) return false;
+    const attempts = (notificationAttempts.get(key) || 0) + 1;
+    if (attempts > 3) return false;
+    notificationAttempts.set(key, attempts);
+    notificationRetryAt.set(key, now + 30000);
+    return true;
+}
+
+function markNotificationDelivered(key, success = true) {
     pendingNotifications.delete(key);
-    triggeredNotifications.add(key);
-    persistDeliveredNotifications();
+    if (success) {
+        triggeredNotifications.add(key);
+        notificationAttempts.delete(key);
+        notificationRetryAt.delete(key);
+        persistDeliveredNotifications();
+    }
 }
 
 export function checkMeetingTimers(meetings, todayDate) {
-    // يُمسح عند تغيير اليوم فقط
     const today = todayDate;
     if (lastNotifiedDate !== today) {
         triggeredNotifications.clear();
         pendingNotifications.clear();
+        notificationAttempts.clear();
+        notificationRetryAt.clear();
         lastNotifiedDate = today;
         persistDeliveredNotifications();
     }
@@ -312,40 +358,55 @@ export function checkMeetingTimers(meetings, todayDate) {
     const now = new Date();
     const nowParts = getCurrentTimeParts(now);
     const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
-
-    const todayMeetings = meetings.filter(m => m.date === todayDate && m.time);
+    const todayMeetings = meetings.filter(m => m.date === todayDate && m.time && !isDone(m) && !isCancelled(m));
+    const engineerGroups = new Map();
 
     for (const meeting of todayMeetings) {
-        if (isDone(meeting) || isCancelled(meeting)) continue;
-
         const [h, min] = meeting.time.split(':').map(Number);
-        if (isNaN(h) || isNaN(min)) continue;
-
+        if (!Number.isFinite(h) || !Number.isFinite(min)) continue;
         const meetingSeconds = h * 3600 + min * 60;
         const diffSeconds = meetingSeconds - nowSeconds;
-
         const prefix = getEngineerPrefix(meeting.team);
-
-        if (shouldTriggerAlert(diffSeconds, 30 * 60, ALERT_CATCHUP_MS)) {
-            const key = `${meeting.id}_30min`;
-            if (!triggeredNotifications.has(key) && !pendingNotifications.has(key)) {
-                pendingNotifications.add(key);
-                const queued = triggerAlert(meeting, prefix, 30, Math.max(0, Math.round(diffSeconds / 60)), () => markNotificationDelivered(key));
-                if (!queued) markNotificationDelivered(key);
-            }
+        const engineerKey = prefix || String(meeting.team || 'unknown')
+            .normalize('NFKD')
+            .replace(/[\u064B-\u065F\u0670]/g, '')
+            .trim()
+            .toLowerCase();
+        for (const minutesType of [30, 5]) {
+            if (!shouldTriggerAlert(diffSeconds, minutesType * 60, ALERT_CATCHUP_MS)) continue;
+            const key = `${meeting.id}_${minutesType}min`;
+            if (triggeredNotifications.has(key) || pendingNotifications.has(key) || !canAttemptNotification(key)) continue;
+            const list = engineerGroups.get(engineerKey) || [];
+            list.push({ meeting, prefix, minutesType, diff: Math.max(0, Math.round(diffSeconds / 60)), key });
+            engineerGroups.set(engineerKey, list);
         }
+    }
 
-        if (shouldTriggerAlert(diffSeconds, 5 * 60, ALERT_CATCHUP_MS)) {
-            const key = `${meeting.id}_5min`;
-            if (!triggeredNotifications.has(key) && !pendingNotifications.has(key)) {
-                pendingNotifications.add(key);
-                const queued = triggerAlert(meeting, prefix, 5, Math.max(0, Math.round(diffSeconds / 60)), () => markNotificationDelivered(key));
-                if (!queued) markNotificationDelivered(key);
-            }
+    // One spoken call per engineer per polling pass. The most urgent alert wins;
+    // all matching meeting keys are confirmed by the same two-play audio task.
+    for (const candidates of engineerGroups.values()) {
+        candidates.sort((a, b) => a.minutesType - b.minutesType || a.diff - b.diff);
+        const selected = candidates[0];
+        for (const item of candidates) pendingNotifications.add(item.key);
+        const onDelivered = success => candidates.forEach(item => markNotificationDelivered(item.key, success));
+        const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered);
+        for (const item of candidates.slice(1)) {
+            const timeText = item.diff <= 1 ? 'سيبدأ الآن' : `بعد ${item.diff} دقيقة`;
+            showToast({
+                title: item.meeting.project || 'تنبيه اجتماع',
+                message: `${item.meeting.team || ''} — ${timeText}`,
+                level: item.minutesType === 5 ? 'warning' : 'info',
+                icon: item.minutesType === 5 ? 'alert-triangle' : 'bell'
+            });
+            sendPushNotification(item.meeting, timeText);
+        }
+        if (!queued) {
+            // Muted audio or an unknown engineer is an intentional no-audio result.
+            const intentionalSilence = !getSettings().soundEnabled || !selected.prefix;
+            onDelivered(intentionalSilence);
         }
     }
 }
-
 function triggerAlert(meeting, prefix, minutesType, diff, onDelivered) {
     let audioQueued = false;
     if (prefix) {
