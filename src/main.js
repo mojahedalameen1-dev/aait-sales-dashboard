@@ -40,7 +40,8 @@ import {
     unlockAudio,
     setAudioStateListener,
     AUDIO_STATE,
-    playTestAlert
+    playTestAlert,
+    stopAudioPlayback
 } from './notifications.js';
 import { 
     escapeHTML, 
@@ -639,6 +640,7 @@ window.toggleSound = () => {
         refreshIcons();
     }
     if (!soundEnabled) {
+        stopAudioPlayback();
         const status = document.getElementById('audio-status');
         status?.classList.remove('enabled', 'failed');
         status?.classList.add('locked');
@@ -831,6 +833,7 @@ async function initApp() {
 
     continueWithoutSoundButton?.addEventListener('click', () => {
         updateSettings({ soundEnabled: false });
+        stopAudioPlayback();
         setAudioOverlayVisible(false);
         const soundButton = document.getElementById('sound-toggle-btn');
         if (soundButton) soundButton.innerHTML = '<i data-lucide="volume-x"></i>';
