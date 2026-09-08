@@ -334,10 +334,9 @@ function mapRowsToMeetings(rows) {
 
         if (!project && !time) continue;
 
+        const normalizedTime = parseTimeStr(time);
         const identitySource = [row[0], normalizedTime, project, team, (row[6] || '').trim()].join('|');
         const stableId = createStableMeetingId(identitySource);
-
-        const normalizedTime = parseTimeStr(time);
         if (!normalizedTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(normalizedTime)) {
             console.warn('[Data] تم تجاهل اجتماع بوقت غير صالح:', { project, time });
             continue;
