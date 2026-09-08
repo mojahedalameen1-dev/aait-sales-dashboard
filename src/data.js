@@ -254,39 +254,36 @@ function createStableMeetingId(value) {
     return `m-${(hashB >>> 0).toString(36)}${(hashA >>> 0).toString(36)}`;
 }
 
+function normalizeDigits(value = '') {
+    return String(value)
+        .replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+        .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
+}
+
 export function parseTimeStr(timeStr) {
     if (!timeStr) return '';
 
-    let cleaned = timeStr.trim();
-    const originalHourToken = cleaned.match(/\d{1,2}/)?.[0] || '';
-
-    // Check for AM/PM indicators before stripping non-digits
-    const isPM = /pm|م|مساء/i.test(cleaned);
-    const isAM = /am|ص|صباح/i.test(cleaned);
-
-    // Remove Arabic/extra chars, normalize
-    cleaned = cleaned.replace(/[^\d:]/g, '');
-
-    // Handle H:MM or HH:MM
+    const original = normalizeDigits(timeStr).trim();
+    const originalHourToken = original.match(/\d{1,2}/)?.[0] || '';
+    const isPM = /pm|م|مساء/i.test(original);
+    const isAM = /am|ص|صباح/i.test(original);
+    const cleaned = original.replace(/[^\d:]/g, '');
     const match = cleaned.match(/^(\d{1,2}):(\d{2})$/);
-    if (match) {
-        let h = parseInt(match[1], 10);
-        const m = match[2];
+    if (!match) return '';
 
-        // جدول التشغيل يستخدم 1:00..9:00 للفترة المسائية، بينما 08:00 صيغة 24 ساعة صباحية.
-        if (!isPM && !isAM) {
-            if (h > 23) return '';
-            if (originalHourToken.length === 1 && h >= 1 && h <= 9) h += 12;
-        } else {
-            // 12-hour to 24-hour conversion if indicator IS present
-            if (isPM && h < 12) h += 12;
-            if (isAM && h === 12) h = 0;
-        }
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    if (m > 59 || h > 23) return '';
 
-        return `${String(h).padStart(2, '0')}:${m}`;
+    // جدول التشغيل يستخدم 1:00..9:00 للفترة المسائية إذا لم تُذكر ص/م.
+    if (!isPM && !isAM) {
+        if (originalHourToken.length === 1 && h >= 1 && h <= 9) h += 12;
+    } else {
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
     }
 
-    return timeStr.trim();
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 /**
@@ -337,7 +334,7 @@ function mapRowsToMeetings(rows) {
 
         if (!project && !time) continue;
 
-        const identitySource = (row[6] || '').trim() || `${row[0]}|${time}|${project}|${team}`;
+        const identitySource = [row[0], normalizedTime, project, team, (row[6] || '').trim()].join('|');
         const stableId = createStableMeetingId(identitySource);
 
         const normalizedTime = parseTimeStr(time);
@@ -696,9 +693,10 @@ export function getMeetingTimingState(meeting, date = new Date()) {
     const duration = Number(meeting.durationMinutes) || DEFAULT_MEETING_DURATION_MINUTES;
     const minutesUntil = startMinutes - nowMinutes;
 
-    if (minutesUntil > 0) return { state: 'upcoming', minutesUntil, startMinutes, duration };
-    if (nowMinutes < startMinutes + duration) return { state: 'running', minutesUntil, startMinutes, duration };
-    return { state: 'overdue', minutesUntil, startMinutes, duration };
+    const endMinutes = startMinutes + duration;
+    if (minutesUntil > 0) return { state: 'upcoming', minutesUntil, startMinutes, endMinutes, duration };
+    if (nowMinutes < endMinutes) return { state: 'running', minutesUntil, startMinutes, endMinutes, duration };
+    return { state: 'overdue', minutesUntil, startMinutes, endMinutes, duration };
 }
 
 /**
@@ -707,14 +705,16 @@ export function getMeetingTimingState(meeting, date = new Date()) {
  */
 export function isDone(meeting) {
     if (!meeting || !meeting.status) return false;
-    const s = meeting.status.trim();
+    const s = meeting.status
+        .normalize('NFKD')
+        .replace(/[\u064B-\u065F\u0670]/g, '')
+        .trim()
+        .toLowerCase();
 
-    // 1. Exclude "Not Done" / "Cancelled" explicit phrases to avoid overlap
-    // "لم يتم" contains "تم", so we must check this first!
-    if (/لم يتم|not|fail/i.test(s)) return false;
-
-    // 2. Check for positive completion
-    return /تم|نجاح|complete|done|finish/i.test(s);
+    // Cancellation/postponement always wins over a generic "تم" token.
+    if (isCancelled(meeting)) return false;
+    return /^(تم|مكتمل|اكتمل|منجز|نجح|complete|completed|done|finished?)$/.test(s)
+        || /^(تم\s+(التنفيذ|الاجتماع|الإنجاز))$/.test(s);
 }
 
 /**
@@ -723,8 +723,12 @@ export function isDone(meeting) {
  */
 export function isCancelled(meeting) {
     if (!meeting || !meeting.status) return false;
-    const s = meeting.status.trim().toLowerCase();
-    return /ملغ|لم يتم|cancel|postpone|مؤجل/i.test(s);
+    const s = meeting.status
+        .normalize('NFKD')
+        .replace(/[\u064B-\u065F\u0670]/g, '')
+        .trim()
+        .toLowerCase();
+    return /^(ملغي|ملغى|ملغاة|لم يتم|لم تتم|مؤجل|مؤجلة|تأجيل|تم التأجيل|تم الإلغاء|cancelled?|postponed?)$/.test(s);
 }
 
 
