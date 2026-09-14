@@ -834,6 +834,17 @@ async function initApp() {
 
     const setAudioOverlayVisible = visible => {
         if (!audioOverlay) return;
+
+        // نقل التركيز قبل إخفاء نافذة الصوت يمنع تحذير aria-hidden
+        // عندما يكون زر التفعيل هو العنصر النشط داخل النافذة.
+        if (!visible && audioOverlay.contains(document.activeElement)) {
+            if (audioStatusBadge) {
+                audioStatusBadge.focus({ preventScroll: true });
+            } else if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+        }
+
         audioOverlay.hidden = !visible;
         audioOverlay.classList.toggle('active', visible);
         audioOverlay.setAttribute('aria-hidden', String(!visible));
