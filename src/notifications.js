@@ -25,7 +25,7 @@ const playQueue = [];
 let isPlaying = false;
 let currentAudioState = AUDIO_STATE.LOCKED;
 let onStateChangeCallback = null;
-let _audioCtx = null;
+let audioUnlockPromise = null;
 let retainedAudioPlayer = null;
 let activeAudioTask = null;
 const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
@@ -53,42 +53,34 @@ function updateAudioState(newState) {
  * "Unlock" audio context. Called from user interaction.
  */
 export function unlockAudio() {
-    if (currentAudioState === AUDIO_STATE.ENABLED || _audioCtx) return;
+    if (currentAudioState === AUDIO_STATE.ENABLED) return Promise.resolve(true);
+    if (audioUnlockPromise) return audioUnlockPromise;
 
     try {
         retainedAudioPlayer ||= new Audio();
         retainedAudioPlayer.preload = 'auto';
         retainedAudioPlayer.src = SILENT_AUDIO;
-        const mediaUnlock = retainedAudioPlayer.play().then(() => {
+        audioUnlockPromise = retainedAudioPlayer.play().then(() => {
             retainedAudioPlayer.pause();
             retainedAudioPlayer.currentTime = 0;
-        });
-
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const contextUnlock = _audioCtx.state === 'running' ? Promise.resolve() : _audioCtx.resume();
-
-        Promise.all([mediaUnlock, contextUnlock]).then(() => {
             updateAudioState(AUDIO_STATE.ENABLED);
-            _audioCtx.close();
-            _audioCtx = null;
             preloadAudioFiles();
             processQueue();
-        }).catch(() => {
+            return true;
+        }).catch(error => {
+            console.warn('[Audio] Unlock failed:', error);
             updateAudioState(AUDIO_STATE.FAILED);
-            _audioCtx?.close?.();
-            _audioCtx = null;
+            return false;
+        }).finally(() => {
+            audioUnlockPromise = null;
         });
+
+        return audioUnlockPromise;
     } catch (e) {
-        _audioCtx = null;
-        const silent = retainedAudioPlayer || new Audio();
-        retainedAudioPlayer = silent;
-        silent.src = SILENT_AUDIO;
-        const fallback = setTimeout(() => {
-            updateAudioState(AUDIO_STATE.ENABLED);
-            processQueue();
-        }, 300);
-        silent.onended = () => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.ENABLED); processQueue(); };
-        silent.play().catch(() => { clearTimeout(fallback); updateAudioState(AUDIO_STATE.FAILED); });
+        console.warn('[Audio] Unlock setup failed:', e);
+        audioUnlockPromise = null;
+        updateAudioState(AUDIO_STATE.FAILED);
+        return Promise.resolve(false);
     }
 }
 

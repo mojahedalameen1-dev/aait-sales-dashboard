@@ -1,8 +1,8 @@
 const DEFAULT_PUBLISH_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 const TIME_ZONE = 'Asia/Riyadh';
-const UPSTREAM_TIMEOUT_MS = 4000;
-const UPSTREAM_ATTEMPTS = 2;
-const RETRY_DELAY_MS = 250;
+const UPSTREAM_TIMEOUT_MS = 3500;
+const UPSTREAM_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 400;
 const STALE_PAYLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const KNOWN_SHEET_GIDS = {
     'فبراير 2026': '951085024',
@@ -74,7 +74,7 @@ export async function fetchWithRetry(url, {
             // Google Sheets occasionally returns a transient 400 for a valid published CSV URL.
             // The publish key and gid are already validated, so retry temporary gateway-style responses.
             const retryableStatus = !error.status
-                || [400, 408, 425, 429].includes(error.status)
+                || [400, 401, 403, 408, 425, 429].includes(error.status)
                 || error.status >= 500;
             const willRetry = retryableStatus && attempt < attempts;
             console.warn('[meetings-api] upstream attempt failed', {

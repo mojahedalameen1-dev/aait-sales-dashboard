@@ -61,6 +61,29 @@ test('upstream fetch retries a transient Google Sheets 400 response', async () =
     }
 });
 
+test('upstream fetch retries a transient Google Sheets authorization response', async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+        calls += 1;
+        return calls === 1
+            ? new Response('', { status: 401 })
+            : new Response('csv', { status: 200 });
+    };
+
+    try {
+        const response = await fetchWithRetry('https://example.test', {
+            attempts: 2,
+            timeoutMs: 100,
+            retryDelayMs: 0
+        });
+        assert.equal(await response.text(), 'csv');
+        assert.equal(calls, 2);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
 test('upstream fetch does not retry a permanent client error', async () => {
     const originalFetch = globalThis.fetch;
     let calls = 0;
