@@ -400,6 +400,32 @@ export function checkMeetingTimers(meetings, todayDate) {
         }
     }
 }
+
+/** Returns the next undelivered spoken reminder so the sidebar can expose it. */
+export function getNextAudioReminder(meetings, todayDate) {
+    if (!getSettings().soundEnabled) return { state: 'muted' };
+
+    const nowParts = getCurrentTimeParts(new Date());
+    const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
+    const candidates = [];
+
+    for (const meeting of meetings.filter(item => item.date === todayDate && item.time && !isDone(item) && !isCancelled(item))) {
+        const [hours, minutes] = meeting.time.split(':').map(Number);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) continue;
+        const diffSeconds = (hours * 3600 + minutes * 60) - nowSeconds;
+
+        for (const minutesType of [30, 5]) {
+            const key = `${meeting.id}_${minutesType}min`;
+            if (triggeredNotifications.has(key) || pendingNotifications.has(key)) continue;
+            const secondsUntil = diffSeconds - minutesType * 60;
+            if (secondsUntil < -(ALERT_CATCHUP_MS / 1000)) continue;
+            candidates.push({ meeting, minutesType, secondsUntil: Math.max(0, secondsUntil) });
+        }
+    }
+
+    candidates.sort((a, b) => a.secondsUntil - b.secondsUntil || a.minutesType - b.minutesType);
+    return candidates[0] ? { state: 'scheduled', ...candidates[0] } : { state: 'none' };
+}
 function triggerAlert(meeting, prefix, minutesType, diff, onDelivered) {
     let audioQueued = false;
     if (prefix) {

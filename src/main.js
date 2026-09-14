@@ -6,6 +6,7 @@ import './style.css';
 import {
     createIcons,
     AlertCircle,
+    Bell,
     CalendarCheck2,
     CheckCircle2,
     Clock,
@@ -41,13 +42,15 @@ import {
     setAudioStateListener,
     AUDIO_STATE,
     playTestAlert,
-    stopAudioPlayback
+    stopAudioPlayback,
+    getNextAudioReminder
 } from './notifications.js';
 import { 
     escapeHTML, 
     formatMeetingCount,
     getEngineerShortName,
-    isSafeMeetingUrl
+    isSafeMeetingUrl,
+    toEnglishDigits
 } from './utils.js';
 import { APP_TIME_ZONE, getEngineerColor, getEngineerTheme } from './config.js';
 
@@ -70,6 +73,7 @@ function refreshIcons() {
     createIcons({
         icons: {
             AlertCircle,
+            Bell,
             CalendarCheck2,
             CheckCircle2,
             Clock,
@@ -93,11 +97,7 @@ function refreshIcons() {
 // ⏰ Utilities
 // ========================================
 
-function toEn(str) {
-    if (!str) return '0';
-    // Convert Arabic digits to English if needed (fallback)
-    return str.toString().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-}
+const safeDisplayText = value => escapeHTML(toEnglishDigits(value));
 
 // ⚠️ NOTE: Engineer name matching is also handled in utils.js → getEngineerShortName()
 // If you add or rename an engineer, update BOTH functions.
@@ -107,7 +107,7 @@ function getDeveloperGradient(team) {
 }
 
 function getMeetingDisplay(meeting) {
-    const project = String(meeting?.project || '');
+    const project = toEnglishDigits(meeting?.project || '');
     const ticketNum = project.match(/AA\d+/i)?.[0]?.toUpperCase() || '';
     const typeKeywords = /اون لاين|أون لاين|online|remote|حضوري|خارجي|زيارة|مكتب|مقر/gi;
     const cleaned = project
@@ -151,7 +151,7 @@ function getMeetingProgress(timing) {
  */
 function setSafeText(id, text) {
     const el = document.getElementById(id);
-    if (el) el.textContent = text;
+    if (el) el.textContent = toEnglishDigits(text);
 }
 
 function animateCount(id, targetValue, duration = 1500) {
@@ -308,13 +308,13 @@ function renderUI(meetings) {
 
               <div class="card-content">
 
-                <div class="mc-client">${escapeHTML(client)}</div>
+                <div class="mc-client">${safeDisplayText(client)}</div>
 
-                <div class="mc-engineer">مع ${escapeHTML(engineerLabel)}</div>
+                <div class="mc-engineer">مع ${safeDisplayText(engineerLabel)}</div>
 
-                ${projectDesc ? `<div class="mc-project-desc">${escapeHTML(projectDesc)}</div>` : ''}
+                ${projectDesc ? `<div class="mc-project-desc">${safeDisplayText(projectDesc)}</div>` : ''}
 
-                ${meetingType ? `<div class="mc-type-badge ${typeClass}">${escapeHTML(meetingType)}</div>` : ''}
+                ${meetingType ? `<div class="mc-type-badge ${typeClass}">${safeDisplayText(meetingType)}</div>` : ''}
 
                 ${ticketNum ? (hasSafeTicketUrl
                     ? `<a class="mc-ticket-pill is-link" href="${escapeHTML(m.ticketUrl)}" target="_blank" rel="noopener noreferrer" aria-label="فتح التذكرة ${ticketNum}">${ticketNum}</a>`
@@ -392,7 +392,7 @@ function startClock() {
     clockIntervalId = setInterval(tick, 1000);
 }
 
-function updateCountdown(meeting, overlappingCount = 0) {
+function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
     const timer = document.getElementById('countdown-timer');
     const badge = document.getElementById('meeting-now-badge');
     const sideDetails = document.getElementById('sidebar-meeting-details');
@@ -407,6 +407,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
     if (!meeting) {
         timer.textContent = "00:00";
         badge.style.display = 'none';
+        badge.classList.remove('has-running');
         sideDetails.style.display = 'none';
         label.textContent = "لا اجتماعات متبقية اليوم";
         countdownContainer.classList.remove('urgent');
@@ -432,15 +433,20 @@ function updateCountdown(meeting, overlappingCount = 0) {
         label.textContent = 'الاجتماع الجاري';
         timer.style.display = 'none'; badge.style.display = 'block';
         badge.textContent = 'الاجتماع جاري الآن';
+        badge.classList.remove('has-running');
         if (caption) caption.hidden = true;
     } else if (timing.state === 'overdue') {
         label.textContent = 'اجتماع يحتاج متابعة';
         timer.style.display = 'none'; badge.style.display = 'block';
         badge.textContent = 'اجتماع متأخر الإغلاق';
+        badge.classList.remove('has-running');
         if (caption) caption.hidden = true;
     } else {
         label.textContent = timing.minutesUntil <= 5 ? 'يبدأ الاجتماع قريباً' : 'الاجتماع التالي';
-        timer.style.display = 'block'; badge.style.display = 'none';
+        timer.style.display = 'block';
+        badge.style.display = runningCount > 0 ? 'block' : 'none';
+        badge.classList.toggle('has-running', runningCount > 0);
+        if (runningCount > 0) badge.textContent = runningCount > 1 ? `${runningCount} اجتماعات جارية الآن` : 'يوجد اجتماع جارٍ الآن';
         if (caption) {
             caption.hidden = false;
             caption.textContent = timing.minutesUntil >= 60 ? 'ساعة : دقيقة : ثانية' : 'دقيقة : ثانية';
@@ -455,7 +461,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
         } else {
             timeStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         }
-        timer.textContent = toEn(timeStr);
+        timer.textContent = toEnglishDigits(timeStr);
     }
 
     sideDetails.style.display = 'block';
@@ -472,8 +478,8 @@ function updateCountdown(meeting, overlappingCount = 0) {
     
     const titleEl = document.getElementById('side-m-title');
     if (titleEl) {
-        titleEl.innerHTML = `<span class="side-client">${escapeHTML(cleanedTitle)}</span>` +
-            (projectDesc ? `<small>${escapeHTML(projectDesc)}</small>` : '') +
+        titleEl.innerHTML = `<span class="side-client">${safeDisplayText(cleanedTitle)}</span>` +
+            (projectDesc ? `<small>${safeDisplayText(projectDesc)}</small>` : '') +
             (ticketNum ? (isSafeMeetingUrl(meeting.ticketUrl)
                 ? `<a class="ticket-pill" href="${escapeHTML(meeting.ticketUrl)}" target="_blank" rel="noopener noreferrer">${ticketNum}</a>`
                 : `<span class="ticket-pill">${ticketNum}</span>`) : '');
@@ -484,7 +490,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
     const metaEl = document.getElementById('side-m-meta');
     if (metaEl) {
         metaEl.style.opacity = '0.6';
-        metaEl.textContent = metaText;
+        metaEl.textContent = toEnglishDigits(metaText);
     }
 
     if (overlapSwitcher) {
@@ -502,6 +508,7 @@ function updateCountdown(meeting, overlappingCount = 0) {
 }
 
 function updateDynamicState() {
+    updateVoiceReminderStatus();
     if (!activeMeetings || !activeMeetings.length) {
         updateCountdown(null);
         return;
@@ -513,16 +520,20 @@ function updateDynamicState() {
     const pending = filtered
         .filter(m => !isDone(m))
         .map(m => ({ m, timing: getMeetingTimingState(m) }))
-        .filter(item => ['running', 'upcoming'].includes(item.timing.state))
-        .sort((a, b) => {
-            if (a.timing.state === 'running' && b.timing.state !== 'running') return -1;
-            if (b.timing.state === 'running' && a.timing.state !== 'running') return 1;
-            return a.timing.minutesUntil - b.timing.minutesUntil;
-        });
+        .filter(item => ['running', 'upcoming'].includes(item.timing.state));
 
-    const match = pending[0] || null;
+    // Keep the next countdown visible even while another meeting is running.
+    const upcoming = pending
+        .filter(item => item.timing.state === 'upcoming')
+        .sort((a, b) => a.timing.minutesUntil - b.timing.minutesUntil);
+    const running = pending
+        .filter(item => item.timing.state === 'running')
+        .sort((a, b) => b.timing.startMinutes - a.timing.startMinutes);
+
+    const match = upcoming[0] || running[0] || null;
+    const overlapPool = match?.timing.state === 'upcoming' ? upcoming : running;
     const overlaps = match
-        ? pending
+        ? overlapPool
             .filter(item => (
                 item.timing.startMinutes < match.timing.endMinutes &&
                 match.timing.startMinutes < item.timing.endMinutes
@@ -542,7 +553,38 @@ function updateDynamicState() {
     document.documentElement.style.setProperty('--aurora-color', `${auroraColor}22`);
 
     // Overlapping meetings detection (diff < 5 mins)
-    updateCountdown(current, overlaps.length);
+    updateCountdown(current, overlaps.length, running.length);
+}
+
+function formatDuration(seconds) {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const secs = safeSeconds % 60;
+    return hours > 0
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function updateVoiceReminderStatus() {
+    const container = document.getElementById('voice-reminder-status');
+    const text = container?.querySelector('span');
+    if (!container || !text) return;
+
+    const reminder = getNextAudioReminder(activeMeetings, formatTodayDate());
+    container.classList.toggle('is-muted', reminder.state === 'muted');
+    container.classList.toggle('is-due', reminder.state === 'scheduled' && reminder.secondsUntil === 0);
+
+    if (reminder.state === 'muted') {
+        text.textContent = 'النداء الصوتي متوقف';
+    } else if (reminder.state === 'scheduled') {
+        const alertLabel = reminder.minutesType === 30 ? 'النداء الأول' : 'النداء الثاني';
+        text.textContent = reminder.secondsUntil === 0
+            ? `${alertLabel} مستحق الآن`
+            : `${alertLabel} بعد ${formatDuration(reminder.secondsUntil)}`;
+    } else {
+        text.textContent = 'لا يوجد نداء صوتي متبقٍ اليوم';
+    }
 }
 
 // ========================================

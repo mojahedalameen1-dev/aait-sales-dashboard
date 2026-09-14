@@ -11,6 +11,13 @@ export function escapeHTML(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+/** Normalize Arabic-Indic and Eastern Arabic-Indic digits for consistent UI output. */
+export function toEnglishDigits(value) {
+    return String(value ?? '')
+        .replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+        .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
+}
 /**
  * Formats meeting count according to Arabic grammar rules (Counting Rules).
  * @param {number} count 

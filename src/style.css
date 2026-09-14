@@ -140,7 +140,7 @@ body {
 }
 
 #live-clock {
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
     font-size: clamp(2rem, 6vh, 3rem);
     font-weight: 800;
     letter-spacing: -2px;
@@ -253,7 +253,7 @@ body {
 }
 
 #countdown-timer {
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
     font-size: clamp(2.2rem, 9vh, 3.8rem);
     font-weight: 800;
     color: var(--text-white);
@@ -298,7 +298,7 @@ body {
     border-radius: 6px;
     font-size: 0.75rem;
     margin-left: 5px;
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
     color: #fff;
     display: inline-block;
     vertical-align: middle;
@@ -329,7 +329,7 @@ body {
 }
 
 .stat-card .val {
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
     font-size: 1.8rem;
     font-weight: 800;
     display: block;
@@ -732,7 +732,7 @@ body {
 }
 
 .mc-ticket-pill {
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
     font-size: clamp(0.65rem, 5cqw, 0.85rem);
     font-weight: 700;
     background: rgba(0,0,0,0.2);
@@ -764,7 +764,7 @@ body {
 }
 
 .mc-time .en-nums {
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
 }
 
 
@@ -990,7 +990,7 @@ input[aria-invalid="true"] {
 
 .en-nums {
     font-variant-numeric: tabular-nums;
-    font-family: 'Outfit', sans-serif;
+    font-family: inherit;
 }
 
 /* --- Notification System --- */
@@ -1481,6 +1481,80 @@ input[aria-invalid="true"] {
     .pressure-summary { min-height: 32px; padding-block: 0.35rem; }
     .stat-card { min-height: 54px; padding-block: 0.4rem; }
     .icon-btn { height: 40px; }
+}
+
+#meeting-now-badge.has-running {
+    align-self: center;
+    margin: 0 0 0.55rem;
+    padding: 0.32rem 0.7rem;
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.1);
+    font-size: 0.72rem;
+    animation: none;
+}
+
+/* Typography and reminder status are authoritative across all themes. */
+html,
+body,
+button,
+input,
+select,
+textarea {
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
+}
+
+.en-nums,
+#live-clock,
+#countdown-timer,
+.mc-time,
+.mc-ticket-pill,
+.ticket-pill,
+.stat-card .val {
+    font-family: inherit;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.voice-reminder-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 28px;
+    margin-top: 0.45rem;
+    padding: 0.28rem 0.65rem;
+    border: 1px solid rgba(96, 165, 250, 0.22);
+    border-radius: 999px;
+    color: #93c5fd;
+    background: rgba(37, 99, 235, 0.08);
+    font-size: clamp(0.66rem, 1.1vh, 0.76rem);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.voice-reminder-status svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+
+.voice-reminder-status.is-muted {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.24);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.voice-reminder-status.is-due {
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.28);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.light-mode .voice-reminder-status {
+    color: #1d4ed8;
+    border-color: rgba(37, 99, 235, 0.22);
+    background: rgba(37, 99, 235, 0.07);
 }
 
 @media (max-width: 760px) {

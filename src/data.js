@@ -631,7 +631,10 @@ export function formatTime12h(time24) {
         let h = parseInt(hStr, 10);
         const suffix = h < 12 ? 'ص' : 'م';
         h = h % 12 || 12;
-        return `${h}:${mStr} ${suffix}`;
+        const minutes = String(mStr || '00').padStart(2, '0');
+        return `${h}:${minutes} ${suffix}`
+            .replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+            .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
     } catch (e) {
         return time24;
     }

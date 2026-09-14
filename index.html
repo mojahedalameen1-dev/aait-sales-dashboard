@@ -51,6 +51,10 @@
                 <i data-lucide="volume-x"></i>
                 <span class="status-text">اضغط لتفعيل الصوت</span>
             </button>
+            <div id="voice-reminder-status" class="voice-reminder-status" role="status" aria-live="polite">
+                <i data-lucide="bell"></i>
+                <span>جاري حساب النداء الصوتي القادم</span>
+            </div>
         </div>
 
         <div id="sync-status" class="sync-status is-loading" role="status" aria-live="polite">
@@ -62,7 +66,7 @@
         </div>
 
         <div class="next-meeting-countdown">
-            <span class="countdown-label">متبقى على الاجتماع القادم :</span>
+            <span class="countdown-label">متبقي على الاجتماع القادم</span>
             <div id="countdown-timer" class="en-nums">00:00</div>
             <div id="countdown-caption" class="countdown-caption">دقيقة : ثانية</div>
             <div id="meeting-now-badge">الاجتماع جاري الآن</div>
