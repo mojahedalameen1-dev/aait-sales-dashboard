@@ -71,7 +71,11 @@ export async function fetchWithRetry(url, {
             throw error;
         } catch (error) {
             lastError = error;
-            const retryableStatus = !error.status || error.status === 429 || error.status >= 500;
+            // Google Sheets occasionally returns a transient 400 for a valid published CSV URL.
+            // The publish key and gid are already validated, so retry temporary gateway-style responses.
+            const retryableStatus = !error.status
+                || [400, 408, 425, 429].includes(error.status)
+                || error.status >= 500;
             const willRetry = retryableStatus && attempt < attempts;
             console.warn('[meetings-api] upstream attempt failed', {
                 label,
