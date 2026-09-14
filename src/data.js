@@ -702,18 +702,25 @@ export function getMeetingTimingState(meeting, date = new Date()) {
  * THE GOLDEN RULE: Robust check for "Done" status.
  * Handles Arabic "تم" and common completion strings.
  */
-export function isDone(meeting) {
-    if (!meeting || !meeting.status) return false;
-    const s = meeting.status
+function normalizeMeetingStatus(value = '') {
+    return String(value)
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ؤ/g, 'و')
+        .replace(/ئ/g, 'ي')
         .normalize('NFKD')
         .replace(/[\u064B-\u065F\u0670]/g, '')
         .trim()
         .toLowerCase();
+}
+
+export function isDone(meeting) {
+    if (!meeting || !meeting.status) return false;
+    const s = normalizeMeetingStatus(meeting.status);
 
     // Cancellation/postponement always wins over a generic "تم" token.
     if (isCancelled(meeting)) return false;
     return /^(تم|مكتمل|اكتمل|منجز|نجح|complete|completed|done|finished?)$/.test(s)
-        || /^(تم\s+(التنفيذ|الاجتماع|الإنجاز))$/.test(s);
+        || /^(تم\s+(التنفيذ|الاجتماع|الانجاز))$/.test(s);
 }
 
 /**
@@ -722,12 +729,8 @@ export function isDone(meeting) {
  */
 export function isCancelled(meeting) {
     if (!meeting || !meeting.status) return false;
-    const s = meeting.status
-        .normalize('NFKD')
-        .replace(/[\u064B-\u065F\u0670]/g, '')
-        .trim()
-        .toLowerCase();
-    return /^(ملغي|ملغى|ملغاة|لم يتم|لم تتم|مؤجل|مؤجلة|تأجيل|تم التأجيل|تم الإلغاء|ملغي\s*\/\s*تعديل|مؤجل\s*\/\s*تعديل|cancelled?|postponed?)$/.test(s);
+    const s = normalizeMeetingStatus(meeting.status);
+    return /^(ملغي|ملغى|ملغاة|لم يتم|لم تتم|موجل|موجلة|تاجيل|تم التاجيل|تم الالغاء|ملغي\s*\/\s*تعديل|موجل\s*\/\s*تعديل|cancelled?|postponed?)$/.test(s);
 }
 
 

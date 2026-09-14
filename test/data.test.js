@@ -48,5 +48,7 @@ test('status classification keeps postponed meetings out of completed counts', (
     assert.equal(isCancelled({ status: 'لم تتم' }), true);
     assert.equal(isDone({ status: 'تم التأجيل' }), false);
     assert.equal(isCancelled({ status: 'تم التأجيل' }), true);
+    assert.equal(isCancelled({ status: 'مؤجل / تعديل' }), true);
     assert.equal(isDone({ status: 'مكتمل' }), true);
+    assert.equal(isDone({ status: 'تم الإنجاز' }), true);
 });
