@@ -232,7 +232,7 @@ function forwardFillDates(rows) {
  */
 function isDateHeaderRow(row) {
     const project = (row[1] || '').trim();
-    const time    = (row[3] || '').trim();  // D column (الوقت)
+    const time = String(row[3] || row[4] || '').trim();
 
     // If no project AND no time, it's a structural/header row
     return !project && !time;
@@ -330,17 +330,30 @@ function mapRowsToMeetings(rows) {
         // Check minimum columns existence
         const project = (row[1] || '').trim();  // B column: اسم المشروع
         const team    = (row[2] || '').trim();  // C column: الفريق / المهندس
-        const time    = (row[3] || '').trim();  // D column: الساعة (الوقت)
+        const legacyTime = String(row[3] || '').trim();
+        const shiftedTime = String(row[4] || '').trim();
+        const legacyParsedTime = parseTimeStr(legacyTime);
+        const shiftedParsedTime = parseTimeStr(shiftedTime);
+        // The source sheet has an empty D column now, moving meeting time to E.
+        // Keep D as a fallback for older monthly tabs that still use the old layout.
+        const timeIndex = legacyParsedTime ? 3 : shiftedParsedTime ? 4 : legacyTime ? 3 : 4;
+        const time = String(row[timeIndex] || '').trim();
+        const columnOffset = timeIndex - 3;
 
-        if (!project && !time) continue;
+        if (!project) continue;
 
-        const normalizedTime = parseTimeStr(time);
-        const identitySource = [row[0], normalizedTime, project, team, (row[6] || '').trim()].join('|');
-        const stableId = createStableMeetingId(identitySource);
+        const normalizedTime = timeIndex === 3 ? legacyParsedTime : shiftedParsedTime;
         if (!normalizedTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(normalizedTime)) {
-            console.warn('[Data] تم تجاهل اجتماع بوقت غير صالح:', { project, time });
+            // Blank time cells are common for unscheduled records and placeholders.
+            // Warn only when a value exists but cannot be interpreted as a time.
+            if (time && /[\d٠-٩۰-۹]/.test(time)) {
+                console.warn('[Data] تم تجاهل سجل لاحتوائه على صيغة وقت غير مفهومة:', { project, time });
+            }
             continue;
         }
+
+        const identitySource = [row[0], normalizedTime, project, team, (row[6 + columnOffset] || '').trim()].join('|');
+        const stableId = createStableMeetingId(identitySource);
 
         meetings.push({
             id: stableId,
@@ -348,11 +361,11 @@ function mapRowsToMeetings(rows) {
             project: project,
             team: team,
             time: normalizedTime,
-            via: (row[4] || '').trim(),
-            status: (row[5] || '').trim(),
-            ticketUrl: (row[6] || '').trim(),
-            meetUrl: (row[7] || '').trim(),
-            clientStatus: (row[8] || '').trim()
+            via: (row[4 + columnOffset] || '').trim(),
+            status: (row[5 + columnOffset] || '').trim(),
+            ticketUrl: (row[6 + columnOffset] || '').trim(),
+            meetUrl: (row[7 + columnOffset] || '').trim(),
+            clientStatus: (row[8 + columnOffset] || '').trim()
         });
     }
 
