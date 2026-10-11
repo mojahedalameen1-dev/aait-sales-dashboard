@@ -22,12 +22,13 @@
     </div>
 
     <!-- Settings Modal -->
-    <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+    <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true" inert>
         <div class="modal-body" tabindex="-1">
             <h2 id="settings-title">⚙️ إعدادات الربط</h2>
-            <p style="margin-bottom: 1rem; color: var(--text-dim);">أدخل معرّف النشر (Google Sheets Publish Key):</p>
+            <p style="margin-bottom: 1rem; color: var(--text-dim);">أدخل معرّف نشر Google Sheets. تقدر تتركه فارغًا لاستخدام إعداد المشروع الافتراضي:</p>
             <label class="sr-only" for="sheet-key-input">معرّف نشر Google Sheets</label>
-            <input type="text" id="sheet-key-input" placeholder="2PACX-...">
+            <input type="text" id="sheet-key-input" placeholder="2PACX-..." aria-describedby="sheet-key-error">
+            <p id="sheet-key-error" class="field-error" role="status" hidden></p>
             <div class="modal-actions">
                 <button class="btn-prime" id="save-settings-btn" type="button">حفظ وتحديث</button>
                 <button class="btn-secondary" id="test-sound-btn" type="button">اختبار الصوت</button>
@@ -51,7 +52,7 @@
                 <i data-lucide="volume-x"></i>
                 <span class="status-text">اضغط لتفعيل الصوت</span>
             </button>
-            <div id="voice-reminder-status" class="voice-reminder-status" role="status" aria-live="polite">
+            <div id="voice-reminder-status" class="voice-reminder-status" role="status" aria-live="off">
                 <i data-lucide="bell"></i>
                 <span>جاري حساب النداء الصوتي القادم</span>
             </div>
@@ -98,7 +99,7 @@
             </div>
             <div class="stat-card">
                 <span class="val en-nums" id="stat-done">0</span>
-                <span class="lbl">مكتمل</span>
+                <span class="lbl">منتهي</span>
             </div>
             <div class="stat-card">
                 <span class="val en-nums" id="stat-total">0</span>

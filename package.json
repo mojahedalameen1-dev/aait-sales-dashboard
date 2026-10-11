@@ -18,5 +18,8 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans-arabic": "^5.3.0",
     "lucide": "^1.28.0"
+  },
+  "overrides": {
+    "source-map-js": "1.2.2"
   }
 }

@@ -7,6 +7,7 @@ import { APP_TIME_ZONE, DEFAULT_MEETING_DURATION_MINUTES } from './config.js';
 const STORAGE_KEY_SETTINGS = 'aait_settings';
 const STORAGE_KEY_DATA = 'aait_meetings_data';
 const STORAGE_KEY_LAST_SYNC = 'aait_last_sync';
+const STORAGE_KEY_DATA_UPDATED_AT = 'aait_data_updated_at';
 const STORAGE_KEY_SOURCE = 'aait_meetings_source';
 const FETCH_TIMEOUT_MS = 15000;
 const STALE_AFTER_MS = 5 * 60 * 1000;
@@ -126,11 +127,15 @@ async function fetchCSV() {
         if (contentType.includes('application/json')) {
             const payload = await apiResponse.json();
             if (!apiResponse.ok) throw new Error(payload.error || 'تعذر جلب بيانات الاجتماعات');
+            const fetchedAtMs = payload.fetchedAt ? Date.parse(payload.fetchedAt) : NaN;
+            const payloadIsOld = !Number.isFinite(fetchedAtMs) || Date.now() - fetchedAtMs > STALE_AFTER_MS;
             return {
                 text: payload.csvText,
                 monthInfo,
                 sourceKey: `${activeKey}:${monthInfo.key}`,
-                sheetName: payload.sheetName || monthInfo.sheetName
+                sheetName: payload.sheetName || monthInfo.sheetName,
+                stale: payload.stale === true || payloadIsOld,
+                fetchedAt: payload.fetchedAt || null
             };
         }
 
@@ -218,9 +223,8 @@ function forwardFillDates(rows) {
 
     return rows.map(row => {
         const dateField = (row[0] || '').trim();
-        // Check if this looks like a date (contains / or - and digits)
-        if (dateField && /\d/.test(dateField) && (/\//.test(dateField) || /-/.test(dateField))) {
-            currentDate = dateField;
+        if (dateField && /[\d٠-٩۰-۹]/.test(dateField) && /[/-]/.test(dateField)) {
+            currentDate = normalizeDate(dateField);
         }
         // Return row with filled date
         return [currentDate, ...row.slice(1)];
@@ -291,24 +295,33 @@ export function parseTimeStr(timeStr) {
  */
 export function normalizeDate(dateStr) {
     if (!dateStr) return '';
-    const parts = dateStr.trim().split(/[/\-]/);
+    const parts = normalizeDigits(dateStr).trim().split(/[/\-]/);
 
     if (parts.length === 3) {
         const p0 = parts[0].trim();
         const p1 = parts[1].trim();
         const p2 = parts[2].trim();
+        let year;
+        let month;
+        let day;
 
         // Check if year is first (YYYY/MM/DD)
-        if (p0.length === 4) {
-            return `${p0}/${p1.padStart(2, '0')}/${p2.padStart(2, '0')}`;
+        if (/^\d{4}$/.test(p0)) {
+            [year, month, day] = [Number(p0), Number(p1), Number(p2)];
         }
         // Check if year is last (D/M/YYYY or M/D/YYYY)
         // Defaulting to D/M/YYYY as it's common in the region
-        else if (p2.length === 4) {
-            return `${p2}/${p1.padStart(2, '0')}/${p0.padStart(2, '0')}`;
+        else if (/^\d{4}$/.test(p2)) {
+            [year, month, day] = [Number(p2), Number(p1), Number(p0)];
+        } else {
+            return '';
         }
+
+        const parsed = new Date(Date.UTC(year, month - 1, day));
+        if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return '';
+        return `${String(year).padStart(4, '0')}/${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
     }
-    return dateStr.trim();
+    return '';
 }
 
 /**
@@ -352,19 +365,31 @@ function mapRowsToMeetings(rows) {
             continue;
         }
 
-        const identitySource = [row[0], normalizedTime, project, team, (row[6 + columnOffset] || '').trim()].join('|');
+        const date = normalizeDate((row[0] || '').trim());
+        if (!date) {
+            console.warn('[Data] تم تجاهل سجل لاحتوائه على تاريخ غير صالح:', { project, date: row[0] });
+            continue;
+        }
+
+        const ticketUrl = (row[6 + columnOffset] || '').trim();
+        const meetUrl = (row[7 + columnOffset] || '').trim();
+        const identitySource = ticketUrl
+            ? [ticketUrl, date, normalizedTime, meetUrl].join('|')
+            : meetUrl
+                ? [meetUrl, date, normalizedTime].join('|')
+                : [date, normalizedTime, project, team].join('|');
         const stableId = createStableMeetingId(identitySource);
 
         meetings.push({
             id: stableId,
-            date: normalizeDate((row[0] || '').trim()),
+            date,
             project: project,
             team: team,
             time: normalizedTime,
             via: (row[4 + columnOffset] || '').trim(),
             status: (row[5 + columnOffset] || '').trim(),
-            ticketUrl: (row[6 + columnOffset] || '').trim(),
-            meetUrl: (row[7 + columnOffset] || '').trim(),
+            ticketUrl,
+            meetUrl,
             clientStatus: (row[8 + columnOffset] || '').trim()
         });
     }
@@ -372,14 +397,38 @@ function mapRowsToMeetings(rows) {
     return meetings;
 }
 
+function preserveCachedMeetingIds(meetings, cachedMeetings = []) {
+    const usedIds = new Set();
+    return meetings.map(meeting => {
+        const candidates = cachedMeetings.filter(cached => {
+            if (usedIds.has(cached.id)) return false;
+            if (meeting.ticketUrl && cached.ticketUrl) return meeting.ticketUrl === cached.ticketUrl && meeting.date === cached.date;
+            if (meeting.meetUrl && cached.meetUrl) return meeting.meetUrl === cached.meetUrl && meeting.date === cached.date;
+            return cached.id === meeting.id;
+        });
+        candidates.sort((a, b) => {
+            const score = cached => Number(cached.meetUrl === meeting.meetUrl)
+                + Number(cached.team === meeting.team)
+                + Number(cached.project === meeting.project)
+                + Number(cached.time === meeting.time);
+            return score(b) - score(a);
+        });
+        const cached = candidates[0];
+        if (!cached) return meeting;
+        usedIds.add(cached.id);
+        return { ...meeting, id: cached.id };
+    });
+}
+
 // ========================================
 // 💾 Local Storage Cache
 // ========================================
 
-function saveMeetings(meetings, sourceKey) {
+function saveMeetings(meetings, sourceKey, dataUpdatedAt = new Date().toISOString(), updateLastSync = true) {
     try {
         localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(meetings));
-        localStorage.setItem(STORAGE_KEY_LAST_SYNC, new Date().toISOString());
+        if (updateLastSync) localStorage.setItem(STORAGE_KEY_LAST_SYNC, new Date().toISOString());
+        if (dataUpdatedAt) localStorage.setItem(STORAGE_KEY_DATA_UPDATED_AT, dataUpdatedAt);
         localStorage.setItem(STORAGE_KEY_SOURCE, sourceKey);
     } catch (e) {
         console.warn('LocalStorage save failed:', e);
@@ -400,6 +449,10 @@ function getLastSyncTime() {
     return localStorage.getItem(STORAGE_KEY_LAST_SYNC) || null;
 }
 
+function getDataUpdatedAt() {
+    return localStorage.getItem(STORAGE_KEY_DATA_UPDATED_AT) || getLastSyncTime();
+}
+
 // ========================================
 // 🔄 Auto-Sync Logic
 // ========================================
@@ -415,32 +468,54 @@ export async function fetchMeetings() {
     try {
         const csvResult = await fetchCSV();
         const rows = parseCSV(csvResult.text);
-        const meetings = mapRowsToMeetings(rows);
+        let meetings = mapRowsToMeetings(rows);
+        meetings = preserveCachedMeetingIds(meetings, loadCachedMeetings(sourceKey) || []);
 
         const meetingsFromAnotherMonth = meetings.filter(meeting => meeting.date && !meeting.date.startsWith(`${monthInfo.year}/${monthInfo.month}/`));
         if (meetings.length > 0 && meetingsFromAnotherMonth.length === meetings.length) {
             throw new Error(`تعذر العثور على تبويب ${csvResult.sheetName}`);
         }
 
-        saveMeetings(meetings, sourceKey);
+        let dataUpdatedAt = csvResult.fetchedAt || (csvResult.stale ? getDataUpdatedAt() : new Date().toISOString());
+        if (csvResult.stale) {
+            const localMeetings = loadCachedMeetings(sourceKey);
+            const localDataUpdatedAt = getDataUpdatedAt();
+            if (localMeetings && (!csvResult.fetchedAt || Date.parse(localDataUpdatedAt) >= Date.parse(dataUpdatedAt))) {
+                meetings = localMeetings;
+                dataUpdatedAt = localDataUpdatedAt;
+            }
+        }
+        saveMeetings(meetings, sourceKey, dataUpdatedAt, !csvResult.stale);
+        if (csvResult.stale) {
+            return {
+                meetings,
+                fromCache: true,
+                stale: true,
+                error: 'تعذر تحديث مصدر البيانات؛ نعرض آخر بيانات ناجحة',
+                lastSync: dataUpdatedAt,
+                hasCache: true,
+                sheetName: csvResult.sheetName
+            };
+        }
         return {
             meetings,
             fromCache: false,
             stale: false,
             error: null,
-            lastSync: getLastSyncTime(),
+            lastSync: dataUpdatedAt,
             sheetName: csvResult.sheetName
         };
     } catch (error) {
         console.error('Fetch error:', error);
         const cached = loadCachedMeetings(sourceKey);
-        const lastSync = getLastSyncTime();
+        const lastSync = getDataUpdatedAt();
         const cacheAge = lastSync ? Date.now() - new Date(lastSync).getTime() : Infinity;
+        const hasCache = Boolean(cached);
         return {
             meetings: cached || [],
             fromCache: true,
-            stale: cacheAge > STALE_AFTER_MS,
-            hasCache: Boolean(cached),
+            stale: !hasCache || cacheAge > STALE_AFTER_MS,
+            hasCache,
             error: error.message || 'تعذر تحديث البيانات',
             lastSync,
             sheetName: monthInfo.sheetName

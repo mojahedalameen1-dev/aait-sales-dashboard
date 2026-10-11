@@ -43,7 +43,8 @@ import {
     AUDIO_STATE,
     playTestAlert,
     stopAudioPlayback,
-    getNextAudioReminder
+    getNextAudioReminder,
+    updateReminderMeetings
 } from './notifications.js';
 import { 
     escapeHTML, 
@@ -52,13 +53,12 @@ import {
     isSafeMeetingUrl,
     toEnglishDigits
 } from './utils.js';
-import { APP_TIME_ZONE, getEngineerColor, getEngineerTheme } from './config.js';
+import { APP_TIME_ZONE, getEngineerColor, getEngineerTheme, getEngineerProfile } from './config.js';
 
 // ========================================
 // 🌐 State & Constants
 // ========================================
 
-const DEFAULT_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 let activeMeetings = [];
 let activeSyncResult = null;
 // BUG-03 tracker
@@ -69,9 +69,11 @@ let sidebarOverlapKey = '';
 let sidebarOverlapMeetings = [];
 let screenWakeLock = null;
 let lastTimingStateSnapshot = '';
+let lastGridSignature = null;
 
-function refreshIcons() {
+function refreshIcons(root = document) {
     createIcons({
+        root,
         icons: {
             AlertCircle,
             Bell,
@@ -92,6 +94,7 @@ function refreshIcons() {
             VolumeX
         }
     });
+    root.querySelectorAll('svg[data-lucide]').forEach(icon => icon.removeAttribute('data-lucide'));
 }
 
 // ========================================
@@ -110,13 +113,14 @@ function getDeveloperGradient(team) {
 function getMeetingDisplay(meeting) {
     const project = toEnglishDigits(meeting?.project || '');
     const ticketNum = project.match(/AA\d+/i)?.[0]?.toUpperCase() || '';
-    const typeKeywords = /اون لاين|أون لاين|online|remote|حضوري|خارجي|زيارة|مكتب|مقر/gi;
+    const typeKeywords = /عن\s+بعد|اون\s*لاين|أون\s*لاين|online|remote|حضوري|خارجي|زيارة|مكتب|مقر/gi;
     const cleaned = project
         .replace(ticketNum, '')
         .replace(typeKeywords, '')
+        .replace(/[()[\]{}]/g, ' ')
         .replace(/^[\s\-–—:،.]+|[\s\-–—:،.]+$/g, '')
         .trim();
-    const parts = cleaned.split(/\s+-\s+|\s{2,}|[_|]+/).map(part => part.trim()).filter(Boolean);
+    const parts = cleaned.split(/\s+-\s+|\s{2,}|[_|]+/).map(part => part.replace(/[()\[\]{}]/g, '').trim()).filter(Boolean);
     const vagueTitle = /^(?:غير\s*محدد|اجتماع(?:\s*[اأإآ])?|عميل|تطبيق|[-—])$/i;
     let client = parts[0] || '';
     if (!client || vagueTitle.test(client)) client = 'اجتماع عميل';
@@ -195,23 +199,35 @@ function updatePressureSummary(meetings) {
     const active = meetings
         .map(meeting => ({ meeting, timing: getMeetingTimingState(meeting) }))
         .filter(item => ['upcoming', 'running'].includes(item.timing.state));
-    let peak = null;
+    const engineerMeetings = new Map();
 
     for (const item of active) {
-        const overlapping = active.filter(other => (
-            item.timing.startMinutes < other.timing.endMinutes &&
-            other.timing.startMinutes < item.timing.endMinutes
-        ));
-        if (!peak || overlapping.length > peak.count) {
-            peak = { item, count: overlapping.length };
+        const profile = getEngineerProfile(item.meeting.team);
+        const key = profile?.id || String(item.meeting.team || '').trim().toLocaleLowerCase();
+        if (!key) continue;
+        const group = engineerMeetings.get(key) || [];
+        group.push(item);
+        engineerMeetings.set(key, group);
+    }
+
+    let peak = { count: 1, startMinutes: 0 };
+    for (const items of engineerMeetings.values()) {
+        const events = items.flatMap(item => [
+            { minute: item.timing.startMinutes, delta: 1 },
+            { minute: item.timing.endMinutes, delta: -1 }
+        ]).sort((a, b) => a.minute - b.minute || a.delta - b.delta);
+        let count = 0;
+        for (const event of events) {
+            count += event.delta;
+            if (count > peak.count) peak = { count, startMinutes: event.minute };
         }
     }
 
-    const hasPressure = Boolean(peak && peak.count > 1);
+    const hasPressure = peak.count > 1;
     summary.classList.toggle('has-pressure', hasPressure);
     text.textContent = hasPressure
-        ? `أعلى ضغط: ${peak.count} اجتماعات متداخلة من ${formatTime12h(peak.item.meeting.time)}`
-        : 'جدول اليوم موزع بدون تعارضات';
+        ? `تعارض محتمل: ${peak.count} اجتماعات للمهندس نفسه قرب ${formatTime12h(`${String(Math.floor(peak.startMinutes / 60)).padStart(2, '0')}:${String(peak.startMinutes % 60).padStart(2, '0')}`)}`
+        : 'لا توجد اجتماعات متداخلة للمهندس نفسه';
 }
 function renderUI(meetings) {
     const grid = document.getElementById('meetings-grid');
@@ -248,6 +264,21 @@ function renderUI(meetings) {
     if (sorted.length > 20) grid.classList.add('grid-is-crowded');
     else grid.classList.remove('grid-is-crowded');
 
+    const gridSignature = JSON.stringify({
+        error: activeSyncResult?.error || '',
+        stale: Boolean(activeSyncResult?.stale),
+        meetings: sorted.map(meeting => [
+            meeting.id, meeting.date, meeting.time, meeting.project, meeting.team, meeting.via,
+            meeting.status, meeting.ticketUrl, meeting.meetUrl, meeting.clientStatus,
+            getMeetingTimingState(meeting).state
+        ])
+    });
+    if (gridSignature === lastGridSignature) {
+        updateDynamicState();
+        return;
+    }
+    lastGridSignature = gridSignature;
+
     if (sorted.length === 0) {
         renderEmptyState(grid);
         refreshIcons();
@@ -276,7 +307,7 @@ function renderUI(meetings) {
         const engineerLabel = getEngineerShortName(m.team);
         const startsSoon = timingState === 'upcoming' && timing.minutesUntil <= 10;
         const statusMeta = done
-            ? { label: 'مكتمل', className: 'is-done', icon: 'check-circle-2' }
+            ? { label: 'منتهي', className: 'is-done', icon: 'check-circle-2' }
             : cancelled
                 ? { label: 'ملغي / تعديل', className: 'is-cancelled', icon: 'info' }
                 : timingState === 'running'
@@ -493,12 +524,14 @@ function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
     const { client: cleanedTitle, projectDesc, ticketNum } = getMeetingDisplay(meeting);
     
     const titleEl = document.getElementById('side-m-title');
-    if (titleEl) {
+    const titleSignature = [meeting.id, cleanedTitle, projectDesc, ticketNum, meeting.ticketUrl].join('|');
+    if (titleEl && titleEl.dataset.meetingId !== titleSignature) {
         titleEl.innerHTML = `<span class="side-client">${safeDisplayText(cleanedTitle)}</span>` +
             (projectDesc ? `<small>${safeDisplayText(projectDesc)}</small>` : '') +
             (ticketNum ? (isSafeMeetingUrl(meeting.ticketUrl)
                 ? `<a class="ticket-pill" href="${escapeHTML(meeting.ticketUrl)}" target="_blank" rel="noopener noreferrer">${ticketNum}</a>`
                 : `<span class="ticket-pill">${ticketNum}</span>`) : '');
+        titleEl.dataset.meetingId = titleSignature;
     }
     
     // Overlapping message & Dimmed Meta
@@ -506,7 +539,8 @@ function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
     const metaEl = document.getElementById('side-m-meta');
     if (metaEl) {
         metaEl.style.opacity = '0.6';
-        metaEl.textContent = toEnglishDigits(metaText);
+        const safeMetaText = toEnglishDigits(metaText);
+        if (metaEl.textContent !== safeMetaText) metaEl.textContent = safeMetaText;
     }
 
     if (overlapSwitcher) {
@@ -621,10 +655,15 @@ function updateSyncStatus(result, isLoading = false) {
         return;
     }
 
-    if (result?.error) {
-        container.classList.add(result.stale ? 'has-error' : 'is-cached');
-        text.textContent = result.stale ? 'البيانات قديمة' : 'نعرض نسخة محفوظة';
-        meta.textContent = result.error;
+    if (result?.stale || result?.error || result?.fromCache) {
+        const isOld = result.stale || !result.lastSync;
+        container.classList.add(isOld ? 'has-error' : 'is-cached');
+        text.textContent = isOld ? 'البيانات قديمة' : 'نعرض نسخة محفوظة';
+        container.dataset.lastSync = result.lastSync || '';
+        container.dataset.sheetName = result.sheetName || 'الشهر الحالي';
+        container.dataset.syncError = result.error || '';
+        const age = formatSyncAge(result.lastSync);
+        meta.textContent = [result.error, age].filter(Boolean).join(' • ') || 'تعذر الاتصال بالمصدر';
         return;
     }
 
@@ -632,31 +671,78 @@ function updateSyncStatus(result, isLoading = false) {
     text.textContent = 'البيانات محدثة';
     container.dataset.lastSync = result?.lastSync || '';
     container.dataset.sheetName = result?.sheetName || 'الشهر الحالي';
+    container.dataset.syncError = '';
     updateSyncAge();
 }
 
 function updateSyncAge() {
     const container = document.getElementById('sync-status');
     const meta = document.getElementById('sync-status-meta');
-    if (!container?.classList.contains('is-online') || !meta) return;
+    if (!container || !meta) return;
     const lastSync = container.dataset.lastSync;
     if (!lastSync) {
-        meta.textContent = 'محدّث الآن';
+        if (container.classList.contains('is-online')) meta.textContent = 'محدّث الآن';
         return;
     }
-    const seconds = Math.max(0, Math.floor((Date.now() - new Date(lastSync).getTime()) / 1000));
-    const age = seconds < 45 ? 'الآن' : seconds < 3600 ? `منذ ${Math.floor(seconds / 60)} دقيقة` : `منذ ${Math.floor(seconds / 3600)} ساعة`;
-    meta.textContent = `${container.dataset.sheetName} • ${age}`;
+    const age = formatSyncAge(lastSync);
+    if (container.classList.contains('is-online')) meta.textContent = `${container.dataset.sheetName} • ${age}`;
+    else if (container.classList.contains('is-cached') || container.classList.contains('has-error')) {
+        meta.textContent = [container.dataset.syncError, age].filter(Boolean).join(' • ');
+    }
 }
 
-function setControlFeedback(button, message) {
+function setModalBackgroundInert(modal, inert) {
+    for (const element of document.body.children) {
+        if (element === modal) continue;
+        if (inert) {
+            if (!element.hasAttribute('data-modal-inert-previous')) {
+                element.setAttribute('data-modal-inert-previous', String(element.inert));
+            }
+            element.inert = true;
+        } else if (element.hasAttribute('data-modal-inert-previous')) {
+            element.inert = element.getAttribute('data-modal-inert-previous') === 'true';
+            element.removeAttribute('data-modal-inert-previous');
+        }
+    }
+}
+
+function trapDialogFocus(event, dialog) {
+    if (event.key !== 'Tab') return;
+    const focusable = [...dialog.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.disabled && !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+    if (!focusable.length) {
+        event.preventDefault();
+        dialog.querySelector('[tabindex="-1"]')?.focus();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+function formatSyncAge(lastSync) {
+    if (!lastSync) return '';
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(lastSync).getTime()) / 1000));
+    if (!Number.isFinite(seconds)) return 'وقت آخر تحديث غير معروف';
+    const age = seconds < 45 ? 'الآن' : seconds < 3600 ? `منذ ${Math.floor(seconds / 60)} دقيقة` : `منذ ${Math.floor(seconds / 3600)} ساعة`;
+    return `آخر بيانات ناجحة ${age}`;
+}
+
+function setControlFeedback(button, message, kind = 'success') {
     if (!button) return;
     const original = button.dataset.tooltip;
     button.dataset.tooltip = message;
-    button.classList.add('is-success');
+    button.classList.toggle('is-success', kind === 'success');
+    button.classList.toggle('is-error', kind === 'error');
     setTimeout(() => {
         button.dataset.tooltip = original;
-        button.classList.remove('is-success');
+        button.classList.remove('is-success', 'is-error');
     }, 1800);
 }
 
@@ -675,6 +761,7 @@ window.manualRefresh = async () => {
         const result = await fetchMeetings();
         activeSyncResult = result;
         activeMeetings = result.meetings;
+        updateReminderMeetings(activeMeetings);
         updateSyncStatus(result);
         renderUI(activeMeetings);
     } finally {
@@ -682,7 +769,8 @@ window.manualRefresh = async () => {
         if (btn) {
             btn.disabled = false;
             btn.removeAttribute('aria-busy');
-            setControlFeedback(btn, 'تم التحديث');
+            const failed = Boolean(activeSyncResult?.error || activeSyncResult?.stale);
+            setControlFeedback(btn, failed ? 'لم يكتمل التحديث' : 'تم التحديث', failed ? 'error' : 'success');
         }
     }
 };
@@ -728,17 +816,25 @@ window.toggleSettings = () => {
     const modal = document.getElementById('settings-modal');
     if (!modal) return;
 
-    const isOpen = modal.classList.toggle('active');
-    modal.setAttribute('aria-hidden', String(!isOpen));
+    const isOpen = !modal.classList.contains('active');
     if (isOpen) {
         settingsReturnFocus = document.activeElement;
+        modal.inert = false;
+        setModalBackgroundInert(modal, true);
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
         queueMicrotask(() => document.getElementById('sheet-key-input')?.focus());
     } else {
+        setModalBackgroundInert(modal, false);
         settingsReturnFocus?.focus?.();
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.inert = true;
+        settingsReturnFocus = null;
     }
     const settings = getSettings();
     const input = document.getElementById('sheet-key-input');
-    if (input) input.value = settings.sheetId || DEFAULT_KEY;
+    if (input) input.value = settings.sheetId || '';
 };
 
 window.unlockAudio = () => {
@@ -785,15 +881,25 @@ function syncDisplayModeButton() {
 window.saveSettings = () => {
     const input = document.getElementById('sheet-key-input');
     if (!input) return;
+
+    const errorMessage = document.getElementById('sheet-key-error');
     
     const val = input.value.trim();
-    if (/^2PACX-[A-Za-z0-9_-]+$/.test(val)) {
+    if (val === '' || /^2PACX-[A-Za-z0-9_-]+$/.test(val)) {
         input.removeAttribute('aria-invalid');
+        if (errorMessage) {
+            errorMessage.hidden = true;
+            errorMessage.textContent = '';
+        }
         updateSettings({ sheetId: val });
         window.toggleSettings();
         window.manualRefresh();
     } else {
         input.setAttribute('aria-invalid', 'true');
+        if (errorMessage) {
+            errorMessage.textContent = 'المعرّف غير صحيح. استخدم رابط نشر Google Sheets الذي يبدأ بـ 2PACX-.';
+            errorMessage.hidden = false;
+        }
         input.focus();
     }
 };
@@ -881,8 +987,11 @@ async function initApp() {
 
     audioStatusBadge?.addEventListener('click', () => {
         if (audioStatusBadge.classList.contains('enabled')) {
-            playTestAlert();
-            setControlFeedback(audioStatusBadge, 'تم اختبار الصوت');
+            playTestAlert(success => setControlFeedback(
+                audioStatusBadge,
+                success ? 'اكتمل اختبار الصوت' : 'تعذر تشغيل صوت الاختبار',
+                success ? 'success' : 'error'
+            ));
         } else {
             updateSettings({ soundEnabled: true });
             unlockAudio();
@@ -893,21 +1002,22 @@ async function initApp() {
     const setAudioOverlayVisible = visible => {
         if (!audioOverlay) return;
 
-        // نقل التركيز قبل إخفاء نافذة الصوت يمنع تحذير aria-hidden
-        // عندما يكون زر التفعيل هو العنصر النشط داخل النافذة.
-        if (!visible && audioOverlay.contains(document.activeElement)) {
-            if (audioStatusBadge) {
-                audioStatusBadge.focus({ preventScroll: true });
-            } else if (document.activeElement instanceof HTMLElement) {
-                document.activeElement.blur();
-            }
+        if (visible) {
+            audioOverlay.hidden = false;
+            audioOverlay.inert = false;
+            audioOverlay.classList.add('active');
+            audioOverlay.setAttribute('aria-hidden', 'false');
+            setModalBackgroundInert(audioOverlay, true);
+            if (!audioOverlay.contains(document.activeElement)) queueMicrotask(() => audioEnableButton?.focus());
+            return;
         }
 
-        audioOverlay.hidden = !visible;
-        audioOverlay.classList.toggle('active', visible);
-        audioOverlay.setAttribute('aria-hidden', String(!visible));
-        if (visible) audioOverlay.removeAttribute('inert');
-        else audioOverlay.setAttribute('inert', '');
+        setModalBackgroundInert(audioOverlay, false);
+        if (audioOverlay.contains(document.activeElement)) audioStatusBadge?.focus({ preventScroll: true });
+        audioOverlay.classList.remove('active');
+        audioOverlay.setAttribute('aria-hidden', 'true');
+        audioOverlay.inert = true;
+        audioOverlay.hidden = true;
     };
 
     audioEnableButton?.addEventListener('click', () => {
@@ -930,7 +1040,17 @@ async function initApp() {
     });
 
     if (!settings.soundEnabled) setAudioOverlayVisible(false);
-    else queueMicrotask(() => audioEnableButton?.focus());
+    else setAudioOverlayVisible(true);
+
+    const sheetKeyInput = document.getElementById('sheet-key-input');
+    sheetKeyInput?.addEventListener('input', () => {
+        sheetKeyInput.removeAttribute('aria-invalid');
+        const message = document.getElementById('sheet-key-error');
+        if (message) {
+            message.hidden = true;
+            message.textContent = '';
+        }
+    });
 
     setAudioStateListener((state) => {
         // Ensure LED exists next to #live-clock
@@ -989,6 +1109,7 @@ async function initApp() {
     startAutoSync((result) => {
         activeSyncResult = result;
         activeMeetings = result.meetings;
+        updateReminderMeetings(activeMeetings);
         updateSyncStatus(result);
         renderUI(activeMeetings);
     });
@@ -996,40 +1117,40 @@ async function initApp() {
     if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
     dynamicUpdateIntervalId = setInterval(updateLiveMeetingState, 1000);
 
-    document.getElementById('test-sound-btn')?.addEventListener('click', () => {
+    document.getElementById('test-sound-btn')?.addEventListener('click', event => {
         unlockAudio();
-        playTestAlert();
+        const button = event.currentTarget;
+        playTestAlert(success => setControlFeedback(
+            button,
+            success ? 'اكتمل اختبار الصوت' : 'تعذر تشغيل صوت الاختبار',
+            success ? 'success' : 'error'
+        ));
     });
 
     document.addEventListener('keydown', event => {
         const modal = document.getElementById('settings-modal');
+        const audioDialog = document.getElementById('audio-unlock-overlay');
+        if (modal?.classList.contains('active')) {
+            if (event.key === 'Escape') {
+                window.toggleSettings();
+                return;
+            }
+            trapDialogFocus(event, modal);
+            return;
+        }
+        if (audioDialog?.classList.contains('active')) {
+            trapDialogFocus(event, audioDialog);
+            return;
+        }
         if (!modal?.classList.contains('active')) {
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement
+                || event.target instanceof HTMLSelectElement || event.target?.isContentEditable
+                || event.target?.closest?.('button, a, [role="button"]')) return;
             if (event.key.toLowerCase() === 'r') {
                 event.preventDefault();
                 window.manualRefresh();
-            } else if (event.key === 'Enter') {
-                const joinLink = document.getElementById('side-join-link');
-                if (joinLink && !joinLink.hidden) joinLink.click();
             }
             return;
-        }
-        if (event.key === 'Escape') {
-            window.toggleSettings();
-            return;
-        }
-        if (event.key === 'Tab') {
-            const focusable = [...modal.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
-                .filter(element => !element.disabled);
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last?.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first?.focus();
-            }
         }
     });
 

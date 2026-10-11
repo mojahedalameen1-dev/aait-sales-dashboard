@@ -9,7 +9,7 @@ export function escapeHTML(str) {
     if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /** Normalize Arabic-Indic and Eastern Arabic-Indic digits for consistent UI output. */
@@ -58,7 +58,9 @@ export function isSafeMeetingUrl(value) {
     if (!value) return false;
     try {
         const url = new URL(value);
-        return url.protocol === 'https:';
+        if (url.protocol !== 'https:' || url.username || url.password) return false;
+        const hostname = url.hostname.toLowerCase();
+        return hostname === 'meet.google.com' || hostname === 'aait.sa' || hostname.endsWith('.aait.sa');
     } catch {
         return false;
     }

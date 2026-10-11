@@ -33,7 +33,21 @@ const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwA
 // Track recently warned meetings to avoid spamming fallbacks
 const recentlyWarnedMeetings = new Map(); // id -> timestamp
 const DELIVERED_STORAGE_KEY = 'aait_delivered_notifications';
+const PLAY_COUNTS_STORAGE_KEY = 'aait_notification_play_counts';
+const AUDIO_LEADER_LOCK = 'aait-notification-audio-leader';
+const AUDIO_LEASE_KEY = 'aait_notification_audio_lease';
+const AUDIO_LEASE_MS = 12000;
 const AUDIO_FILES = ['a30.mp3', 'a5.mp3', 'm30.mp3', 'm5.mp3', 's30.mp3', 's5.mp3'];
+const audioTabId = globalThis.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+let playbackGeneration = 0;
+let activeSafetyTimeout = null;
+let queueAdvanceTimeout = null;
+let latestMeetingsById = new Map();
+let isAudioLeader = false;
+let releaseWebAudioLock = null;
+let leaderRetryInterval = null;
+let leaseRenewInterval = null;
+let leaseConfirmationTimeout = null;
 
 /**
  * Set a callback for UI updates when audio state changes
@@ -47,6 +61,8 @@ function updateAudioState(newState) {
     currentAudioState = newState;
     console.log(`[Audio] State changed to: ${newState}`);
     if (onStateChangeCallback) onStateChangeCallback(newState);
+    if (newState === AUDIO_STATE.ENABLED && getSettings().soundEnabled) tryAcquireAudioLeadership();
+    else releaseAudioLeadership();
 }
 
 /**
@@ -92,8 +108,8 @@ function preloadAudioFiles() {
     }
 }
 
-export function playTestAlert() {
-    enqueueAudio({ filename: 'm5.mp3', meetingId: 'audio-test' });
+export function playTestAlert(onResult) {
+    enqueueAudio({ filename: 'm5.mp3', meetingId: 'audio-test', onDelivered: onResult });
 }
 
 /**
@@ -103,10 +119,16 @@ function enqueueAudio(task) {
     const { soundEnabled } = getSettings();
     if (!soundEnabled) return false;
 
+    const deliveryKeys = task.deliveryKeys || [];
+    const startedCount = getMaxStartedCount(deliveryKeys);
+    const requestedPlays = Math.max(1, task.repetitionsRemaining || 2);
+    const remainingPlays = Math.min(requestedPlays, Math.max(0, 2 - startedCount));
+    if (remainingPlays === 0) return false;
+
     console.log(`[Queue] Queued: ${task.filename || task}`);
     playQueue.push({
         ...task,
-        repetitionsRemaining: Math.max(1, task.repetitionsRemaining || 2),
+        repetitionsRemaining: remainingPlays,
         deliveryConfirmed: false
     });
     processQueue();
@@ -114,6 +136,12 @@ function enqueueAudio(task) {
 }
 
 export function stopAudioPlayback() {
+    playbackGeneration++;
+    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
+    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
+    activeSafetyTimeout = null;
+    queueAdvanceTimeout = null;
+
     const cancelled = playQueue.splice(0);
     if (activeAudioTask) cancelled.push(activeAudioTask);
     const seen = new Set();
@@ -122,7 +150,11 @@ export function stopAudioPlayback() {
         seen.add(task);
         task.onDelivered?.(false);
     }
-    retainedAudioPlayer?.pause?.();
+    if (retainedAudioPlayer) {
+        retainedAudioPlayer.onended = null;
+        retainedAudioPlayer.onerror = null;
+        retainedAudioPlayer.pause?.();
+    }
     if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
     activeAudioTask = null;
     isPlaying = false;
@@ -134,16 +166,20 @@ export function stopAudioPlayback() {
  */
 async function processQueue() {
     if (isPlaying || playQueue.length === 0) return;
+    if (playQueue[0]?.meetingId !== 'audio-test' && !hasCurrentAudioLeadership()) return;
     
     if (currentAudioState !== AUDIO_STATE.ENABLED) {
         console.warn('[Queue] Waiting for Audio Unlock...');
         return;
     }
 
-    let safetyTimeout = null;
+    const generation = playbackGeneration;
     const finish = (delay = 2000) => {
-        if (safetyTimeout) clearTimeout(safetyTimeout);
-        setTimeout(() => {
+        if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
+        activeSafetyTimeout = null;
+        queueAdvanceTimeout = setTimeout(() => {
+            if (generation !== playbackGeneration) return;
+            queueAdvanceTimeout = null;
             isPlaying = false;
             processQueue();
         }, delay);
@@ -160,6 +196,30 @@ async function processQueue() {
     const filename = task.filename || task;
     let settled = false;
 
+    // Array#filter passes the index as the predicate's second argument. Keep the
+    // default `allowExhausted = false` explicit so later reminders cannot skip
+    // the two-play delivery cap just because they are later in the array.
+    const validReminders = (task.reminders || []).filter(reminder => isReminderStillValid(reminder));
+    if (task.reminders?.length && validReminders.length === 0) {
+        activeAudioTask = null;
+        confirmTask(task, false);
+        finish(0);
+        return;
+    }
+    if (validReminders.length) {
+        task.deliveryKeys = validReminders.map(reminder => reminder.key);
+        task.reminders = validReminders;
+    }
+
+    const availablePlays = Math.max(0, 2 - getMaxStartedCount(task.deliveryKeys || []));
+    task.repetitionsRemaining = Math.min(task.repetitionsRemaining, availablePlays);
+    if (!task.repetitionsRemaining) {
+        activeAudioTask = null;
+        confirmTask(task, false);
+        finish(0);
+        return;
+    }
+
     const confirmDelivery = success => {
         if (task.deliveryConfirmed) return;
         task.deliveryConfirmed = true;
@@ -172,9 +232,13 @@ async function processQueue() {
         finish(delay);
     };
 
-    safetyTimeout = setTimeout(() => {
+    activeSafetyTimeout = setTimeout(() => {
+        if (generation !== playbackGeneration) return;
         console.warn('[Queue] Safety timeout — skipping stalled audio task');
         retainedAudioPlayer?.pause?.();
+        retainedAudioPlayer && (retainedAudioPlayer.onended = null);
+        retainedAudioPlayer && (retainedAudioPlayer.onerror = null);
+        activeAudioTask = null;
         confirmDelivery(false);
         settle(0);
     }, 90000);
@@ -190,11 +254,12 @@ async function processQueue() {
         audio.src = audioPath;
         audio.load();
         audio.onended = () => {
+            if (generation !== playbackGeneration) return;
             console.log('[Queue] Stage: Completed');
             if (task.repetitionsRemaining > 1) {
+                task.repetitionsRemaining--;
                 playQueue.unshift({
                     ...task,
-                    repetitionsRemaining: task.repetitionsRemaining - 1,
                     deliveryConfirmed: false
                 });
                 activeAudioTask = null;
@@ -207,29 +272,43 @@ async function processQueue() {
         };
 
         audio.onerror = () => {
+            if (generation !== playbackGeneration) return;
             console.error(`[Queue] Stage: Failed (File NOT FOUND: ${filename}). Skipping.`);
             activeAudioTask = null;
+            updateAudioState(AUDIO_STATE.FAILED);
             confirmDelivery(false);
             settle(0);
         };
 
-        await audio.play().catch((err) => {
+        await audio.play().then(() => {
+            if (generation === playbackGeneration) recordStartedPlay(task);
+        }).catch((err) => {
+            if (generation !== playbackGeneration) return;
             if (err.name === 'NotAllowedError') {
                 playQueue.unshift(task);
                 updateAudioState(AUDIO_STATE.LOCKED);
             } else {
                 console.error('[Queue] Play Error:', err);
                 activeAudioTask = null;
+                updateAudioState(AUDIO_STATE.FAILED);
                 confirmDelivery(false);
             }
             settle(500);
         });
     } catch (e) {
+        if (generation !== playbackGeneration) return;
         console.error('[Queue] Unexpected Error:', e);
         activeAudioTask = null;
+        updateAudioState(AUDIO_STATE.FAILED);
         confirmDelivery(false);
         settle(500);
     }
+}
+
+function confirmTask(task, success) {
+    if (task.deliveryConfirmed) return;
+    task.deliveryConfirmed = true;
+    task.onDelivered?.(success);
 }
 
 /**
@@ -278,7 +357,8 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 
     container.prepend(toast);
 
-    createIcons({ icons: { AlertCircle, AlertTriangle, Bell, Info } });
+    createIcons({ root: container, icons: { AlertCircle, AlertTriangle, Bell, Info } });
+    container.querySelectorAll('svg[data-lucide]').forEach(icon => icon.removeAttribute('data-lucide'));
 
     setTimeout(() => {
         if (toast.parentElement) {
@@ -307,10 +387,99 @@ function loadDeliveredNotifications() {
 }
 
 function persistDeliveredNotifications() {
-    localStorage.setItem(DELIVERED_STORAGE_KEY, JSON.stringify({
-        date: formatTodayDate(),
-        keys: [...triggeredNotifications]
-    }));
+    try {
+        localStorage.setItem(DELIVERED_STORAGE_KEY, JSON.stringify({
+            date: formatTodayDate(),
+            keys: [...triggeredNotifications]
+        }));
+    } catch (error) {
+        console.warn('[Audio] Could not persist delivered reminders:', error);
+    }
+}
+
+function getStartedPlayCounts() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(PLAY_COUNTS_STORAGE_KEY) || '{}');
+        return stored.date === formatTodayDate() && stored.counts && typeof stored.counts === 'object'
+            ? stored.counts
+            : {};
+    } catch {
+        return {};
+    }
+}
+
+function getMaxStartedCount(keys = []) {
+    const counts = getStartedPlayCounts();
+    return keys.reduce((highest, key) => Math.max(highest, Number(counts[key]) || 0), 0);
+}
+
+function recordStartedPlay(task) {
+    const keys = task.deliveryKeys || [];
+    if (!keys.length) return;
+    const counts = getStartedPlayCounts();
+    for (const key of keys) counts[key] = (Number(counts[key]) || 0) + 1;
+    try {
+        localStorage.setItem(PLAY_COUNTS_STORAGE_KEY, JSON.stringify({ date: formatTodayDate(), counts }));
+    } catch (error) {
+        console.warn('[Audio] Could not persist reminder playback:', error);
+    }
+}
+
+function isReminderStillValid(reminder, allowExhausted = false) {
+    const meeting = latestMeetingsById.get(reminder.meetingId);
+    if (!meeting || meeting.date !== formatTodayDate() || !meeting.time || isDone(meeting) || isCancelled(meeting)) return false;
+    if (!allowExhausted && (getStartedPlayCounts()[reminder.key] || 0) >= 2) return false;
+
+    const [hours, minutes] = meeting.time.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false;
+    const now = getCurrentTimeParts(new Date());
+    const diffSeconds = hours * 3600 + minutes * 60 - (now.hours * 3600 + now.minutes * 60 + now.seconds);
+    return shouldTriggerAlert(diffSeconds, reminder.minutesType * 60, ALERT_CATCHUP_MS);
+}
+
+function cancelObsoleteQueuedReminders() {
+    for (let index = playQueue.length - 1; index >= 0; index--) {
+        const task = playQueue[index];
+        if (!task.reminders?.length) continue;
+        const valid = task.reminders.filter(reminder => isReminderStillValid(reminder));
+        const validKeys = new Set(valid.map(reminder => reminder.key));
+        for (const reminder of task.reminders) {
+            if (!validKeys.has(reminder.key)) pendingNotifications.delete(reminder.key);
+        }
+        if (!valid.length) {
+            playQueue.splice(index, 1);
+            confirmTask(task, false);
+            continue;
+        }
+        task.reminders = valid;
+        task.deliveryKeys = valid.map(reminder => reminder.key);
+    }
+}
+
+function refreshDeliveredFromStorage(value) {
+    try {
+        const stored = JSON.parse(value || '{}');
+        triggeredNotifications.clear();
+        if (stored.date === formatTodayDate() && Array.isArray(stored.keys)) {
+            for (const key of stored.keys) triggeredNotifications.add(key);
+        }
+    } catch {
+        // Ignore malformed data written by an interrupted older version.
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', event => {
+        if (event.key === DELIVERED_STORAGE_KEY) refreshDeliveredFromStorage(event.newValue);
+        if (event.key === AUDIO_LEASE_KEY && isAudioLeader) {
+            try {
+                const lease = JSON.parse(event.newValue || '{}');
+                if (lease.id !== audioTabId) isAudioLeader = false;
+            } catch {
+                isAudioLeader = false;
+            }
+        }
+    });
 }
 
 const notificationAttempts = new Map();
@@ -337,6 +506,9 @@ function markNotificationDelivered(key, success = true) {
 }
 
 export function checkMeetingTimers(meetings, todayDate) {
+    updateReminderMeetings(meetings);
+    if (!getSettings().soundEnabled) return;
+
     const today = todayDate;
     if (lastNotifiedDate !== today) {
         triggeredNotifications.clear();
@@ -368,10 +540,12 @@ export function checkMeetingTimers(meetings, todayDate) {
         for (const minutesType of [30, 5]) {
             if (!shouldTriggerAlert(diffSeconds, minutesType * 60, ALERT_CATCHUP_MS)) continue;
             const key = `${meeting.id}_${minutesType}min`;
-            if (triggeredNotifications.has(key) || pendingNotifications.has(key) || !canAttemptNotification(key)) continue;
-            const list = engineerGroups.get(engineerKey) || [];
-            list.push({ meeting, prefix, minutesType, diff: Math.max(0, Math.round(diffSeconds / 60)), key });
-            engineerGroups.set(engineerKey, list);
+            if (triggeredNotifications.has(key) || pendingNotifications.has(key)
+                || getStartedPlayCounts()[key] >= 2 || !canAttemptNotification(key)) continue;
+            const groupKey = `${engineerKey}:${minutesType}`;
+            const list = engineerGroups.get(groupKey) || [];
+            list.push({ meeting, meetingId: meeting.id, prefix, minutesType, diff: Math.max(0, Math.round(diffSeconds / 60)), key });
+            engineerGroups.set(groupKey, list);
         }
     }
 
@@ -382,7 +556,7 @@ export function checkMeetingTimers(meetings, todayDate) {
         const selected = candidates[0];
         for (const item of candidates) pendingNotifications.add(item.key);
         const onDelivered = success => candidates.forEach(item => markNotificationDelivered(item.key, success));
-        const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered);
+        const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered, candidates);
         for (const item of candidates.slice(1)) {
             const timeText = item.diff <= 1 ? 'سيبدأ الآن' : `بعد ${item.diff} دقيقة`;
             showToast({
@@ -395,10 +569,15 @@ export function checkMeetingTimers(meetings, todayDate) {
         }
         if (!queued) {
             // Muted audio or an unknown engineer is an intentional no-audio result.
-            const intentionalSilence = !getSettings().soundEnabled || !selected.prefix;
+            const intentionalSilence = !selected.prefix;
             onDelivered(intentionalSilence);
         }
     }
+}
+
+export function updateReminderMeetings(meetings = []) {
+    latestMeetingsById = new Map(meetings.map(meeting => [meeting.id, meeting]));
+    cancelObsoleteQueuedReminders();
 }
 
 /** Returns the next undelivered spoken reminder so the sidebar can expose it. */
@@ -416,7 +595,7 @@ export function getNextAudioReminder(meetings, todayDate) {
 
         for (const minutesType of [30, 5]) {
             const key = `${meeting.id}_${minutesType}min`;
-            if (triggeredNotifications.has(key) || pendingNotifications.has(key)) continue;
+            if (triggeredNotifications.has(key) || pendingNotifications.has(key) || getStartedPlayCounts()[key] >= 2) continue;
             const secondsUntil = diffSeconds - minutesType * 60;
             if (secondsUntil < -(ALERT_CATCHUP_MS / 1000)) continue;
             candidates.push({ meeting, minutesType, secondsUntil: Math.max(0, secondsUntil) });
@@ -426,11 +605,25 @@ export function getNextAudioReminder(meetings, todayDate) {
     candidates.sort((a, b) => a.secondsUntil - b.secondsUntil || a.minutesType - b.minutesType);
     return candidates[0] ? { state: 'scheduled', ...candidates[0] } : { state: 'none' };
 }
-function triggerAlert(meeting, prefix, minutesType, diff, onDelivered) {
+function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders = []) {
     let audioQueued = false;
     if (prefix) {
         const filename = `${prefix}${minutesType}.mp3`;
-        audioQueued = enqueueAudio({ filename, meetingId: meeting.id, repetitionsRemaining: 2, onDelivered });
+        audioQueued = enqueueAudio({
+            filename,
+            meetingId: meeting.id,
+            minutesType,
+            reminders,
+            deliveryKeys: reminders.map(reminder => reminder.key),
+            repetitionsRemaining: 2,
+            onDelivered: success => {
+                const validKeys = new Set(reminders.filter(reminder => isReminderStillValid(reminder, true)).map(reminder => reminder.key));
+                for (const item of reminders) {
+                    if (validKeys.has(item.key)) markNotificationDelivered(item.key, success);
+                    else pendingNotifications.delete(item.key);
+                }
+            }
+        });
     } else {
         console.warn(`[Audio] No mapping found for engineer: "${meeting.team}" (id: ${meeting.id}). Skipping sound.`);
     }
@@ -471,21 +664,141 @@ function sendPushNotification(meeting, timeText) {
 // ========================================
 
 let timerInterval = null;
+let visibilityListener = null;
+
+function setAudioLeader(active) {
+    isAudioLeader = active;
+    if (active) {
+        runNotificationTick();
+        return;
+    }
+    if (leaseRenewInterval) clearInterval(leaseRenewInterval);
+    leaseRenewInterval = null;
+    if (leaseConfirmationTimeout) clearTimeout(leaseConfirmationTimeout);
+    leaseConfirmationTimeout = null;
+}
+
+function readAudioLease() {
+    try {
+        return JSON.parse(localStorage.getItem(AUDIO_LEASE_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+function acquireFallbackAudioLease() {
+    const current = readAudioLease();
+    if (current.expiresAt > Date.now() && current.id !== audioTabId) return;
+
+    try {
+        localStorage.setItem(AUDIO_LEASE_KEY, JSON.stringify({ id: audioTabId, expiresAt: Date.now() + AUDIO_LEASE_MS }));
+        if (leaseConfirmationTimeout) clearTimeout(leaseConfirmationTimeout);
+        leaseConfirmationTimeout = setTimeout(() => {
+            if (readAudioLease().id !== audioTabId) return;
+            setAudioLeader(true);
+            if (!leaseRenewInterval) {
+                leaseRenewInterval = setInterval(() => {
+                    const lease = readAudioLease();
+                    if (lease.id !== audioTabId) {
+                        setAudioLeader(false);
+                        return;
+                    }
+                    localStorage.setItem(AUDIO_LEASE_KEY, JSON.stringify({ id: audioTabId, expiresAt: Date.now() + AUDIO_LEASE_MS }));
+                }, 4000);
+            }
+        }, 100);
+    } catch (error) {
+        console.warn('[Audio] Cross-tab coordination is unavailable:', error);
+    }
+}
+
+function tryAcquireAudioLeadership() {
+    if (isAudioLeader || currentAudioState !== AUDIO_STATE.ENABLED || !getSettings().soundEnabled) return;
+    if (!globalThis.navigator?.locks?.request) {
+        acquireFallbackAudioLease();
+        return;
+    }
+
+    globalThis.navigator.locks.request(AUDIO_LEADER_LOCK, { ifAvailable: true }, async lock => {
+        if (!lock) return;
+        setAudioLeader(true);
+        await new Promise(resolve => { releaseWebAudioLock = resolve; });
+        releaseWebAudioLock = null;
+        setAudioLeader(false);
+    }).catch(error => {
+        console.warn('[Audio] Lock API failed; using a local lease:', error);
+        acquireFallbackAudioLease();
+    });
+}
+
+function releaseAudioLeadership() {
+    releaseWebAudioLock?.();
+    releaseWebAudioLock = null;
+    if (leaseRenewInterval) clearInterval(leaseRenewInterval);
+    leaseRenewInterval = null;
+    const lease = readAudioLease();
+    if (lease.id === audioTabId) localStorage.removeItem(AUDIO_LEASE_KEY);
+    setAudioLeader(false);
+}
+
+function hasCurrentAudioLeadership() {
+    if (!isAudioLeader) return false;
+    if (globalThis.navigator?.locks?.request) return true;
+    const lease = readAudioLease();
+    return lease.id === audioTabId && lease.expiresAt > Date.now();
+}
+
+function runNotificationTick() {
+    if (isAudioLeader) {
+        const meetings = latestMeetingsById.size ? [...latestMeetingsById.values()] : [];
+        checkMeetingTimers(meetings, formatTodayDate());
+    }
+}
+
+function stopNotificationLoop() {
+    if (timerInterval) clearInterval(timerInterval);
+    if (leaderRetryInterval) clearInterval(leaderRetryInterval);
+    if (visibilityListener) document.removeEventListener('visibilitychange', visibilityListener);
+    timerInterval = null;
+    leaderRetryInterval = null;
+    visibilityListener = null;
+    releaseWebAudioLock?.();
+    releaseWebAudioLock = null;
+    setAudioLeader(false);
+    const lease = readAudioLease();
+    if (lease.id === audioTabId) localStorage.removeItem(AUDIO_LEASE_KEY);
+}
 
 export function startNotificationLoop(getMeetings, getTodayDate, onTick) {
-    if (timerInterval) clearInterval(timerInterval);
+    stopNotificationLoop();
 
-    // لوب كل 10 ثواني لدقة ±10 ثواني بدل من ±30 ثانية
-    timerInterval = setInterval(() => {
-        const meetings = getMeetings();
-        const today = getTodayDate();
-        checkMeetingTimers(meetings, today);
-        if (onTick) onTick();
-    }, 10 * 1000);
+    const tick = () => {
+        if (isAudioLeader) {
+            if (!getSettings().soundEnabled) {
+                stopAudioPlayback();
+                onTick?.();
+                return;
+            }
+            const meetings = getMeetings();
+            latestMeetingsById = new Map(meetings.map(meeting => [meeting.id, meeting]));
+            checkMeetingTimers(meetings, getTodayDate());
+        }
+        onTick?.();
+    };
 
-    const meetings = getMeetings();
-    const today = getTodayDate();
-    checkMeetingTimers(meetings, today);
+    runNotificationTick = tick;
+    timerInterval = setInterval(tick, 10 * 1000);
+    leaderRetryInterval = setInterval(tryAcquireAudioLeadership, 3000);
+    visibilityListener = () => {
+        if (document.visibilityState === 'visible') {
+            tryAcquireAudioLeadership();
+            tick();
+        }
+    };
+    document.addEventListener('visibilitychange', visibilityListener);
+
+    tryAcquireAudioLeadership();
+    return stopNotificationLoop;
 }
 
 export function requestNotificationPermission() {

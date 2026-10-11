@@ -1,8 +1,8 @@
 const DEFAULT_PUBLISH_KEY = '2PACX-1vRMptn5kgbKPmukUxf-9os30G_B3HpvenSged4a5D3GcIS8UgAu9inlHRwe2gq28A';
 const TIME_ZONE = 'Asia/Riyadh';
-const UPSTREAM_TIMEOUT_MS = 3500;
-const UPSTREAM_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 400;
+const UPSTREAM_TIMEOUT_MS = 2200;
+const UPSTREAM_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 200;
 const STALE_PAYLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const KNOWN_SHEET_GIDS = {
     'فبراير 2026': '951085024',
@@ -137,9 +137,12 @@ export default async function handler(request, response) {
     }
 
     const requestedKey = typeof request.query?.key === 'string' ? request.query.key.trim() : '';
-    const publishKey = /^2PACX-[A-Za-z0-9_-]+$/.test(requestedKey)
-        ? requestedKey
-        : process.env.GOOGLE_SHEETS_PUBLISH_KEY || DEFAULT_PUBLISH_KEY;
+    const configuredKey = process.env.GOOGLE_SHEETS_PUBLISH_KEY?.trim();
+    const environmentKey = /^2PACX-[A-Za-z0-9_-]+$/.test(configuredKey || '') ? configuredKey : '';
+    const hasValidRequestedKey = /^2PACX-[A-Za-z0-9_-]+$/.test(requestedKey);
+    const publishKey = environmentKey && (!hasValidRequestedKey || requestedKey === DEFAULT_PUBLISH_KEY)
+        ? environmentKey
+        : hasValidRequestedKey ? requestedKey : DEFAULT_PUBLISH_KEY;
     const sheetName = getCurrentSheetName();
     const payloadCacheKey = `${publishKey}:${normalizeArabic(sheetName)}`;
 
@@ -153,7 +156,7 @@ export default async function handler(request, response) {
         const csvText = await csvResponse.text();
         if (csvText.trim().startsWith('<')) throw new Error('Google Sheets returned HTML instead of CSV');
 
-        const payload = { csvText, sheetName, gid: target.gid };
+        const payload = { csvText, sheetName, gid: target.gid, fetchedAt: new Date().toISOString() };
         successfulPayloadCache.set(payloadCacheKey, { payload, savedAt: Date.now() });
         setResponseCacheHeaders(response);
         console.info('[meetings-api] request completed', {
