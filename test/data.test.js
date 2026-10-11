@@ -29,12 +29,12 @@ test('time parsing follows the sheet convention while preserving explicit mornin
     assert.equal(parseTimeStr('12:00 ص'), '00:00');
 });
 
-test('meeting state uses one consistent 60 minute duration', () => {
+test('meeting state uses a 60 minute duration and completes automatically afterward', () => {
     const now = new Date('2026-08-03T09:30:00Z'); // 12:30 Riyadh
     const date = formatTodayDate(now);
     assert.equal(getMeetingTimingState({ date, time: '13:00', status: '' }, now).state, 'upcoming');
     assert.equal(getMeetingTimingState({ date, time: '12:00', status: '' }, now).state, 'running');
-    assert.equal(getMeetingTimingState({ date, time: '11:00', status: '' }, now).state, 'overdue');
+    assert.equal(getMeetingTimingState({ date, time: '11:00', status: '' }, now).state, 'done');
 });
 
 

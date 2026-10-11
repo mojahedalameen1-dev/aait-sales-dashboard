@@ -694,7 +694,7 @@ export function getCurrentTimeParts(date = new Date()) {
 export function getMeetingTimingState(meeting, date = new Date()) {
     if (!meeting?.time) return { state: 'invalid', minutesUntil: Infinity };
     if (isCancelled(meeting)) return { state: 'cancelled', minutesUntil: Infinity };
-    if (isDone(meeting)) return { state: 'done', minutesUntil: Infinity };
+    if (isDone(meeting, date)) return { state: 'done', minutesUntil: Infinity };
 
     const today = formatTodayDate(date);
     if (meeting.date !== today) return { state: 'other-day', minutesUntil: Infinity };
@@ -729,14 +729,27 @@ function normalizeMeetingStatus(value = '') {
         .toLowerCase();
 }
 
-export function isDone(meeting) {
-    if (!meeting || !meeting.status) return false;
-    const s = normalizeMeetingStatus(meeting.status);
+export function isDone(meeting, date = new Date()) {
+    if (!meeting) return false;
 
     // Cancellation/postponement always wins over a generic "تم" token.
     if (isCancelled(meeting)) return false;
-    return /^(تم|مكتمل|اكتمل|منجز|نجح|complete|completed|done|finished?)$/.test(s)
+    const s = normalizeMeetingStatus(meeting.status || '');
+    const explicitlyDone = /^(تم|مكتمل|اكتمل|منجز|نجح|complete|completed|done|finished?)$/.test(s)
         || /^(تم\s+(التنفيذ|الاجتماع|الانجاز))$/.test(s);
+    return explicitlyDone || isMeetingAutomaticallyComplete(meeting, date);
+}
+
+function isMeetingAutomaticallyComplete(meeting, date = new Date()) {
+    if (!meeting?.time || meeting.date !== formatTodayDate(date)) return false;
+    const [hours, minutes] = meeting.time.split(':').map(Number);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours > 23 || minutes > 59) return false;
+
+    const nowParts = getCurrentTimeParts(date);
+    const nowMinutes = nowParts.hours * 60 + nowParts.minutes + nowParts.seconds / 60;
+    const startMinutes = hours * 60 + minutes;
+    const duration = Number(meeting.durationMinutes) || DEFAULT_MEETING_DURATION_MINUTES;
+    return nowMinutes >= startMinutes + duration;
 }
 
 /**

@@ -68,6 +68,7 @@ let sidebarOverlapIndex = 0;
 let sidebarOverlapKey = '';
 let sidebarOverlapMeetings = [];
 let screenWakeLock = null;
+let lastTimingStateSnapshot = '';
 
 function refreshIcons() {
     createIcons({
@@ -224,6 +225,7 @@ function renderUI(meetings) {
 
     // Update Stats (Arabic Grammar)
     const meetingStates = todayMeetings.map(meeting => ({ meeting, timing: getMeetingTimingState(meeting) }));
+    lastTimingStateSnapshot = meetingStates.map(item => `${item.meeting.id}:${item.timing.state}`).join('|');
     const runningNow = meetingStates.filter(item => item.timing.state === 'running');
     const upcoming = meetingStates.filter(item => item.timing.state === 'upcoming');
 
@@ -338,6 +340,20 @@ function renderUI(meetings) {
     refreshIcons();
 
 
+    updateDynamicState();
+}
+
+function updateLiveMeetingState() {
+    const today = formatTodayDate();
+    const snapshot = activeMeetings
+        .filter(meeting => meeting.date === today)
+        .map(meeting => `${meeting.id}:${getMeetingTimingState(meeting).state}`)
+        .join('|');
+
+    if (snapshot !== lastTimingStateSnapshot) {
+        renderUI(activeMeetings);
+        return;
+    }
     updateDynamicState();
 }
 
@@ -978,7 +994,7 @@ async function initApp() {
     });
 
     if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
-    dynamicUpdateIntervalId = setInterval(() => updateDynamicState(), 1000);
+    dynamicUpdateIntervalId = setInterval(updateLiveMeetingState, 1000);
 
     document.getElementById('test-sound-btn')?.addEventListener('click', () => {
         unlockAudio();
