@@ -1493,7 +1493,6 @@ input[aria-invalid="true"] {
 }
 
 .card-content { padding: 2.2rem 0.25rem 3.5rem; }
-.mc-relative { bottom: 4.15rem; }
 .mc-time { line-height: 1.15; }
 .mc-time svg { flex: 0 0 auto; }
 .mc-client {
@@ -1768,19 +1767,24 @@ body {
 .mc-ticket-pill.is-link:focus-visible { background: #fff; color: #111827; transform: translateY(-1px); }
 
 .mc-relative {
-    position: absolute;
-    bottom: 3.9rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: max-content;
-    max-width: 88%;
+    position: static;
+    inset: auto;
+    transform: none;
+    width: fit-content;
+    max-width: 100%;
+    margin: auto auto 0.65rem;
     padding: .22rem .58rem;
     border-radius: 999px;
     background: rgba(4,10,20,.2);
     color: rgba(255,255,255,.82);
     font-size: clamp(.66rem, 5cqw, .78rem);
     font-weight: 700;
+    line-height: 1.3;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
+.mc-relative + .mc-time { margin-top: 0; }
 .mc-progress {
     position: absolute;
     z-index: 30;
@@ -1834,7 +1838,6 @@ body {
 
 @media (max-width: 760px) {
     .pressure-summary { grid-column: 1 / -1; margin: 0; }
-    .mc-relative { bottom: 3.6rem; }
 }
 
 /* Final legibility and viewport hardening */
