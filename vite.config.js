@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import meetingsApi from './api/meetings.js';
+import prayerTimesApi from './api/prayer-times.js';
 
 function localMeetingsApi() {
   return {
     name: 'local-meetings-api',
     configureServer(server) {
-      server.middlewares.use('/api/meetings', async (request, response) => {
+      for (const [path, handler] of [['/api/meetings', meetingsApi], ['/api/prayer-times', prayerTimesApi]]) {
+      server.middlewares.use(path, async (request, response) => {
         const url = new URL(request.url || '/', 'http://localhost');
         request.query = Object.fromEntries(url.searchParams.entries());
         response.status = code => {
@@ -19,12 +21,13 @@ function localMeetingsApi() {
         };
 
         try {
-          await meetingsApi(request, response);
+          await handler(request, response);
         } catch (error) {
-          server.config.logger.error(`[local-meetings-api] ${error.message}`);
-          if (!response.headersSent) response.status(500).json({ error: 'تعذر تشغيل واجهة الاجتماعات المحلية' });
+          server.config.logger.error(`[local-api] ${path}: ${error.message}`);
+          if (!response.headersSent) response.status(500).json({ error: 'تعذر تشغيل واجهة البيانات المحلية' });
         }
       });
+      }
     }
   };
 }

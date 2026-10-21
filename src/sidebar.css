@@ -1,0 +1,172 @@
+/* The sidebar is a separate scroll region; the meeting grid keeps its geometry. */
+:root { --sidebar-width: clamp(340px, 22.4vw, 440px); }
+.sidebar {
+    padding: 16px 14px 10px;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid rgba(126, 171, 185, .16);
+    border-radius: 24px 0 0 24px;
+    background: #07131b;
+    box-shadow: -12px 0 42px rgba(0, 0, 0, .2);
+}
+.sidebar::before { animation: none; opacity: .18; }
+.sidebar-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 1px 10px;
+    scrollbar-width: thin;
+    scrollbar-color: #25434b transparent;
+    scroll-padding-block: 10px;
+    position: relative;
+    z-index: 1;
+}
+.sidebar-scroll > * { order: initial; flex-shrink: 0; margin: 0; min-width: 0; }
+.sidebar .logo-section { gap: 8px; min-height: 30px; padding: 0 8px 2px; }
+.sidebar .logo-section img { width: 30px; height: 30px; filter: none; }
+.sidebar .logo-section h1 { font-size: 1.3rem; line-height: 1.25; letter-spacing: 0; }
+.sidebar .clock-section,
+.sidebar .next-meeting-countdown,
+.sidebar .stat-card { background: rgba(15, 32, 42, .5); border: 1px solid rgba(125, 162, 183, .13); box-shadow: none; }
+.sidebar .clock-section { padding: 13px 10px 11px; border-radius: 15px; }
+.sidebar #live-clock { font-size: clamp(2.2rem, 4.9vh, 3rem); line-height: 1.08; letter-spacing: 0; margin-bottom: 5px; }
+.sidebar #live-date { font-size: .76rem; line-height: 1.6; }
+.sidebar .day-summary { margin-top: 4px; font-size: .71rem; line-height: 1.4; color: #aab9c2; }
+.sidebar .next-meeting-countdown { padding: 13px 12px 10px; border-radius: 16px; min-height: 0; gap: 0; overflow: visible; }
+.sidebar .countdown-label { font-size: .76rem; margin: 0 0 3px; text-align: right; line-height: 1.5; }
+.sidebar #countdown-timer { font-size: clamp(2.3rem, 4.9vh, 3rem); line-height: 1.1; margin: 0; letter-spacing: 0; font-weight: 700; }
+.sidebar #countdown-caption { margin: 2px 0 0; font-size: .64rem; line-height: 1.3; }
+.sidebar #meeting-now-badge.has-running { position: absolute; top: 10px; left: 10px; margin: 0; padding: 3px 8px; font-size: .63rem; }
+.sidebar #meeting-now-badge { margin: 5px auto 0; padding: 5px 11px; min-height: 0; font-size: .71rem; line-height: 1.5; animation: none; }
+.sidebar .sidebar-meeting-details { padding-top: 8px; margin-top: 8px; border-top: 1px solid rgba(148,163,184,.12); text-align: center; }
+.sidebar .sidebar-meeting-details .title { font-size: .88rem; line-height: 1.4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 6px; }
+.sidebar .sidebar-meeting-details .side-client { flex-basis: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .91rem; line-height: 1.4; }
+.sidebar .sidebar-meeting-details .title small { max-width: 70%; font-size: .67rem; margin: 0; line-height: 1.4; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.sidebar .sidebar-meeting-details .ticket-pill { display: inline-block; font-size: .66rem; margin: 0; padding: 1px 6px; border-radius: 4px; }
+.sidebar .sidebar-meeting-details .meta { font-size: .67rem; line-height: 1.5; margin-top: 4px; }
+.sidebar .overlap-switcher { min-height: 28px; margin-top: 6px; padding: 4px 7px; font-size: .65rem; line-height: 1.5; }
+.sidebar .side-join-link,
+.view-meeting-btn { width: 100%; min-height: 32px; margin-top: 7px; padding: 6px 10px; font: 600 .72rem/1.4 inherit; border-radius: 11px; }
+.view-meeting-btn { display: flex; justify-content: center; align-items: center; gap: 8px; color: #eef5f7; border: 1px solid rgba(160,193,201,.17); background: rgba(7,21,29,.6); cursor: pointer; font-family: inherit; font-size: .72rem; font-weight: 600; line-height: 1.4; }
+.view-meeting-btn svg { width: 16px; height: 16px; margin-right: auto; }
+.view-meeting-btn span { margin-right: auto; }
+.sidebar .side-join-link[hidden], .view-meeting-btn[hidden] { display: none; }
+.sidebar .next-meeting-countdown.urgent { border-color: #f56777; box-shadow: 0 0 22px rgba(230,55,75,.13); }
+.sidebar .voice-reminder-status { margin: 0; width: 100%; min-height: 0; justify-content: center; padding: 0 5px; background: transparent; border: 0; border-radius: 0; font-size: .65rem; line-height: 1.5; color: #91a7b7; }
+.sidebar .voice-reminder-status svg { width: 12px; height: 12px; }
+.sidebar .voice-reminder-status.is-due { color: #f8d477; }
+.sidebar .pressure-summary { margin: 0; padding: 5px 8px; min-height: 0; font-size: .67rem; line-height: 1.5; border-radius: 9px; }
+.sidebar .pressure-summary:not(.has-pressure) { display: none; }
+.sidebar .stats-section { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 0; }
+.sidebar .stat-card { padding: 8px 3px 7px; min-height: 56px; border-radius: 12px; }
+.sidebar .stat-card .val { font-size: 1.28rem; line-height: 1.2; }
+.sidebar .stat-card .lbl { margin-top: 3px; font-size: .65rem; line-height: 1.3; }
+.sidebar .controls { order: initial; flex: 0 0 auto; gap: 7px; margin: 0; padding-top: 8px; position: relative; z-index: 2; background: #07131b; }
+.sidebar .controls .icon-btn { height: 38px; border-radius: 10px; }
+.sidebar .controls .icon-btn svg { width: 18px; height: 18px; }
+.sidebar .icon-btn::after { bottom: calc(100% + 7px); }
+.sidebar .icon-btn.is-audio-failed { color: #fbbf24; border-color: rgba(251,191,36,.4); }
+.sync-warning { display: flex; gap: 7px; align-items: flex-start; padding: 7px 9px; border: 1px solid rgba(245,158,11,.25); border-radius: 9px; background: rgba(245,158,11,.07); color: #f5cd7d; font-size: .69rem; line-height: 1.6; }
+.sync-warning[hidden] { display: none; }
+.sync-warning svg { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 3px; }
+.wellbeing-section { display: flex; flex-direction: column; gap: 12px; padding-top: 3px; }
+.prayer-card, .dhikr-card { position: relative; overflow: hidden; border: 1px solid rgba(28,222,158,.76); border-radius: 16px; background-color: #09272a; isolation: isolate; }
+.prayer-card { background-image: url('/images/prayer-dusk.webp'); background-position: center; background-size: cover; padding: 12px 12px 9px; }
+.prayer-card::before, .dhikr-card::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: rgba(3,17,23,.35); }
+.wellbeing-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.wellbeing-heading h2 { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: .91rem; line-height: 1.4; color: #f6fbfa; }
+.wellbeing-heading h2 svg { width: 20px; height: 20px; color: #f3d06b; flex: 0 0 auto; }
+.city-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid rgba(190,230,232,.45); border-radius: 999px; background: rgba(4,28,35,.55); color: #e4f1f2; font-family: inherit; font-size: .72rem; line-height: 1.3; cursor: pointer; }
+.city-chip svg { width: 14px; height: 14px; }
+.prayer-main { text-align: center; margin: 7px 0 10px; }
+.prayer-main h3 { color: #fff; font-size: 1.06rem; line-height: 1.3; }
+.prayer-appointment { display: flex; gap: 5px; justify-content: center; align-items: center; font-size: .68rem; line-height: 1.3; color: #c6d6d7; }
+.prayer-countdown { margin-top: 3px; font-size: clamp(1.85rem, 3.8vh, 2.55rem); font-weight: 700; line-height: 1.16; letter-spacing: .02em; color: #fff; text-shadow: 0 2px 18px rgba(0,0,0,.5); }
+.prayer-countdown-caption { display: block; font-size: .64rem; line-height: 1.4; color: #c1d0d1; margin-top: 2px; }
+.prayer-timeline { list-style: none; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); align-items: start; position: relative; margin: 0; padding: 8px 0 0; }
+.prayer-timeline::before { content: ''; position: absolute; top: 11px; inset-inline: 9%; height: 2px; background: rgba(172,195,198,.35); }
+.prayer-timeline li { text-align: center; position: relative; min-width: 0; padding-top: 15px; color: #c4d2d3; }
+.prayer-timeline li::before { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #7e9799; top: 0; left: calc(50% - 3.5px); }
+.prayer-timeline .is-next { color: #fff; font-weight: 700; }
+.prayer-timeline .is-next::before { background: #f7e3a0; box-shadow: 0 0 0 4px rgba(239,206,116,.25),0 0 12px rgba(239,206,116,.4); }
+.prayer-timeline span { display: block; font-size: .7rem; line-height: 1.5; }
+.prayer-timeline time { display: block; font-size: .66rem; line-height: 1.6; white-space: nowrap; }
+.prayer-status-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; }
+.prayer-status { font-size: .57rem; color: #b2c8c9; line-height: 1.5; margin: 0; text-align: center; }
+.prayer-card.has-warning .prayer-status { color: #fde3a6; font-size: .65rem; }
+.prayer-card.has-error .prayer-main h3 { font-size: .91rem; }
+#prayer-retry { border: 1px solid #b7b986; border-radius: 7px; padding: 3px 6px; background: #132b2c; color: #f1e1af; font: inherit; font-size: .64rem; cursor: pointer; flex-shrink: 0; }
+#prayer-retry[hidden] { display: none; }
+.dhikr-card { padding: 11px 12px 12px; background-image: url('/images/dhikr-night.webp'); background-size: cover; background-position: center; }
+.dhikr-card .wellbeing-heading h2 svg { color: #17d99b; }
+.dhikr-tools { display: inline-flex; gap: 8px; align-items: center; color: #dde8ec; font-size: .69rem; }
+.dhikr-auto { width: 24px; height: 24px; border: 0; border-radius: 6px; color: #aec6ca; background: rgba(140,180,190,.12); display: inline-flex; justify-content: center; align-items: center; cursor: pointer; }
+.dhikr-auto svg { width: 12px; height: 12px; }
+.dhikr-auto .auto-play, .dhikr-auto[aria-pressed='true'] .auto-pause { display: none; }
+.dhikr-auto[aria-pressed='true'] .auto-play { display: block; }
+.dhikr-auto[aria-pressed='true'] { color: #f9df8a; }
+.dhikr-stage { display: flex; align-items: center; gap: 9px; min-height: 103px; }
+.dhikr-content { flex: 1; min-width: 0; text-align: center; }
+.dhikr-category { display: block; font-size: .6rem; line-height: 1.5; margin-bottom: 3px; color: #95b0b7; }
+#dhikr-text { font-size: 1.08rem; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; color: #f1f7f8; }
+#dhikr-source { display: inline-block; max-width: 100%; font-size: .57rem; line-height: 1.5; margin-top: 5px; color: #a5bec6; text-decoration: none; }
+#dhikr-source:hover { text-decoration: underline; color: #d6ecec; }
+.dhikr-arrow { width: 29px; height: 29px; flex: 0 0 29px; display: inline-flex; justify-content: center; align-items: center; border: 1px solid rgba(170,213,218,.15); border-radius: 50%; background: rgba(156,196,204,.17); color: #e2eff2; cursor: pointer; }
+.dhikr-arrow svg { width: 17px; height: 17px; }
+#dhikr-text, #dhikr-category, #dhikr-source { opacity: 1; transition: opacity .15s ease; }
+.dhikr-is-changing #dhikr-text, .dhikr-is-changing #dhikr-category, .dhikr-is-changing #dhikr-source { opacity: 0; }
+.city-chip:focus-visible, .view-meeting-btn:focus-visible, .dhikr-card button:focus-visible, #dhikr-source:focus-visible, #prayer-retry:focus-visible { outline: 2px solid #63e6cc; outline-offset: 3px; }
+.meeting-card:focus { outline: 3px solid #8be7dd; outline-offset: -5px; }
+.settings-label { display: block; margin: 1rem 0 .45rem; font-size: .86rem; color: var(--text-white); }
+.modal-body select { width: 100%; padding: .8rem; background: var(--bg-deep); color: var(--text-white); border: 1px solid rgba(148,163,184,.3); border-radius: 10px; font-family: inherit; font-size: .9rem; }
+.settings-hint { font-size: .69rem; line-height: 1.6; margin: .45rem 0 0; color: var(--text-dim); }
+.light-mode .sidebar, .light-mode .sidebar .controls { background: #f5f9fa; }
+.light-mode .sidebar .clock-section, .light-mode .sidebar .next-meeting-countdown, .light-mode .sidebar .stat-card { background: #fff; border-color: #d9e4e8; }
+.light-mode .view-meeting-btn { background: #edf4f4; color: #18353f; border-color: #d2e2e6; }
+.light-mode .sidebar .day-summary, .light-mode .sidebar .voice-reminder-status { color: #526e7d; }
+.light-mode .sync-warning { color: #895b08; background: #fff5d9; }
+@media (max-height: 920px) and (min-width: 761px) {
+    .sidebar { padding-top: 11px; }
+    .sidebar-scroll { gap: 8px; }
+    .sidebar .clock-section { padding: 10px; }
+    .sidebar #live-clock { font-size: 2.3rem; }
+    .sidebar .next-meeting-countdown { padding: 10px; }
+    .sidebar #countdown-timer { font-size: 2.45rem; }
+    .sidebar .sidebar-meeting-details { padding-top: 6px; margin-top: 6px; }
+    .sidebar .stat-card { min-height: 51px; padding-block: 6px; }
+    .prayer-card { padding-top: 10px; }
+    .prayer-main { margin-block: 4px 7px; }
+    .prayer-countdown { font-size: 2.15rem; }
+    .dhikr-stage { min-height: 92px; }
+}
+@media (max-width: 1100px) and (min-width: 761px) { :root { --sidebar-width: 310px; } .sidebar { padding-inline: 10px; } }
+@media (max-width: 760px) {
+    .sidebar { width: 100%; height: auto; min-height: 0; display: flex; padding: 16px; border-radius: 0 0 22px 22px; overflow: visible; }
+    .sidebar-scroll { overflow: visible; flex: initial; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding-bottom: 12px; }
+    .sidebar .logo-section, .sidebar .stats-section, .sidebar .wellbeing-section, .sidebar .sync-warning, .sidebar .voice-reminder-status, .sidebar .pressure-summary { grid-column: 1 / -1; }
+    .sidebar .clock-section { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+    .sidebar .wellbeing-section { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: stretch; }
+    .sidebar .controls { display: flex; width: 100%; padding-top: 0; }
+    .sidebar .controls .icon-btn { min-height: 42px; }
+    .sidebar .next-meeting-countdown { min-height: 0; }
+    .prayer-timeline time { font-size: .62rem; }
+    .dhikr-stage { height: calc(100% - 24px); }
+}
+@media (max-width: 520px) {
+    .sidebar-scroll { grid-template-columns: 1fr; }
+    .sidebar .wellbeing-section { grid-template-columns: 1fr; }
+    .sidebar .clock-section { min-height: 100px; }
+    .sidebar .next-meeting-countdown { padding: 15px; }
+    .prayer-card { padding: 14px; }
+    .prayer-main { margin-block: 9px; }
+    .prayer-countdown { font-size: 2.45rem; }
+    .dhikr-stage { min-height: 112px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #dhikr-text, #dhikr-category, #dhikr-source { transition: none; }
+    .sidebar *, .sidebar *::before, .sidebar *::after { animation: none !important; scroll-behavior: auto; }
+}

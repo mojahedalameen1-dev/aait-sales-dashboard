@@ -3,6 +3,10 @@ import '@fontsource/ibm-plex-sans-arabic/400.css';
 import '@fontsource/ibm-plex-sans-arabic/500.css';
 import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './style.css';
+import './sidebar.css';
+import { createPrayerCard, populatePrayerCities } from './prayer-card.js';
+import { getPrayerCity } from './prayer-times.js';
+import { createDhikrSlider } from './adhkar.js';
 import {
     createIcons,
     AlertCircle,
@@ -10,12 +14,19 @@ import {
     CalendarCheck2,
     CheckCircle2,
     Clock,
+    ChevronLeft,
+    ChevronRight,
     CloudOff,
     Info,
     LoaderCircle,
+    Leaf,
+    MapPin,
     Maximize2,
     Minimize2,
     Moon,
+    MoonStar,
+    Pause,
+    Play,
     RefreshCw,
     Settings,
     Sun,
@@ -64,12 +75,12 @@ let activeSyncResult = null;
 // BUG-03 tracker
 let clockIntervalId = null;
 let dynamicUpdateIntervalId = null;
-let sidebarOverlapIndex = 0;
-let sidebarOverlapKey = '';
-let sidebarOverlapMeetings = [];
 let screenWakeLock = null;
 let lastTimingStateSnapshot = '';
 let lastGridSignature = null;
+let prayerCard = null;
+let dhikrSlider = null;
+let currentAudioState = AUDIO_STATE.LOCKED;
 
 function refreshIcons(root = document) {
     createIcons({
@@ -80,12 +91,19 @@ function refreshIcons(root = document) {
             CalendarCheck2,
             CheckCircle2,
             Clock,
+            ChevronLeft,
+            ChevronRight,
             CloudOff,
             Info,
             LoaderCircle,
+            Leaf,
+            MapPin,
             Maximize2,
             Minimize2,
             Moon,
+            MoonStar,
+            Pause,
+            Play,
             RefreshCw,
             Settings,
             Sun,
@@ -326,7 +344,7 @@ function renderUI(meetings) {
             <article class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}
                  ${timingState === 'running' ? 'current' : ''} ${timingState === 'overdue' ? 'overdue' : ''}
                  ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
-                 style="background: ${gradient}">
+                 style="background: ${gradient}" data-meeting-id="${escapeHTML(String(m.id))}" tabindex="-1">
               <div class="card-bg-pattern"></div>
               ${timingState !== 'running'
                 ? `<div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
@@ -417,6 +435,7 @@ function startClock() {
     if (clockIntervalId) clearInterval(clockIntervalId);
     const tick = () => {
         const now = new Date();
+        prayerCard?.tick(now);
         const timeParts = getCurrentTimeParts(now);
         let h = timeParts.hours;
         const m = String(timeParts.minutes).padStart(2, '0');
@@ -439,28 +458,20 @@ function startClock() {
     clockIntervalId = setInterval(tick, 1000);
 }
 
-function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
+function updateCountdown(meeting) {
     const timer = document.getElementById('countdown-timer');
-    const badge = document.getElementById('meeting-now-badge');
-    const sideDetails = document.getElementById('sidebar-meeting-details');
     const label = document.querySelector('.countdown-label');
     const countdownContainer = document.querySelector('.next-meeting-countdown');
-    const joinLink = document.getElementById('side-join-link');
     const caption = document.getElementById('countdown-caption');
-    const overlapSwitcher = document.getElementById('overlap-switcher');
 
-    if (!timer || !badge || !sideDetails || !label || !countdownContainer) return;
+    if (!timer || !label || !countdownContainer) return;
 
     if (!meeting) {
         timer.textContent = "00:00";
-        badge.style.display = 'none';
-        badge.classList.remove('has-running');
-        sideDetails.style.display = 'none';
+        timer.style.display = 'block';
         label.textContent = "لا اجتماعات متبقية اليوم";
         countdownContainer.classList.remove('urgent');
-        if (joinLink) joinLink.hidden = true;
         if (caption) caption.hidden = true;
-        if (overlapSwitcher) overlapSwitcher.hidden = true;
         return;
     }
 
@@ -477,23 +488,13 @@ function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
     }
 
     if (timing.state === 'running') {
-        label.textContent = 'الاجتماع الجاري';
-        timer.style.display = 'none'; badge.style.display = 'block';
-        badge.textContent = 'الاجتماع جاري الآن';
-        badge.classList.remove('has-running');
-        if (caption) caption.hidden = true;
-    } else if (timing.state === 'overdue') {
-        label.textContent = 'اجتماع يحتاج متابعة';
-        timer.style.display = 'none'; badge.style.display = 'block';
-        badge.textContent = 'اجتماع متأخر الإغلاق';
-        badge.classList.remove('has-running');
-        if (caption) caption.hidden = true;
+        label.textContent = 'المتبقي للاجتماع الجاري';
+        timer.style.display = 'block';
+        timer.textContent = formatDuration(Math.max(0, timing.duration * 60 + timing.minutesUntil * 60));
+        if (caption) { caption.hidden = false; caption.textContent = 'دقيقة : ثانية'; }
     } else {
         label.textContent = timing.minutesUntil <= 5 ? 'يبدأ الاجتماع قريباً' : 'الاجتماع التالي';
         timer.style.display = 'block';
-        badge.style.display = runningCount > 0 ? 'block' : 'none';
-        badge.classList.toggle('has-running', runningCount > 0);
-        if (runningCount > 0) badge.textContent = runningCount > 1 ? `${runningCount} اجتماعات جارية الآن` : 'يوجد اجتماع جارٍ الآن';
         if (caption) {
             caption.hidden = false;
             caption.textContent = timing.minutesUntil >= 60 ? 'ساعة : دقيقة : ثانية' : 'دقيقة : ثانية';
@@ -509,45 +510,6 @@ function updateCountdown(meeting, overlappingCount = 0, runningCount = 0) {
             timeStr = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
         }
         timer.textContent = toEnglishDigits(timeStr);
-    }
-
-    sideDetails.style.display = 'block';
-
-    if (joinLink) {
-        const canJoin = isSafeMeetingUrl(meeting.meetUrl);
-        joinLink.hidden = !canJoin;
-        if (canJoin) joinLink.href = meeting.meetUrl;
-        else joinLink.removeAttribute('href');
-    }
-    
-    // Ticket ID Extraction & Project Bold
-    const { client: cleanedTitle, projectDesc, ticketNum } = getMeetingDisplay(meeting);
-    
-    const titleEl = document.getElementById('side-m-title');
-    const titleSignature = [meeting.id, cleanedTitle, projectDesc, ticketNum, meeting.ticketUrl].join('|');
-    if (titleEl && titleEl.dataset.meetingId !== titleSignature) {
-        titleEl.innerHTML = `<span class="side-client">${safeDisplayText(cleanedTitle)}</span>` +
-            (projectDesc ? `<small>${safeDisplayText(projectDesc)}</small>` : '') +
-            (ticketNum ? (isSafeMeetingUrl(meeting.ticketUrl)
-                ? `<a class="ticket-pill" href="${escapeHTML(meeting.ticketUrl)}" target="_blank" rel="noopener noreferrer">${ticketNum}</a>`
-                : `<span class="ticket-pill">${ticketNum}</span>`) : '');
-        titleEl.dataset.meetingId = titleSignature;
-    }
-    
-    // Overlapping message & Dimmed Meta
-    let metaText = `${meeting.team} — ${formatTime12h(meeting.time)}`;
-    const metaEl = document.getElementById('side-m-meta');
-    if (metaEl) {
-        metaEl.style.opacity = '0.6';
-        const safeMetaText = toEnglishDigits(metaText);
-        if (metaEl.textContent !== safeMetaText) metaEl.textContent = safeMetaText;
-    }
-
-    if (overlapSwitcher) {
-        overlapSwitcher.hidden = overlappingCount <= 1;
-        if (overlappingCount > 1) {
-            overlapSwitcher.textContent = `${sidebarOverlapIndex + 1} من ${overlappingCount} · عرض الاجتماع المتزامن التالي`;
-        }
     }
 
     // Automated Aurora Intensity & Position
@@ -581,29 +543,14 @@ function updateDynamicState() {
         .sort((a, b) => b.timing.startMinutes - a.timing.startMinutes);
 
     const match = upcoming[0] || running[0] || null;
-    const overlapPool = match?.timing.state === 'upcoming' ? upcoming : running;
-    const overlaps = match
-        ? overlapPool
-            .filter(item => (
-                item.timing.startMinutes < match.timing.endMinutes &&
-                match.timing.startMinutes < item.timing.endMinutes
-            ))
-            .map(item => item.m)
-        : [];
-    const overlapKey = overlaps.map(meeting => meeting.id).join('|');
-    if (overlapKey !== sidebarOverlapKey) {
-        sidebarOverlapKey = overlapKey;
-        sidebarOverlapIndex = 0;
-    }
-    sidebarOverlapMeetings = overlaps;
-    const current = overlaps[sidebarOverlapIndex] || match?.m || null;
+    const current = match?.m || null;
 
     // Aurora Color Mapping
     const auroraColor = current ? getEngineerColor(current.team) : '#2962FF';
     document.documentElement.style.setProperty('--aurora-color', `${auroraColor}22`);
 
     // Overlapping meetings detection (diff < 5 mins)
-    updateCountdown(current, overlaps.length, running.length);
+    updateCountdown(current);
 }
 
 function formatDuration(seconds) {
@@ -642,53 +589,23 @@ function updateVoiceReminderStatus() {
 // ========================================
 
 function updateSyncStatus(result, isLoading = false) {
-    const container = document.getElementById('sync-status');
-    const text = document.getElementById('sync-status-text');
-    const meta = document.getElementById('sync-status-meta');
-    if (!container || !text || !meta) return;
-
-    container.className = 'sync-status';
-    if (isLoading) {
-        container.classList.add('is-loading');
-        text.textContent = 'جاري تحديث البيانات';
-        meta.textContent = result?.sheetName || 'مصدر الاجتماعات';
-        return;
-    }
-
-    if (result?.stale || result?.error || result?.fromCache) {
-        const isOld = result.stale || !result.lastSync;
-        container.classList.add(isOld ? 'has-error' : 'is-cached');
-        text.textContent = isOld ? 'البيانات قديمة' : 'نعرض نسخة محفوظة';
-        container.dataset.lastSync = result.lastSync || '';
-        container.dataset.sheetName = result.sheetName || 'الشهر الحالي';
-        container.dataset.syncError = result.error || '';
-        const age = formatSyncAge(result.lastSync);
-        meta.textContent = [result.error, age].filter(Boolean).join(' • ') || 'تعذر الاتصال بالمصدر';
-        return;
-    }
-
-    container.classList.add('is-online');
-    text.textContent = 'البيانات محدثة';
+    const container = document.getElementById('sync-warning');
+    if (!container) return;
+    const failed = Boolean(result?.stale || result?.error || result?.fromCache);
+    if (isLoading) return; // Keep a real failure visible while retrying.
+    container.hidden = !failed;
     container.dataset.lastSync = result?.lastSync || '';
-    container.dataset.sheetName = result?.sheetName || 'الشهر الحالي';
-    container.dataset.syncError = '';
-    updateSyncAge();
+    container.dataset.syncError = !failed ? '' : result?.lastSync
+        ? 'تعذر تحديث الاجتماعات؛ نعرض آخر نسخة محفوظة.'
+        : 'تعذر تحميل الاجتماعات؛ تحقق من الاتصال وأعد التحديث.';
+    if (failed) updateSyncAge();
 }
 
 function updateSyncAge() {
-    const container = document.getElementById('sync-status');
-    const meta = document.getElementById('sync-status-meta');
-    if (!container || !meta) return;
-    const lastSync = container.dataset.lastSync;
-    if (!lastSync) {
-        if (container.classList.contains('is-online')) meta.textContent = 'محدّث الآن';
-        return;
-    }
-    const age = formatSyncAge(lastSync);
-    if (container.classList.contains('is-online')) meta.textContent = `${container.dataset.sheetName} • ${age}`;
-    else if (container.classList.contains('is-cached') || container.classList.contains('has-error')) {
-        meta.textContent = [container.dataset.syncError, age].filter(Boolean).join(' • ');
-    }
+    const container = document.getElementById('sync-warning');
+    const text = container?.querySelector('span');
+    if (!container || container.hidden || !text) return;
+    text.textContent = [container.dataset.syncError, formatSyncAge(container.dataset.lastSync)].filter(Boolean).join(' ');
 }
 
 function setModalBackgroundInert(modal, inert) {
@@ -708,7 +625,7 @@ function setModalBackgroundInert(modal, inert) {
 
 function trapDialogFocus(event, dialog) {
     if (event.key !== 'Tab') return;
-    const focusable = [...dialog.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])')]
+    const focusable = [...dialog.querySelectorAll('button, input, select, a[href], [tabindex]:not([tabindex="-1"])')]
         .filter(element => !element.disabled && !element.hidden && element.getAttribute('aria-hidden') !== 'true');
     if (!focusable.length) {
         event.preventDefault();
@@ -788,6 +705,11 @@ window.toggleTheme = () => {
 
 window.toggleSound = () => {
     const settings = getSettings();
+    if (settings.soundEnabled && currentAudioState !== AUDIO_STATE.ENABLED) {
+        unlockAudio();
+        requestNotificationPermission();
+        return;
+    }
     const soundEnabled = !settings.soundEnabled;
     updateSettings({ soundEnabled });
     if (soundEnabled) {
@@ -795,21 +717,27 @@ window.toggleSound = () => {
         requestNotificationPermission();
     }
     
-    const btn = document.getElementById('sound-toggle-btn');
-    if (btn) {
-        btn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}"></i>`;
-        refreshIcons();
-    }
-    if (!soundEnabled) {
-        stopAudioPlayback();
-        const status = document.getElementById('audio-status');
-        status?.classList.remove('enabled', 'failed');
-        status?.classList.add('locked');
-        const statusText = status?.querySelector('.status-text');
-        if (statusText) statusText.textContent = 'الصوت متوقف';
-        status?.setAttribute('aria-label', 'تفعيل صوت التنبيهات');
-    }
+    if (!soundEnabled) stopAudioPlayback();
+    updateAudioControl();
 };
+
+function updateAudioControl(state = currentAudioState) {
+    currentAudioState = state;
+    const button = document.getElementById('sound-toggle-btn');
+    if (!button) return;
+    const enabled = getSettings().soundEnabled;
+    const failed = enabled && state === AUDIO_STATE.FAILED;
+    const label = !enabled ? 'تفعيل صوت تنبيهات الاجتماعات'
+        : failed ? 'تعذر تشغيل الصوت؛ اضغط لإعادة التفعيل'
+            : state === AUDIO_STATE.ENABLED ? 'كتم صوت تنبيهات الاجتماعات' : 'تفعيل صوت تنبيهات الاجتماعات';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', String(enabled));
+    button.title = label;
+    button.dataset.tooltip = label;
+    button.classList.toggle('is-audio-failed', failed);
+    button.innerHTML = `<i data-lucide="${failed ? 'alert-circle' : enabled && state === AUDIO_STATE.ENABLED ? 'volume-2' : 'volume-x'}"></i>`;
+    refreshIcons(button);
+}
 
 let settingsReturnFocus = null;
 window.toggleSettings = () => {
@@ -835,6 +763,8 @@ window.toggleSettings = () => {
     const settings = getSettings();
     const input = document.getElementById('sheet-key-input');
     if (input) input.value = settings.sheetId || '';
+    const citySelect = document.getElementById('prayer-city-select');
+    if (citySelect) citySelect.value = getPrayerCity(settings.prayerCity)?.id || 'riyadh';
 };
 
 window.unlockAudio = () => {
@@ -891,7 +821,10 @@ window.saveSettings = () => {
             errorMessage.hidden = true;
             errorMessage.textContent = '';
         }
-        updateSettings({ sheetId: val });
+        const city = document.getElementById('prayer-city-select')?.value || 'riyadh';
+        const prayerCity = getPrayerCity(city)?.id || 'riyadh';
+        updateSettings({ sheetId: val, prayerCity });
+        prayerCard?.setCity(prayerCity);
         window.toggleSettings();
         window.manualRefresh();
     } else {
@@ -948,22 +881,23 @@ function fallbackCopy(text) {
 // ========================================
 
 async function initApp() {
-    startClock();
-    
     const settings = getSettings();
+    populatePrayerCities(document.getElementById('prayer-city-select'), settings.prayerCity);
+    prayerCard = createPrayerCard(document.getElementById('prayer-card'), { city: settings.prayerCity });
+    dhikrSlider = createDhikrSlider(document.getElementById('dhikr-card'));
+    startClock();
 
     document.getElementById('refresh-now-btn')?.addEventListener('click', window.manualRefresh);
     document.getElementById('theme-toggle-btn')?.addEventListener('click', window.toggleTheme);
     document.getElementById('sound-toggle-btn')?.addEventListener('click', window.toggleSound);
     document.getElementById('settings-toggle-btn')?.addEventListener('click', window.toggleSettings);
     document.getElementById('display-mode-btn')?.addEventListener('click', toggleDisplayMode);
-    document.getElementById('overlap-switcher')?.addEventListener('click', () => {
-        if (sidebarOverlapMeetings.length < 2) return;
-        sidebarOverlapIndex = (sidebarOverlapIndex + 1) % sidebarOverlapMeetings.length;
-        updateDynamicState();
-    });
     document.getElementById('save-settings-btn')?.addEventListener('click', window.saveSettings);
     document.getElementById('cancel-settings-btn')?.addEventListener('click', window.toggleSettings);
+    document.getElementById('prayer-city-button')?.addEventListener('click', () => {
+        window.toggleSettings();
+        queueMicrotask(() => document.getElementById('prayer-city-select')?.focus());
+    });
 
     // Theme sync
     if (localStorage.getItem('theme') === 'light') {
@@ -980,27 +914,14 @@ async function initApp() {
     }
 
     // Audio State UI Handling
-    const audioStatusBadge = document.getElementById('audio-status');
+    const soundToggleButton = document.getElementById('sound-toggle-btn');
     const audioOverlay = document.getElementById('audio-unlock-overlay');
     const audioEnableButton = audioOverlay?.querySelector('.btn-prime');
     const continueWithoutSoundButton = document.getElementById('continue-without-sound');
 
-    audioStatusBadge?.addEventListener('click', () => {
-        if (audioStatusBadge.classList.contains('enabled')) {
-            playTestAlert(success => setControlFeedback(
-                audioStatusBadge,
-                success ? 'اكتمل اختبار الصوت' : 'تعذر تشغيل صوت الاختبار',
-                success ? 'success' : 'error'
-            ));
-        } else {
-            updateSettings({ soundEnabled: true });
-            unlockAudio();
-            requestNotificationPermission();
-        }
-    });
-
     const setAudioOverlayVisible = visible => {
         if (!audioOverlay) return;
+        if (!visible && !audioOverlay.classList.contains('active')) return;
 
         if (visible) {
             audioOverlay.hidden = false;
@@ -1013,7 +934,7 @@ async function initApp() {
         }
 
         setModalBackgroundInert(audioOverlay, false);
-        if (audioOverlay.contains(document.activeElement)) audioStatusBadge?.focus({ preventScroll: true });
+        if (audioOverlay.contains(document.activeElement)) soundToggleButton?.focus({ preventScroll: true });
         audioOverlay.classList.remove('active');
         audioOverlay.setAttribute('aria-hidden', 'true');
         audioOverlay.inert = true;
@@ -1031,11 +952,7 @@ async function initApp() {
         setAudioOverlayVisible(false);
         const soundButton = document.getElementById('sound-toggle-btn');
         if (soundButton) soundButton.innerHTML = '<i data-lucide="volume-x"></i>';
-        audioStatusBadge?.classList.remove('enabled', 'failed');
-        audioStatusBadge?.classList.add('locked');
-        const statusText = audioStatusBadge?.querySelector('.status-text');
-        if (statusText) statusText.textContent = 'الصوت متوقف';
-        audioStatusBadge?.setAttribute('aria-label', 'تفعيل صوت التنبيهات');
+        updateAudioControl();
         refreshIcons();
     });
 
@@ -1053,51 +970,14 @@ async function initApp() {
     });
 
     setAudioStateListener((state) => {
-        // Ensure LED exists next to #live-clock
-        let led = document.getElementById('audio-led');
-        if (!led) {
-            const clock = document.getElementById('live-clock');
-            if (clock) {
-                led = document.createElement('span');
-                led.id = 'audio-led';
-                clock.parentNode.insertBefore(led, clock.nextSibling);
-            }
-        }
-
-        if (!audioStatusBadge) return;
-        
-        // Update LED color
-        if (led) {
-            if (state === AUDIO_STATE.ENABLED) led.style.background = '#22c55e';
-            else if (state === AUDIO_STATE.FAILED) led.style.background = '#f59e0b';
-            else led.style.background = '#ef4444';
-        }
-
-        // Remove all state classes (Legacy sync)
-        audioStatusBadge.classList.remove('locked', 'enabled', 'failed');
-        audioStatusBadge.classList.add(state);
-
-        const icon = audioStatusBadge.querySelector('i, svg');
-        const text = audioStatusBadge.querySelector('.status-text');
-
+        updateAudioControl(state);
         if (state === AUDIO_STATE.ENABLED) {
-            if (icon) icon.setAttribute('data-lucide', 'volume-2');
-            if (text) text.textContent = 'الصوت مفعّل';
-            audioStatusBadge.setAttribute('aria-label', 'اختبار صوت التنبيهات');
             setAudioOverlayVisible(false);
-        } else if (state === AUDIO_STATE.FAILED) {
-            if (icon) icon.setAttribute('data-lucide', 'alert-circle');
-            if (text) text.textContent = 'تعذر تشغيل الصوت';
-            audioStatusBadge.setAttribute('aria-label', 'إعادة محاولة تشغيل الصوت');
-        } else {
-            if (icon) icon.setAttribute('data-lucide', 'volume-x');
-            if (text) text.textContent = 'اضغط لتفعيل الصوت';
-            audioStatusBadge.setAttribute('aria-label', 'تفعيل صوت التنبيهات');
+        } else if (state !== AUDIO_STATE.FAILED) {
             if (getSettings().soundEnabled) setAudioOverlayVisible(true);
         }
-
-        refreshIcons();
     });
+    updateAudioControl();
 
     startNotificationLoop(
         () => activeMeetings,
@@ -1118,6 +998,8 @@ async function initApp() {
     dynamicUpdateIntervalId = setInterval(updateLiveMeetingState, 1000);
 
     document.getElementById('test-sound-btn')?.addEventListener('click', event => {
+        updateSettings({ soundEnabled: true });
+        updateAudioControl();
         unlockAudio();
         const button = event.currentTarget;
         playTestAlert(success => setControlFeedback(
@@ -1161,7 +1043,16 @@ async function initApp() {
     document.addEventListener('fullscreenchange', syncDisplayModeButton);
     document.addEventListener('visibilitychange', () => {
         if (document.body.classList.contains('display-mode') && document.visibilityState === 'visible') requestScreenWakeLock();
+        if (document.visibilityState === 'visible') prayerCard?.tick(new Date());
     });
+
+    window.addEventListener('pagehide', event => {
+        if (event.persisted) return;
+        prayerCard?.destroy();
+        dhikrSlider?.destroy();
+        clearInterval(clockIntervalId);
+        clearInterval(dynamicUpdateIntervalId);
+    }, { once: true });
 
     refreshIcons();
 }
