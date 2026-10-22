@@ -4,6 +4,7 @@ import '@fontsource/ibm-plex-sans-arabic/500.css';
 import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './style.css';
 import './sidebar.css';
+import './meeting-cards.css';
 import { createPrayerCard, populatePrayerCities } from './prayer-card.js';
 import { getPrayerCity } from './prayer-times.js';
 import { createDhikrSlider } from './adhkar.js';
@@ -279,9 +280,6 @@ function renderUI(meetings) {
         return (a.time || '').localeCompare(b.time || '');
     });
 
-    if (sorted.length > 20) grid.classList.add('grid-is-crowded');
-    else grid.classList.remove('grid-is-crowded');
-
     const gridSignature = JSON.stringify({
         error: activeSyncResult?.error || '',
         stale: Boolean(activeSyncResult?.stale),
@@ -346,6 +344,7 @@ function renderUI(meetings) {
                  ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
                  style="background: ${gradient}" data-meeting-id="${escapeHTML(String(m.id))}" tabindex="-1">
               <div class="card-bg-pattern"></div>
+              <header class="mc-header">
               ${timingState !== 'running'
                 ? `<div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
                 : ''}
@@ -356,28 +355,28 @@ function renderUI(meetings) {
                   <span>${joinLabel}</span>
                 </a>
               ` : `<div class="mc-location-state ${isOnline ? 'missing-link' : ''}">${noLinkLabel}</div>`}
+              </header>
 
               <div class="card-content">
-
-                <div class="mc-client">${safeDisplayText(client)}</div>
-
-                <div class="mc-engineer">مع ${safeDisplayText(engineerLabel)}</div>
-
-                ${projectDesc ? `<div class="mc-project-desc">${safeDisplayText(projectDesc)}</div>` : ''}
-
-                ${meetingType ? `<div class="mc-type-badge ${typeClass}">${safeDisplayText(meetingType)}</div>` : ''}
-
-                ${ticketNum ? (hasSafeTicketUrl
-                    ? `<a class="mc-ticket-pill is-link" href="${escapeHTML(m.ticketUrl)}" target="_blank" rel="noopener noreferrer" aria-label="فتح التذكرة ${ticketNum}">${ticketNum}</a>`
-                    : `<div class="mc-ticket-pill">${ticketNum}</div>`) : ''}
-
-                ${relativeLabel ? `<div class="mc-relative">${relativeLabel}</div>` : ''}
-
-                <div class="mc-time">
-                  <i data-lucide="clock"></i>
-                  <span class="en-nums">${formatTime12h(m.time)}</span>
+                <div class="mc-details">
+                  <div class="mc-client" title="${safeDisplayText(client)}">${safeDisplayText(client)}</div>
+                  <div class="mc-engineer" title="مع ${safeDisplayText(engineerLabel)}">مع ${safeDisplayText(engineerLabel)}</div>
+                  ${projectDesc ? `<div class="mc-project-desc" title="${safeDisplayText(projectDesc)}">${safeDisplayText(projectDesc)}</div>` : ''}
+                  <div class="mc-meta">
+                    ${meetingType ? `<div class="mc-type-badge ${typeClass}" title="${safeDisplayText(meetingType)}">${safeDisplayText(meetingType)}</div>` : ''}
+                    ${ticketNum ? (hasSafeTicketUrl
+                        ? `<a class="mc-ticket-pill is-link" href="${escapeHTML(m.ticketUrl)}" target="_blank" rel="noopener noreferrer" aria-label="فتح التذكرة ${ticketNum}">${ticketNum}</a>`
+                        : `<div class="mc-ticket-pill">${ticketNum}</div>`) : ''}
+                  </div>
                 </div>
 
+                <footer class="mc-footer">
+                  ${relativeLabel ? `<div class="mc-relative">${relativeLabel}</div>` : ''}
+                  <div class="mc-time">
+                    <i data-lucide="clock"></i>
+                    <span class="en-nums">${formatTime12h(m.time)}</span>
+                  </div>
+                </footer>
               </div>
 
               <div class="mc-progress" aria-hidden="true"><span style="width:${progress.toFixed(1)}%"></span></div>

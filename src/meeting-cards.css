@@ -1,0 +1,222 @@
+/* Card content owns its sizing; columns, spacing, ordering and themes stay in style.css. */
+#meetings-grid {
+    /* Intrinsic rows grow with their content and use the existing grid scroll region. */
+    grid-auto-rows: minmax(min-content, 1fr);
+}
+
+.meeting-card {
+    min-inline-size: 0;
+    min-block-size: 290px;
+    padding: clamp(12px, 1vw, 18px);
+    gap: 12px;
+}
+
+.mc-header {
+    position: relative;
+    z-index: 40;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 8px;
+    flex: 0 0 auto;
+    min-inline-size: 0;
+    direction: ltr;
+}
+
+.meeting-card .mc-status,
+.meeting-card .mc-quick-join,
+.meeting-card .mc-location-state {
+    position: static;
+    inset: auto;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    min-block-size: 30px;
+    block-size: auto;
+    padding: 5px 9px;
+    gap: 5px;
+    font-size: clamp(.65rem, 4.6cqw, .76rem);
+    line-height: 1.45;
+    direction: rtl;
+    overflow-wrap: anywhere;
+}
+
+.meeting-card .mc-status {
+    flex: 0 1 auto;
+}
+
+.meeting-card .mc-status svg {
+    flex: 0 0 13px;
+    inline-size: 13px;
+    block-size: 13px;
+}
+
+.meeting-card .mc-quick-join,
+.meeting-card .mc-location-state {
+    margin-left: auto;
+}
+
+.meeting-card .mc-quick-join {
+    min-block-size: 34px;
+    animation: none;
+}
+
+.meeting-card .mc-quick-join span {
+    min-inline-size: 0;
+    margin: 0;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+.meeting-card .mc-quick-join svg {
+    flex: 0 0 17px;
+    inline-size: 17px;
+    block-size: 17px;
+}
+
+.meeting-card .mc-quick-join:hover {
+    transform: none;
+}
+
+.meeting-card .card-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    flex: 1 0 auto;
+    gap: 18px;
+    block-size: auto;
+    min-inline-size: 0;
+    padding: 0;
+}
+
+.mc-details {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    inline-size: 100%;
+    min-inline-size: 0;
+    flex: 0 0 auto;
+}
+
+.mc-details > * {
+    flex-shrink: 0;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+}
+
+.meeting-card .mc-client,
+.meeting-card .mc-project-desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-align: center;
+    margin: 0;
+}
+
+.meeting-card .mc-client {
+    font-size: clamp(1rem, 7.5cqw, 1.35rem);
+    line-height: 1.5;
+    -webkit-line-clamp: 3;
+    text-wrap: pretty;
+}
+
+.meeting-card .mc-engineer {
+    font-size: clamp(.76rem, 5.1cqw, .96rem);
+    line-height: 1.5;
+    margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+.meeting-card .mc-project-desc {
+    font-size: clamp(.75rem, 4.7cqw, .87rem);
+    line-height: 1.55;
+    padding: 3px 8px;
+    -webkit-line-clamp: 2;
+}
+
+.mc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 5px 6px;
+    inline-size: 100%;
+}
+
+.mc-meta:empty { display: none; }
+
+.meeting-card .mc-type-badge,
+.meeting-card .mc-ticket-pill {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    margin: 0;
+    padding: 2px 9px;
+    font-size: clamp(.68rem, 4.4cqw, .78rem);
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.meeting-card .mc-ticket-pill {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+
+.mc-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    inline-size: 100%;
+    min-inline-size: 0;
+    flex: 0 0 auto;
+    margin-block-start: auto;
+    padding-block-end: 3px;
+}
+
+.meeting-card .mc-relative {
+    flex: 0 0 auto;
+    margin: 0;
+    max-inline-size: 100%;
+    padding: 3px 8px;
+    font-size: clamp(.7rem, 4.6cqw, .8rem);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.meeting-card .mc-time {
+    flex: 0 0 auto;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    gap: 6px;
+    margin: 0;
+    font-size: clamp(1.35rem, 10.5cqw, 2rem);
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.meeting-card .mc-time svg {
+    inline-size: .85em;
+    block-size: .85em;
+    flex: 0 0 .85em;
+}
+
+.meeting-card .mc-time .en-nums {
+    min-inline-size: 0;
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+
+@container (max-width: 200px) {
+    .mc-header { gap: 5px; }
+    .meeting-card .card-content { gap: 14px; }
+    .meeting-card .mc-status,
+    .meeting-card .mc-quick-join,
+    .meeting-card .mc-location-state { padding-inline: 7px; }
+}

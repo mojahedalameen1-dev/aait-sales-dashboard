@@ -411,23 +411,6 @@ body {
 .empty-state.is-loading svg { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Compact Text System */
-.grid-is-crowded {
-    --card-font-size: clamp(0.7rem, 1vw, 1.1rem);
-    --card-title-size: clamp(0.9rem, 1.2vw, 1.4rem);
-}
-
-.grid-is-crowded .meeting-card { padding: 0.8rem; }
-.grid-is-crowded .mc-engineer { font-size: var(--card-title-size); }
-.grid-is-crowded .mc-client { font-size: var(--card-font-size); }
-.grid-is-crowded .mc-project-desc { font-size: 0.72rem; margin: 0.2rem 0; }
-.grid-is-crowded .mc-time { font-size: 1.4rem; margin-bottom: 0.35rem; }
-
-#meetings-grid:not(.grid-is-crowded) {
-    --card-font-size: 1.1rem;
-    --card-title-size: 1.8rem;
-}
-
 .meeting-card {
     border-radius: var(--radius-lg);
     padding: clamp(1rem, 5cqw, 1.5rem);
