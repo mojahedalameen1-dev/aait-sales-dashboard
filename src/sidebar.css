@@ -157,6 +157,7 @@
     .sidebar { width: 100%; height: auto; min-height: 0; display: flex; margin-right: 0; padding: 16px; border-radius: 0 0 22px 22px; overflow: visible; }
     .sidebar-scroll { overflow: visible; flex: initial; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding-bottom: 12px; }
     .sidebar .logo-section, .sidebar .stats-section, .sidebar .wellbeing-section, .sidebar .sync-warning, .sidebar .voice-reminder-status, .sidebar .pressure-summary { grid-column: 1 / -1; }
+    .sidebar .clock-section, .sidebar .next-meeting-countdown { grid-column: auto; }
     .sidebar .clock-section { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
     .sidebar .wellbeing-section { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: stretch; }
     .sidebar .controls { display: flex; width: 100%; padding-top: 0; }
