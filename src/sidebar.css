@@ -1,6 +1,10 @@
 /* The sidebar is a separate scroll region; the meeting grid keeps its geometry. */
-:root { --sidebar-width: clamp(340px, 22.4vw, 440px); }
+:root {
+    --sidebar-width: clamp(340px, 22.4vw, 440px);
+    --display-safe-right: clamp(24px, 2.2vw, 48px);
+}
 .sidebar {
+    margin-right: var(--display-safe-right);
     padding: 16px 14px 10px;
     gap: 0;
     overflow: hidden;
@@ -8,6 +12,9 @@
     border-radius: 24px 0 0 24px;
     background: #07131b;
     box-shadow: -12px 0 42px rgba(0, 0, 0, .2);
+}
+.main-content {
+    width: calc(100% - var(--sidebar-width) - var(--display-safe-right));
 }
 .sidebar::before { animation: none; opacity: .18; }
 .sidebar-scroll {
@@ -145,7 +152,8 @@
 }
 @media (max-width: 1100px) and (min-width: 761px) { :root { --sidebar-width: 310px; } .sidebar { padding-inline: 10px; } }
 @media (max-width: 760px) {
-    .sidebar { width: 100%; height: auto; min-height: 0; display: flex; padding: 16px; border-radius: 0 0 22px 22px; overflow: visible; }
+    :root { --display-safe-right: 0px; }
+    .sidebar { width: 100%; height: auto; min-height: 0; display: flex; margin-right: 0; padding: 16px; border-radius: 0 0 22px 22px; overflow: visible; }
     .sidebar-scroll { overflow: visible; flex: initial; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding-bottom: 12px; }
     .sidebar .logo-section, .sidebar .stats-section, .sidebar .wellbeing-section, .sidebar .sync-warning, .sidebar .voice-reminder-status, .sidebar .pressure-summary { grid-column: 1 / -1; }
     .sidebar .clock-section { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
