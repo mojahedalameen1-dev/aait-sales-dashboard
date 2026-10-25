@@ -481,10 +481,22 @@ function renderUI(meetings) {
         const isUltraLayout = layoutMode === 'ultra';
         const ultraTitle = [client, projectDesc].filter(Boolean).join(' — ') || client;
         const startsSoon = timingState === 'upcoming' && timing.minutesUntil <= 10;
+        const normalizedStatus = String(m.status || '')
+            .replace(/[أإآ]/g, 'ا')
+            .replace(/ؤ/g, 'و')
+            .replace(/ئ/g, 'ي')
+            .replace(/[\u064B-\u065F\u0670]/g, '')
+            .trim()
+            .toLowerCase();
+        const cancelledStatusMeta = /^لم\s*(?:يتم|تتم)$/.test(normalizedStatus)
+            ? { label: 'لم يتم', className: 'is-not-done', icon: 'info' }
+            : /موجل|موجلة|تاجيل|postponed/.test(normalizedStatus)
+                ? { label: 'مؤجل', className: 'is-cancelled', icon: 'info' }
+                : { label: 'ملغي', className: 'is-cancelled', icon: 'info' };
         const statusMeta = done
             ? { label: 'منتهي', className: 'is-done', icon: 'check-circle-2' }
             : cancelled
-                ? { label: 'ملغي / تعديل', className: 'is-cancelled', icon: 'info' }
+                ? cancelledStatusMeta
                 : timingState === 'running'
                     ? { label: `جارٍ الآن · منذ ${Math.max(0, Math.abs(timing.minutesUntil))} د`, className: 'is-running', icon: 'loader-circle' }
                     : timingState === 'overdue'

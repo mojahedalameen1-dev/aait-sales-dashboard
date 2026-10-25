@@ -514,7 +514,8 @@
 }
 
 /* Finished meetings use a clear monochrome treatment while keeping their data readable. */
-#meetings-grid .meeting-card.completed {
+#meetings-grid .meeting-card.completed,
+#meetings-grid .meeting-card.cancelled {
     background: linear-gradient(145deg, #414951 0%, #2b3138 54%, #1c2228 100%) !important;
     border: 1px solid rgba(226, 232, 240, .58);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 8px 22px rgba(0,0,0,.25);
@@ -524,11 +525,16 @@
 
 #meetings-grid .meeting-card.completed .mc-client,
 #meetings-grid .meeting-card.completed .mc-time,
-#meetings-grid .meeting-card.completed .mc-engineer {
+#meetings-grid .meeting-card.completed .mc-engineer,
+#meetings-grid .meeting-card.cancelled .mc-client,
+#meetings-grid .meeting-card.cancelled .mc-time,
+#meetings-grid .meeting-card.cancelled .mc-engineer {
     opacity: 1;
 }
 
-#meetings-grid .meeting-card.completed .mc-status.is-done {
+#meetings-grid .meeting-card.completed .mc-status.is-done,
+#meetings-grid .meeting-card.cancelled .mc-status.is-cancelled,
+#meetings-grid .meeting-card.cancelled .mc-status.is-not-done {
     border-color: rgba(255,255,255,.88);
     background: #f1f3f5 !important;
     color: #161a1e !important;
@@ -536,11 +542,37 @@
     font-weight: 800;
 }
 
-#meetings-grid .meeting-card.completed .mc-progress {
+#meetings-grid.layout-ultra .meeting-card.completed .mc-status,
+#meetings-grid.layout-ultra .meeting-card.cancelled .mc-status {
+    width: auto;
+    min-width: 0;
+    max-width: 70px;
+    height: auto;
+    min-height: 15px;
+    padding: 1px 5px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.72);
+    box-shadow: none;
+    font-size: 10px;
+}
+
+#meetings-grid.layout-ultra .meeting-card.completed .mc-status span,
+#meetings-grid.layout-ultra .meeting-card.cancelled .mc-status span {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: hidden;
+    clip-path: none;
+    white-space: nowrap;
+}
+
+#meetings-grid .meeting-card.completed .mc-progress,
+#meetings-grid .meeting-card.cancelled .mc-progress {
     background: rgba(255,255,255,.18);
 }
 
-#meetings-grid .meeting-card.completed .mc-progress span {
+#meetings-grid .meeting-card.completed .mc-progress span,
+#meetings-grid .meeting-card.cancelled .mc-progress span {
     width: 100% !important;
     background: #e4e8ec;
     box-shadow: 0 0 8px rgba(255,255,255,.2);
@@ -549,11 +581,16 @@
 #meetings-grid .meeting-card.completed.theme-ashraf::after,
 #meetings-grid .meeting-card.completed.theme-mojahed::after,
 #meetings-grid .meeting-card.completed.theme-shady::after,
-#meetings-grid .meeting-card.completed.theme-hossam::after {
+#meetings-grid .meeting-card.completed.theme-hossam::after,
+#meetings-grid .meeting-card.cancelled.theme-ashraf::after,
+#meetings-grid .meeting-card.cancelled.theme-mojahed::after,
+#meetings-grid .meeting-card.cancelled.theme-shady::after,
+#meetings-grid .meeting-card.cancelled.theme-hossam::after {
     opacity: .045 !important;
 }
 
-.light-mode #meetings-grid .meeting-card.completed {
+.light-mode #meetings-grid .meeting-card.completed,
+.light-mode #meetings-grid .meeting-card.cancelled {
     background: linear-gradient(145deg, #414951 0%, #2b3138 54%, #1c2228 100%) !important;
     filter: grayscale(1);
     opacity: .94;
