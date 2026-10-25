@@ -638,31 +638,24 @@ export function checkMeetingTimers(meetings, todayDate) {
             const key = `${meeting.id}_${minutesType}min`;
             if (triggeredNotifications.has(key) || pendingNotifications.has(key)
                 || getStartedPlayCounts()[key] >= 2 || !canAttemptNotification(key)) continue;
-            const groupKey = `${engineerKey}:${minutesType}`;
+            // Collapse only genuinely simultaneous meetings for this engineer.
+            // Separate meetings can become due in the same catch-up window and
+            // must retain their own reminder.
+            const groupKey = `${engineerKey}:${meetingSeconds}:${minutesType}`;
             const list = engineerGroups.get(groupKey) || [];
             list.push({ meeting, meetingId: meeting.id, prefix, minutesType, diff: Math.max(0, Math.round(diffSeconds / 60)), key });
             engineerGroups.set(groupKey, list);
         }
     }
 
-    // One spoken call per engineer per polling pass. The most urgent alert wins;
-    // all matching meeting keys are confirmed by the same two-play audio task.
+    // One reminder per engineer, start time, and alert stage. Simultaneous
+    // meetings share a single spoken call and a single toast/push notification.
     for (const candidates of engineerGroups.values()) {
         candidates.sort((a, b) => a.minutesType - b.minutesType || a.diff - b.diff);
         const selected = candidates[0];
         for (const item of candidates) pendingNotifications.add(item.key);
         const onDelivered = success => candidates.forEach(item => markNotificationDelivered(item.key, success));
         const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered, candidates);
-        for (const item of candidates.slice(1)) {
-            const timeText = item.diff <= 1 ? 'سيبدأ الآن' : `بعد ${item.diff} دقيقة`;
-            showToast({
-                title: item.meeting.project || 'تنبيه اجتماع',
-                message: `${item.meeting.team || ''} — ${timeText}`,
-                level: item.minutesType === 5 ? 'warning' : 'info',
-                icon: item.minutesType === 5 ? 'alert-triangle' : 'bell'
-            });
-            sendPushNotification(item.meeting, timeText);
-        }
         if (!queued) {
             // Muted audio or an unknown engineer is an intentional no-audio result.
             const intentionalSilence = !selected.prefix;
@@ -711,7 +704,9 @@ function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders
             minutesType,
             reminders,
             deliveryKeys: reminders.map(reminder => reminder.key),
-            repetitionsRemaining: 2,
+            // A simultaneous pair is one call; a single meeting keeps the
+            // existing two-play reminder behavior.
+            repetitionsRemaining: reminders.length > 1 ? 1 : 2,
             onDelivered: success => {
                 const validKeys = new Set(reminders.filter(reminder => isReminderStillValid(reminder, true)).map(reminder => reminder.key));
                 for (const item of reminders) {
