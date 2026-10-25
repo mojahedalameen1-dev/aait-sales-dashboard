@@ -3,15 +3,15 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import meetingsApi from './api/meetings.js';
 import prayerTimesApi from './api/prayer-times.js';
-import controlConfigApi from './api/control/config.js';
-import controlMeApi from './api/control/me.js';
-import controlMeetingsApi from './api/control/meetings.js';
-import controlCallsApi from './api/control/calls.js';
-import controlAckApi from './api/control/ack.js';
-import controlStatusApi from './api/control/status.js';
-import controlLoginApi from './api/control/login.js';
-import controlPasswordApi from './api/control/password.js';
-import controlLogoutApi from './api/control/logout.js';
+import controlConfigApi from './server/control/config.js';
+import controlMeApi from './server/control/me.js';
+import controlMeetingsApi from './server/control/meetings.js';
+import controlCallsApi from './server/control/calls.js';
+import controlAckApi from './server/control/ack.js';
+import controlStatusApi from './server/control/status.js';
+import controlLoginApi from './server/control/login.js';
+import controlPasswordApi from './server/control/password.js';
+import controlLogoutApi from './server/control/logout.js';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const LOCAL_API_HANDLERS = new Map([

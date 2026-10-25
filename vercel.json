@@ -23,6 +23,7 @@
   ],
   "rewrites": [
     { "source": "/control", "destination": "/control/index.html" },
-    { "source": "/control/", "destination": "/control/index.html" }
+    { "source": "/control/", "destination": "/control/index.html" },
+    { "source": "/api/control/:path*", "destination": "/api/control?path=:path*" }
   ]
 }

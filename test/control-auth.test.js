@@ -9,8 +9,8 @@ import {
     rotateAdminRecord,
     validateNewPassword,
     verifyAdminPassword
-} from '../api/control/auth.js';
-import { ADMIN_ROLES, getAdminActor, isCurrentAdminSession, requireAdmin, setFirebaseSessionCookie } from '../api/control/shared.js';
+} from '../server/control/auth.js';
+import { ADMIN_ROLES, getAdminActor, isCurrentAdminSession, requireAdmin, setFirebaseSessionCookie } from '../server/control/shared.js';
 
 const ADMIN_MAP = {
     'fixed-general-manager-uid': { role: 'general_manager' },

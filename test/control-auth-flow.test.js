@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createSign, randomBytes } from 'node:crypto';
-import loginHandler from '../api/control/login.js';
-import meHandler from '../api/control/me.js';
-import passwordHandler from '../api/control/password.js';
-import logoutHandler from '../api/control/logout.js';
-import callsHandler from '../api/control/calls.js';
-import { ADMIN_ROLES, setFirebaseSessionCookie } from '../api/control/shared.js';
-import { hashAdminPassword } from '../api/control/auth.js';
+import loginHandler from '../server/control/login.js';
+import meHandler from '../server/control/me.js';
+import passwordHandler from '../server/control/password.js';
+import logoutHandler from '../server/control/logout.js';
+import callsHandler from '../server/control/calls.js';
+import { ADMIN_ROLES, setFirebaseSessionCookie } from '../server/control/shared.js';
+import { hashAdminPassword } from '../server/control/auth.js';
 
 const ADMINS = {
     'fixed-general-manager-uid': { role: 'general_manager' },

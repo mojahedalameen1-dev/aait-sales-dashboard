@@ -9,8 +9,8 @@ import {
     meetingAssignedToEmployee,
     sanitizeMeetingForAdmin,
     verifyFirebaseIdToken
-} from '../api/control/shared.js';
-import { makeCallText, sanitizeSpeechMeetingTitle } from '../api/control/calls.js';
+} from '../server/control/shared.js';
+import { makeCallText, sanitizeSpeechMeetingTitle } from '../server/control/calls.js';
 import { createRiyadhPrayerAlerts } from '../src/prayer-alerts.js';
 
 function memoryStorage() {

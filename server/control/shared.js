@@ -1,5 +1,5 @@
 import { createHmac, createSign, createVerify, timingSafeEqual } from 'node:crypto';
-import { fetchCurrentMeetingsCsv } from '../meetings.js';
+import { fetchCurrentMeetingsCsv } from '../../api/meetings.js';
 import { mapRowsToMeetings, parseCSV, formatTodayDate, getMeetingTimingState, isCancelled, isDone } from '../../src/data.js';
 import { isSafeMeetingUrl } from '../../src/utils.js';
 
