@@ -4,7 +4,8 @@
     width: calc(100% - var(--sidebar-width) - var(--display-safe-right));
     min-width: 0;
     height: 100dvh;
-    padding: 8px;
+    /* One-sided TV overscan protection: inset only the board's left edge. */
+    padding: 8px 8px 8px calc(8px + var(--display-safe-left, 0px));
     gap: 0;
     overflow: hidden;
 }
@@ -295,7 +296,7 @@
 }
 #meetings-grid.layout-compact .mc-client { grid-column: 1 / -1; grid-row: 1; font-size: 16px; line-height: 1.22; -webkit-line-clamp: 2; }
 #meetings-grid.layout-compact .mc-project-desc { grid-column: 1 / -1; grid-row: 2; padding: 0; border: 0; background: transparent; text-align: center; font-size: 14px; line-height: 1.2; -webkit-line-clamp: 1; }
-#meetings-grid.layout-compact .mc-engineer { grid-column: 1; grid-row: 3; justify-self: start; text-align: start; font-size: 14px; line-height: 1.2; }
+#meetings-grid.layout-compact .mc-engineer { grid-column: 1; grid-row: 3; justify-self: stretch; width: 100%; min-width: 0; text-align: start; font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; white-space: normal; }
 #meetings-grid.layout-compact .mc-meta { grid-column: 2; grid-row: 3; width: auto; justify-content: end; gap: 3px; }
 #meetings-grid.layout-compact .meeting-card .mc-type-badge,
 #meetings-grid.layout-compact .meeting-card .mc-ticket-pill { padding: 1px 6px; font-size: 14px; }
@@ -433,7 +434,7 @@
 .meeting-details-close:focus-visible { outline: 2px solid #63e6cc; outline-offset: 2px; }
 
 @media (max-height: 820px) and (min-width: 761px) {
-    .main-content { padding: 6px; }
+    .main-content { padding: 6px 6px 6px calc(6px + var(--display-safe-left, 0px)); }
     #meetings-grid.layout-normal { --meeting-inset: 8px; }
     #meetings-grid.layout-compact { --meeting-inset: 6px; }
     #meetings-grid.layout-ultra { --meeting-inset: 4px; }
