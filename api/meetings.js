@@ -120,6 +120,25 @@ async function resolveSheet(publishKey, sheetName) {
     return target;
 }
 
+/**
+ * Fetch an uncached copy of the current published sheet for sensitive server-side
+ * decisions such as call conflict checks. This deliberately does not fall back
+ * to the public stale cache: callers must fail closed when the source is down.
+ */
+export async function fetchCurrentMeetingsCsv() {
+    const configuredKey = process.env.GOOGLE_SHEETS_PUBLISH_KEY?.trim();
+    const publishKey = /^2PACX-[A-Za-z0-9_-]+$/.test(configuredKey || '')
+        ? configuredKey
+        : DEFAULT_PUBLISH_KEY;
+    const sheetName = getCurrentSheetName();
+    const target = await resolveSheet(publishKey, sheetName);
+    const csvUrl = `https://docs.google.com/spreadsheets/d/e/${publishKey}/pub?gid=${target.gid}&single=true&output=csv`;
+    const csvResponse = await fetchWithRetry(csvUrl, { label: 'Admin Sheets CSV' });
+    const csvText = await csvResponse.text();
+    if (csvText.trim().startsWith('<')) throw new Error('Google Sheets returned HTML instead of CSV');
+    return { csvText, sheetName, gid: target.gid, fetchedAt: new Date().toISOString() };
+}
+
 function setResponseCacheHeaders(response, isStale = false) {
     response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     response.setHeader(

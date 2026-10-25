@@ -5,7 +5,10 @@ import '@fontsource/ibm-plex-sans-arabic/700.css';
 import './style.css';
 import './sidebar.css';
 import './meeting-cards.css';
+import './call-announcement.css';
 import { createPrayerCard, populatePrayerCities } from './prayer-card.js';
+import { createRiyadhPrayerAlerts } from './prayer-alerts.js';
+import { createCallReceiver } from './call-receiver.js';
 import { getPrayerCity } from './prayer-times.js';
 import { createDhikrSlider } from './adhkar.js';
 import {
@@ -56,7 +59,10 @@ import {
     playTestAlert,
     stopAudioPlayback,
     getNextAudioReminder,
-    updateReminderMeetings
+    updateReminderMeetings,
+    isAudioPlaybackEnabled,
+    playPrayerReminder,
+    showToast
 } from './notifications.js';
 import { 
     escapeHTML, 
@@ -66,6 +72,7 @@ import {
     toEnglishDigits
 } from './utils.js';
 import { APP_TIME_ZONE, getEngineerColor, getEngineerTheme, getEngineerProfile } from './config.js';
+import { chooseMeetingGridLayout, getMeetingLayoutMode } from './meeting-layout.js';
 
 // ========================================
 // 🌐 State & Constants
@@ -80,8 +87,44 @@ let screenWakeLock = null;
 let lastTimingStateSnapshot = '';
 let lastGridSignature = null;
 let prayerCard = null;
+let prayerAlerts = null;
+let callReceiver = null;
+let pendingPrayerReminder = null;
+let pendingPrayerReminderTimeout = null;
 let dhikrSlider = null;
 let currentAudioState = AUDIO_STATE.LOCKED;
+let meetingGridResizeObserver = null;
+let meetingGridResizeFrame = 0;
+let meetingDetailsDialog = null;
+
+function getLayoutPreviewMeetings() {
+    if (!import.meta.env.DEV) return null;
+    const count = Number(new URLSearchParams(window.location.search).get('layoutPreview'));
+    if (![9, 20, 35, 50].includes(count)) return null;
+
+    const clients = ['البلدية الشرقية', 'عبد العزيز للتطبيقات', 'أسامة غرم الله', 'شركة المدى', 'مركز المعرفة', 'مجموعة النور', 'نقل وتركي', 'مؤسسة البناء', 'مبيعات الخليج', 'أكاديمية المستقبل'];
+    const projects = ['تطوير النظام', 'تحسين تجربة العميل', 'أتمتة إجراءات العمل', 'تطبيق إدارة الطلبات', 'تحديث المنصة الرقمية', 'ربط أنظمة التشغيل', 'لوحة متابعة الأداء', 'تجهيز عرض الخدمات'];
+    const teams = ['شادي', 'أشرف', 'مجاهد', 'حسام'];
+    const today = formatTodayDate();
+
+    return Array.from({ length: count }, (_, index) => {
+        const ticket = `AA${837500 + index}`;
+        const hour = 8 + Math.floor(index * 10 / Math.max(1, count - 1));
+        const minute = index % 2 ? '30' : '00';
+        return {
+            id: `layout-preview-${index + 1}`,
+            date: today,
+            time: `${String(hour).padStart(2, '0')}:${minute}`,
+            project: `${clients[index % clients.length]} - ${projects[(index * 3) % projects.length]} ${index + 1} - ${ticket}`,
+            team: teams[index % teams.length],
+            via: index % 4 === 0 ? 'حضوري' : 'عن بعد',
+            status: index % 11 === 0 ? 'تم' : index % 17 === 0 ? 'ملغي' : '',
+            ticketUrl: `https://e.aait.sa/web#id=${837500 + index}&model=crm.lead&view_type=form`,
+            meetUrl: index % 4 === 0 ? '' : `https://meet.google.com/aaa-bbbb-${String(index + 1).padStart(3, '0')}`,
+            clientStatus: index % 3 === 0 ? 'مهتم' : 'قيد المتابعة'
+        };
+    });
+}
 
 function refreshIcons(root = document) {
     createIcons({
@@ -248,6 +291,116 @@ function updatePressureSummary(meetings) {
         ? `تعارض محتمل: ${peak.count} اجتماعات للمهندس نفسه قرب ${formatTime12h(`${String(Math.floor(peak.startMinutes / 60)).padStart(2, '0')}:${String(peak.startMinutes % 60).padStart(2, '0')}`)}`
         : 'لا توجد اجتماعات متداخلة للمهندس نفسه';
 }
+
+function applyMeetingGridLayout(grid, count) {
+    const mode = getMeetingLayoutMode(count);
+    grid.classList.remove('layout-normal', 'layout-compact', 'layout-ultra', 'has-many-meetings');
+    grid.classList.add(`layout-${mode}`);
+
+    const styles = getComputedStyle(grid);
+    const width = Math.max(0, grid.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight));
+    const height = Math.max(0, grid.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom));
+    const layout = chooseMeetingGridLayout({ count, width, height, mode });
+
+    grid.style.setProperty('--meeting-columns', String(layout.columns));
+    grid.style.setProperty('--meeting-rows', String(layout.rows));
+    grid.dataset.layoutMode = layout.mode;
+    grid.dataset.layoutColumns = String(layout.columns);
+    grid.dataset.layoutRows = String(layout.rows);
+    grid.dataset.layoutCardWidth = String(Math.round(layout.cardWidth));
+    grid.dataset.layoutCardHeight = String(Math.round(layout.cardHeight));
+    grid.dataset.layoutFits = String(layout.fits);
+    return layout;
+}
+
+function scheduleMeetingGridLayout() {
+    if (meetingGridResizeFrame) cancelAnimationFrame(meetingGridResizeFrame);
+    meetingGridResizeFrame = requestAnimationFrame(() => {
+        meetingGridResizeFrame = 0;
+        const grid = document.getElementById('meetings-grid');
+        if (grid) applyMeetingGridLayout(grid, grid.querySelectorAll('.meeting-card').length);
+    });
+}
+
+function setupMeetingGridResponsiveLayout(grid) {
+    meetingGridResizeObserver?.disconnect();
+    if ('ResizeObserver' in window) {
+        meetingGridResizeObserver = new ResizeObserver(scheduleMeetingGridLayout);
+        meetingGridResizeObserver.observe(grid);
+        const mainContent = document.querySelector('.main-content');
+        if (mainContent) meetingGridResizeObserver.observe(mainContent);
+    }
+    window.addEventListener('resize', scheduleMeetingGridLayout, { passive: true });
+    document.addEventListener('fullscreenchange', scheduleMeetingGridLayout);
+    document.fonts?.ready?.then(scheduleMeetingGridLayout);
+
+    grid.addEventListener('click', event => {
+        const card = event.target.closest('.meeting-card.is-ultra-card');
+        if (!card || !grid.contains(card)) return;
+        openMeetingDetails(activeMeetings.find(meeting => String(meeting.id) === card.dataset.meetingId));
+    });
+    grid.addEventListener('keydown', event => {
+        const card = event.target.closest('.meeting-card.is-ultra-card');
+        if (!card || event.target !== card || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        openMeetingDetails(activeMeetings.find(meeting => String(meeting.id) === card.dataset.meetingId));
+    });
+}
+
+function openMeetingDetails(meeting) {
+    if (!meeting) return;
+    if (!meetingDetailsDialog) {
+        meetingDetailsDialog = document.createElement('dialog');
+        meetingDetailsDialog.className = 'meeting-details-dialog';
+        meetingDetailsDialog.setAttribute('aria-labelledby', 'meeting-details-title');
+        meetingDetailsDialog.innerHTML = `
+            <div class="meeting-details-panel">
+              <header class="meeting-details-heading">
+                <div><span>تفاصيل الاجتماع</span><h2 id="meeting-details-title"></h2></div>
+                <button class="meeting-details-close" type="button" aria-label="إغلاق التفاصيل">×</button>
+              </header>
+              <dl class="meeting-details-list">
+                <div><dt>المسؤول</dt><dd data-meeting-field="team"></dd></div>
+                <div><dt>الوقت</dt><dd data-meeting-field="time"></dd></div>
+                <div><dt>الطريقة</dt><dd data-meeting-field="via"></dd></div>
+                <div><dt>الحالة</dt><dd data-meeting-field="status"></dd></div>
+                <div><dt>حالة العميل</dt><dd data-meeting-field="clientStatus"></dd></div>
+              </dl>
+              <div class="meeting-details-actions"></div>
+            </div>`;
+        meetingDetailsDialog.querySelector('.meeting-details-close').addEventListener('click', () => meetingDetailsDialog.close());
+        meetingDetailsDialog.addEventListener('click', event => {
+            if (event.target === meetingDetailsDialog) meetingDetailsDialog.close();
+        });
+        document.body.appendChild(meetingDetailsDialog);
+    }
+
+    const projectTitle = meeting.project || 'اجتماع عميل';
+    meetingDetailsDialog.querySelector('#meeting-details-title').textContent = projectTitle;
+    meetingDetailsDialog.querySelector('[data-meeting-field="team"]').textContent = meeting.team || 'غير محدد';
+    meetingDetailsDialog.querySelector('[data-meeting-field="time"]').textContent = formatTime12h(meeting.time);
+    meetingDetailsDialog.querySelector('[data-meeting-field="via"]').textContent = meeting.via || 'غير محدد';
+    meetingDetailsDialog.querySelector('[data-meeting-field="status"]').textContent = meeting.status || 'قادم';
+    meetingDetailsDialog.querySelector('[data-meeting-field="clientStatus"]').textContent = meeting.clientStatus || 'غير محدد';
+
+    const actions = meetingDetailsDialog.querySelector('.meeting-details-actions');
+    actions.replaceChildren();
+    for (const link of [
+        { label: 'فتح التذكرة', url: meeting.ticketUrl },
+        { label: 'دخول الاجتماع', url: meeting.meetUrl }
+    ]) {
+        if (!isSafeMeetingUrl(link.url)) continue;
+        const anchor = document.createElement('a');
+        anchor.href = link.url;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        anchor.textContent = link.label;
+        actions.appendChild(anchor);
+    }
+
+    meetingDetailsDialog.showModal();
+}
+
 function renderUI(meetings) {
     const grid = document.getElementById('meetings-grid');
     if (!grid) {
@@ -279,6 +432,10 @@ function renderUI(meetings) {
         if (!aDone && bDone) return -1;
         return (a.time || '').localeCompare(b.time || '');
     });
+    const layoutMode = getMeetingLayoutMode(sorted.length);
+    grid.classList.remove('layout-normal', 'layout-compact', 'layout-ultra', 'has-many-meetings');
+    grid.classList.add(`layout-${layoutMode}`);
+    applyMeetingGridLayout(grid, sorted.length);
 
     const gridSignature = JSON.stringify({
         error: activeSyncResult?.error || '',
@@ -321,6 +478,8 @@ function renderUI(meetings) {
         const hasSafeMeetingUrl = isOnline && isSafeMeetingUrl(m.meetUrl);
         const hasSafeTicketUrl = isSafeMeetingUrl(m.ticketUrl);
         const engineerLabel = getEngineerShortName(m.team);
+        const isUltraLayout = layoutMode === 'ultra';
+        const ultraTitle = [client, projectDesc].filter(Boolean).join(' — ') || client;
         const startsSoon = timingState === 'upcoming' && timing.minutesUntil <= 10;
         const statusMeta = done
             ? { label: 'منتهي', className: 'is-done', icon: 'check-circle-2' }
@@ -339,32 +498,35 @@ function renderUI(meetings) {
         const noLinkLabel = !meetingType ? 'الطريقة غير محددة' : isOnline ? 'لا يوجد رابط' : 'حضوري';
 
         return `
-            <article class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''}
+            <article class="meeting-card ${done ? 'completed' : ''} ${cancelled ? 'cancelled' : ''} ${isUltraLayout ? 'is-ultra-card' : ''}
                  ${timingState === 'running' ? 'current' : ''} ${timingState === 'overdue' ? 'overdue' : ''}
                  ${engineerTheme !== 'default' ? `theme-${engineerTheme}` : ''}"
-                 style="background: ${gradient}" data-meeting-id="${escapeHTML(String(m.id))}" tabindex="-1">
+                 style="background: ${gradient}" data-meeting-id="${escapeHTML(String(m.id))}"
+                 ${isUltraLayout ? `role="button" tabindex="0" aria-haspopup="dialog" aria-label="عرض تفاصيل الاجتماع: ${safeDisplayText(ultraTitle)}"` : 'tabindex="-1"'}>
               <div class="card-bg-pattern"></div>
               <header class="mc-header">
-              ${timingState !== 'running'
-                ? `<div class="mc-status ${statusMeta.className}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
+              ${isUltraLayout || timingState !== 'running'
+                ? `<div class="mc-status ${statusMeta.className}" title="${safeDisplayText(statusMeta.label)}" aria-label="الحالة: ${safeDisplayText(statusMeta.label)}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
                 : ''}
 
               ${hasSafeMeetingUrl ? `
-                <a href="${escapeHTML(m.meetUrl)}" target="_blank" rel="noopener noreferrer" class="mc-quick-join" aria-label="الانضمام إلى اجتماع ${escapeHTML(client)}">
-                  <i data-lucide="video"></i>
-                  <span>${joinLabel}</span>
-                </a>
+                ${isUltraLayout
+                    ? `<span class="mc-quick-join" aria-hidden="true"><i data-lucide="video"></i></span>`
+                    : `<a href="${escapeHTML(m.meetUrl)}" target="_blank" rel="noopener noreferrer" class="mc-quick-join" aria-label="الانضمام إلى اجتماع ${escapeHTML(client)}"><i data-lucide="video"></i><span>${joinLabel}</span></a>`}
               ` : `<div class="mc-location-state ${isOnline ? 'missing-link' : ''}">${noLinkLabel}</div>`}
               </header>
 
               <div class="card-content">
                 <div class="mc-details">
+                  ${isUltraLayout ? `<div class="mc-ultra-title" title="${safeDisplayText(ultraTitle)}">${safeDisplayText(ultraTitle)}</div>` : ''}
                   <div class="mc-client" title="${safeDisplayText(client)}">${safeDisplayText(client)}</div>
-                  <div class="mc-engineer" title="مع ${safeDisplayText(engineerLabel)}">مع ${safeDisplayText(engineerLabel)}</div>
+                  <div class="mc-engineer" title="مع ${safeDisplayText(engineerLabel)}"><span class="mc-engineer-prefix">مع </span><span class="mc-engineer-name">${safeDisplayText(engineerLabel)}</span></div>
                   ${projectDesc ? `<div class="mc-project-desc" title="${safeDisplayText(projectDesc)}">${safeDisplayText(projectDesc)}</div>` : ''}
                   <div class="mc-meta">
                     ${meetingType ? `<div class="mc-type-badge ${typeClass}" title="${safeDisplayText(meetingType)}">${safeDisplayText(meetingType)}</div>` : ''}
-                    ${ticketNum ? (hasSafeTicketUrl
+                    ${ticketNum ? (isUltraLayout
+                        ? `<span class="mc-ticket-pill">${ticketNum}</span>`
+                        : hasSafeTicketUrl
                         ? `<a class="mc-ticket-pill is-link" href="${escapeHTML(m.ticketUrl)}" target="_blank" rel="noopener noreferrer" aria-label="فتح التذكرة ${ticketNum}">${ticketNum}</a>`
                         : `<div class="mc-ticket-pill">${ticketNum}</div>`) : ''}
                   </div>
@@ -435,6 +597,7 @@ function startClock() {
     const tick = () => {
         const now = new Date();
         prayerCard?.tick(now);
+        prayerAlerts?.tick(now);
         const timeParts = getCurrentTimeParts(now);
         let h = timeParts.hours;
         const m = String(timeParts.minutes).padStart(2, '0');
@@ -880,9 +1043,31 @@ function fallbackCopy(text) {
 // ========================================
 
 async function initApp() {
+    const meetingsGrid = document.getElementById('meetings-grid');
+    if (meetingsGrid) setupMeetingGridResponsiveLayout(meetingsGrid);
+    const layoutPreviewMeetings = getLayoutPreviewMeetings();
+
     const settings = getSettings();
     populatePrayerCities(document.getElementById('prayer-city-select'), settings.prayerCity);
     prayerCard = createPrayerCard(document.getElementById('prayer-card'), { city: settings.prayerCity });
+    prayerAlerts = createRiyadhPrayerAlerts({
+        onAlert: prayer => {
+            showToast({
+                title: 'حان وقت الصلاة',
+                message: `دخل الآن وقت صلاة ${prayer.label} في الرياض.`,
+                level: 'info',
+                icon: 'moon-star'
+            });
+            if (isAudioPlaybackEnabled()) {
+                void playPrayerReminder();
+                return;
+            }
+            pendingPrayerReminder = { createdAt: Date.now(), key: prayer.key };
+            if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
+            pendingPrayerReminderTimeout = setTimeout(() => { pendingPrayerReminder = null; }, 60000);
+        }
+    });
+    callReceiver = createCallReceiver();
     dhikrSlider = createDhikrSlider(document.getElementById('dhikr-card'));
     startClock();
 
@@ -972,26 +1157,39 @@ async function initApp() {
         updateAudioControl(state);
         if (state === AUDIO_STATE.ENABLED) {
             setAudioOverlayVisible(false);
+            callReceiver?.notifyAudioEnabled();
+            if (pendingPrayerReminder && Date.now() - pendingPrayerReminder.createdAt <= 60000) {
+                pendingPrayerReminder = null;
+                if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
+                void playPrayerReminder();
+            }
         } else if (state !== AUDIO_STATE.FAILED) {
             if (getSettings().soundEnabled) setAudioOverlayVisible(true);
         }
     });
     updateAudioControl();
 
-    startNotificationLoop(
-        () => activeMeetings,
-        formatTodayDate,
-        () => {} // onTick
-    );
-
-    // Start Auto-Sync (10s interval is handled inside data.js)
-    startAutoSync((result) => {
-        activeSyncResult = result;
-        activeMeetings = result.meetings;
-        updateReminderMeetings(activeMeetings);
-        updateSyncStatus(result);
+    if (layoutPreviewMeetings) {
+        activeMeetings = layoutPreviewMeetings;
+        activeSyncResult = { meetings: layoutPreviewMeetings, stale: false, error: null, sheetName: 'بيانات العرض التجريبية' };
+        updateSyncStatus(activeSyncResult);
         renderUI(activeMeetings);
-    });
+    } else {
+        startNotificationLoop(
+            () => activeMeetings,
+            formatTodayDate,
+            () => {} // onTick
+        );
+
+        // Start Auto-Sync (10s interval is handled inside data.js)
+        startAutoSync((result) => {
+            activeSyncResult = result;
+            activeMeetings = result.meetings;
+            updateReminderMeetings(activeMeetings);
+            updateSyncStatus(result);
+            renderUI(activeMeetings);
+        });
+    }
 
     if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
     dynamicUpdateIntervalId = setInterval(updateLiveMeetingState, 1000);
@@ -1042,12 +1240,18 @@ async function initApp() {
     document.addEventListener('fullscreenchange', syncDisplayModeButton);
     document.addEventListener('visibilitychange', () => {
         if (document.body.classList.contains('display-mode') && document.visibilityState === 'visible') requestScreenWakeLock();
-        if (document.visibilityState === 'visible') prayerCard?.tick(new Date());
+        if (document.visibilityState === 'visible') {
+            prayerCard?.tick(new Date());
+            prayerAlerts?.tick(new Date());
+        }
     });
 
     window.addEventListener('pagehide', event => {
         if (event.persisted) return;
         prayerCard?.destroy();
+        prayerAlerts?.destroy();
+        callReceiver?.destroy();
+        if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
         dhikrSlider?.destroy();
         clearInterval(clockIntervalId);
         clearInterval(dynamicUpdateIntervalId);

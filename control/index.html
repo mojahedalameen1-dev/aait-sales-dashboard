@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#06111a" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>مركز النداءات الداخلية | أوامر الشبكة</title>
+  </head>
+  <body class="control-body">
+    <main class="control-shell">
+      <header class="control-topbar">
+        <div class="control-brand">
+          <span class="brand-mark"><img src="/logo.svg" alt="" /></span>
+          <div>
+            <p class="brand-name">أوامر الشبكة</p>
+            <p class="brand-caption">مركز النداءات الداخلية</p>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <span id="connection-state" class="connection-state is-pending"><span></span> جاري التحقق من الاتصال</span>
+          <a class="return-link" href="/" aria-label="العودة إلى لوحة الاجتماعات"><i data-lucide="layout-dashboard"></i><span>لوحة الاجتماعات</span></a>
+        </div>
+      </header>
+
+      <section id="setup-view" class="setup-view" hidden>
+        <div class="setup-icon"><i data-lucide="shield-alert"></i></div>
+        <div>
+          <h1>مركز النداءات يحتاج إعدادًا أوليًا</h1>
+          <p>الواجهة جاهزة، لكن خدمات الدخول والتخزين لم تُربط بعد. ما راح تُرسل أي نداءات قبل اكتمال الإعداد.</p>
+          <ul id="setup-missing" class="setup-missing"></ul>
+        </div>
+      </section>
+
+      <section id="login-view" class="login-view" hidden>
+        <form id="login-form" class="login-card" autocomplete="on">
+          <div class="login-brand">
+            <img src="/logo.svg" alt="أوامر الشبكة" />
+            <h1>مركز النداءات الداخلية</h1>
+          </div>
+          <label for="login-password">كلمة المرور</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" minlength="14" maxlength="128" required />
+          <p id="login-error" class="inline-message is-error" role="alert" hidden></p>
+          <button id="login-submit" class="button button-primary button-wide" type="submit"><i data-lucide="log-in"></i><span>دخول</span></button>
+        </form>
+      </section>
+
+      <section id="app-view" class="app-view" hidden>
+        <div class="workspace-heading">
+          <div>
+            <span class="eyebrow">إدارة النداءات</span>
+            <h1>إرسال نداء داخلي</h1>
+          </div>
+          <div class="signed-in-card">
+            <span class="signed-in-avatar"><i data-lucide="user-round-check"></i></span>
+            <span><strong>الدور المصرّح</strong><small id="role-label"></small></span>
+            <button id="change-password-toggle" class="icon-button" type="button" aria-label="تغيير كلمة المرور" title="تغيير كلمة المرور"><i data-lucide="key-round"></i></button>
+            <button id="logout-button" class="icon-button logout-button" type="button" aria-label="تسجيل الخروج" title="تسجيل الخروج"><i data-lucide="log-out"></i></button>
+          </div>
+        </div>
+
+        <section id="password-panel" class="password-panel" hidden aria-labelledby="password-heading">
+          <div class="section-heading">
+            <span class="section-icon"><i data-lucide="key-round"></i></span>
+            <div><h2 id="password-heading">تغيير كلمة المرور</h2><p>سيتم إبطال الجلسات السابقة بعد حفظ التغيير.</p></div>
+            <button id="change-password-close" class="icon-button" type="button" aria-label="إغلاق"><i data-lucide="x"></i></button>
+          </div>
+          <form id="change-password-form" class="password-form" autocomplete="on">
+            <div class="password-field"><label for="current-password">كلمة المرور الحالية</label><input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required /></div>
+            <div class="password-field"><label for="new-password">كلمة المرور الجديدة</label><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="14" maxlength="128" required /></div>
+            <div class="password-field"><label for="confirm-password">تأكيد كلمة المرور الجديدة</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="14" maxlength="128" required /></div>
+            <p id="password-change-result" class="inline-message" role="status" hidden></p>
+            <button id="change-password-submit" class="button button-primary" type="submit"><i data-lucide="key-round"></i><span>حفظ كلمة المرور</span></button>
+          </form>
+        </section>
+
+        <form id="call-form" class="call-form">
+          <div id="backend-warning" class="call-result is-warn" role="status" hidden></div>
+          <div id="speech-warning" class="call-result is-warn" role="status" hidden></div>
+          <section class="form-section" aria-labelledby="employee-heading">
+            <div class="section-heading">
+              <span class="section-icon"><i data-lucide="users-round"></i></span>
+              <div><h2 id="employee-heading">اختر الموظف</h2><p>حدد الموظف المطلوب توجيه النداء له</p></div>
+            </div>
+            <div id="employee-list" class="employee-list" role="radiogroup" aria-labelledby="employee-heading"></div>
+          </section>
+
+          <section class="form-section" aria-labelledby="calltype-heading">
+            <div class="section-heading">
+              <span class="section-icon"><i data-lucide="phone-call"></i></span>
+              <div><h2 id="calltype-heading">نوع النداء</h2><p>النداء الصوتي عام ولا يتضمن بيانات عميل أو رابط اجتماع</p></div>
+            </div>
+            <div class="call-type-list" role="radiogroup" aria-labelledby="calltype-heading">
+              <label class="call-type-option is-selected" data-call-option="meeting">
+                <input type="radio" name="callType" value="meeting" checked />
+                <span class="radio-mark" aria-hidden="true"></span>
+                <span class="call-type-copy"><strong>الدخول إلى اجتماع</strong><small>اختيار اجتماع من اجتماعات اليوم</small></span>
+                <span class="call-type-icon"><i data-lucide="video"></i></span>
+              </label>
+              <label class="call-type-option" data-call-option="office">
+                <input type="radio" name="callType" value="office" />
+                <span class="radio-mark" aria-hidden="true"></span>
+                <span class="call-type-copy"><strong>الحضور إلى مكتبي</strong><small>نداء مباشر للحضور للمكتب</small></span>
+                <span class="call-type-icon"><i data-lucide="building-2"></i></span>
+              </label>
+            </div>
+            <p id="permission-note" class="permission-note" hidden></p>
+          </section>
+
+          <section id="meeting-section" class="form-section meeting-section" aria-labelledby="meeting-heading">
+            <div class="section-heading">
+              <span class="section-icon"><i data-lucide="calendar-days"></i></span>
+              <div><h2 id="meeting-heading">تفاصيل الاجتماع</h2><p>بيانات محدثة مباشرة من جدول الاجتماعات</p></div>
+              <button id="refresh-meetings" class="icon-button refresh-meetings" type="button" title="تحديث الاجتماعات" aria-label="تحديث الاجتماعات"><i data-lucide="refresh-cw"></i></button>
+            </div>
+            <label class="field-label" for="meeting-select">اجتماعات اليوم</label>
+            <select id="meeting-select" name="meetingId" required>
+              <option value="">جاري تحميل الاجتماعات…</option>
+            </select>
+            <p id="meetings-state" class="meetings-state" aria-live="polite"></p>
+            <article id="meeting-details" class="meeting-details" hidden></article>
+          </section>
+
+          <div id="call-result" class="call-result" role="status" aria-live="polite" hidden></div>
+          <div class="submit-row">
+            <p><i data-lucide="info"></i><span>قبل الإرسال، بنتحقق من المصدر ومن انشغال الموظف الحالي.</span></p>
+            <button id="send-call" class="button button-primary send-button" type="submit"><i data-lucide="send"></i><span>إرسال النداء</span></button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <div id="busy-dialog" class="dialog-backdrop" hidden>
+      <section class="busy-dialog" role="alertdialog" aria-modal="true" aria-labelledby="busy-title" aria-describedby="busy-description">
+        <span class="busy-icon"><i data-lucide="triangle-alert"></i></span>
+        <div class="busy-copy">
+          <span class="eyebrow is-danger">تأكيد قبل الإرسال</span>
+          <h2 id="busy-title">الموظف مرتبط باجتماع جارٍ</h2>
+          <p id="busy-description"></p>
+        </div>
+        <div id="busy-meetings" class="busy-meetings"></div>
+        <div class="dialog-actions">
+          <button id="cancel-busy" class="button button-secondary" type="button">إلغاء النداء</button>
+          <button id="confirm-busy" class="button button-danger" type="button"><i data-lucide="triangle-alert"></i><span>إرسال رغم الانشغال</span></button>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

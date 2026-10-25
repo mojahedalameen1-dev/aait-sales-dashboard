@@ -327,7 +327,7 @@ export function normalizeDate(dateStr) {
 /**
  * Map parsed CSV rows to Meeting objects
  */
-function mapRowsToMeetings(rows) {
+export function mapRowsToMeetings(rows) {
     if (!Array.isArray(rows) || rows.length === 0) throw new Error('مصدر البيانات فارغ');
     if (rows[0].length < 6) throw new Error('بنية أعمدة جدول الاجتماعات غير صحيحة');
 

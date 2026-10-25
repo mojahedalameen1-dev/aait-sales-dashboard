@@ -28,6 +28,7 @@ let onStateChangeCallback = null;
 let audioUnlockPromise = null;
 let retainedAudioPlayer = null;
 let activeAudioTask = null;
+let announcementPlayer = null;
 const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
 // Track recently warned meetings to avoid spamming fallbacks
@@ -112,6 +113,99 @@ export function playTestAlert(onResult) {
     enqueueAudio({ filename: 'm5.mp3', meetingId: 'audio-test', onDelivered: onResult });
 }
 
+export function isAudioPlaybackEnabled() {
+    return currentAudioState === AUDIO_STATE.ENABLED && getSettings().soundEnabled;
+}
+
+/** Play a private server-generated announcement only after the page's audio was unlocked. */
+export async function playAnnouncementAudio(audioBase64, { onStarted } = {}) {
+    if (!audioBase64 || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
+
+    // The call system is higher priority than a queued routine meeting reminder.
+    playbackGeneration++;
+    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
+    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
+    activeSafetyTimeout = null;
+    queueAdvanceTimeout = null;
+    for (const task of playQueue.splice(0)) task.onDelivered?.(false);
+    activeAudioTask?.onDelivered?.(false);
+    activeAudioTask = null;
+    isPlaying = false;
+    if (retainedAudioPlayer) {
+        retainedAudioPlayer.onended = null;
+        retainedAudioPlayer.onerror = null;
+        retainedAudioPlayer.pause?.();
+        try { retainedAudioPlayer.currentTime = 0; } catch { /* ignored */ }
+    }
+    announcementPlayer?.pause?.();
+    announcementPlayer = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+    announcementPlayer.preload = 'auto';
+    announcementPlayer.volume = 1;
+
+    return new Promise(resolve => {
+        const player = announcementPlayer;
+        let started = false;
+        let settled = false;
+        const finish = result => {
+            if (settled) return;
+            settled = true;
+            player.removeEventListener('playing', handleStarted);
+            player.removeEventListener('ended', handleEnded);
+            player.removeEventListener('error', handleError);
+            if (announcementPlayer === player) announcementPlayer = null;
+            resolve(result);
+        };
+        const handleStarted = () => {
+            if (started) return;
+            started = true;
+            onStarted?.();
+        };
+        const handleEnded = () => finish({ started });
+        const handleError = () => finish({ started, reason: 'playback_failed' });
+        player.addEventListener('playing', handleStarted);
+        player.addEventListener('ended', handleEnded);
+        player.addEventListener('error', handleError);
+        player.play().catch(() => finish({ started: false, reason: 'playback_blocked' }));
+    });
+}
+
+/** A quiet, non-verbal reminder; it is deliberately not a full adhan recording. */
+export async function playPrayerReminder() {
+    if (!isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
+    const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!AudioContextClass) return { started: false, reason: 'unsupported' };
+    let context;
+    try {
+        context = new AudioContextClass();
+        await context.resume();
+        const now = context.currentTime;
+        const master = context.createGain();
+        master.gain.setValueAtTime(0.0001, now);
+        master.gain.exponentialRampToValueAtTime(0.14, now + 0.08);
+        master.gain.exponentialRampToValueAtTime(0.0001, now + 1.65);
+        master.connect(context.destination);
+        for (const [index, frequency] of [660, 880, 660].entries()) {
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            const start = now + index * 0.48;
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(frequency, start);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.8, start + 0.035);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.4);
+            oscillator.connect(gain);
+            gain.connect(master);
+            oscillator.start(start);
+            oscillator.stop(start + 0.42);
+        }
+        window.setTimeout(() => { void context.close().catch(() => {}); }, 2100);
+        return { started: true };
+    } catch {
+        if (context && context.state !== 'closed') void context.close().catch(() => {});
+        return { started: false, reason: 'playback_failed' };
+    }
+}
+
 /**
  * Add audio task to queue
  */
@@ -156,6 +250,8 @@ export function stopAudioPlayback() {
         retainedAudioPlayer.pause?.();
     }
     if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
+    announcementPlayer?.pause?.();
+    announcementPlayer = null;
     activeAudioTask = null;
     isPlaying = false;
     updateAudioState(AUDIO_STATE.LOCKED);

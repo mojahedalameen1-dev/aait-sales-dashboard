@@ -60,7 +60,9 @@ export function isSafeMeetingUrl(value) {
         const url = new URL(value);
         if (url.protocol !== 'https:' || url.username || url.password) return false;
         const hostname = url.hostname.toLowerCase();
-        return hostname === 'meet.google.com' || hostname === 'aait.sa' || hostname.endsWith('.aait.sa');
+        return hostname === 'meet.google.com'
+            || hostname === 'aait.sa' || hostname.endsWith('.aait.sa')
+            || hostname === 'aaait.sa' || hostname.endsWith('.aaait.sa');
     } catch {
         return false;
     }
