@@ -9,7 +9,7 @@ import {
     meetingAssignedToEmployee,
     sanitizeMeetingForAdmin,
     verifyFirebaseIdToken,
-    isTrustedDisplay,
+    isAnonymousDisplaySession,
     firebaseDataNamespace,
     firebaseDatabasePath
 } from '../server/control/shared.js';
@@ -77,16 +77,10 @@ test('long meeting titles fit the 200-character model limit and bad speech setti
     finally { if (previous === undefined) delete process.env.GROQ_VOICE; else process.env.GROQ_VOICE = previous; }
 });
 
-test('unknown anonymous identities cannot consume a trusted display generation attempt', () => {
-    const previous = process.env.CALL_DISPLAY_UIDS_JSON;
-    process.env.CALL_DISPLAY_UIDS_JSON = '["screen-qa-0001"]';
-    try {
-        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'anonymous' } }), true);
-        assert.equal(isTrustedDisplay({ sub: 'untrusted-0001', firebase: { sign_in_provider: 'anonymous' } }), false);
-        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'custom' } }), false);
-        process.env.CALL_DISPLAY_UIDS_JSON = 'invalid';
-        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'anonymous' } }), false);
-    } finally { if (previous === undefined) delete process.env.CALL_DISPLAY_UIDS_JSON; else process.env.CALL_DISPLAY_UIDS_JSON = previous; }
+test('anonymous display sessions do not require numeric pairing, but admin access remains a separate identity', () => {
+    assert.equal(isAnonymousDisplaySession({ sub: 'firebase-anonymous-user', firebase: { sign_in_provider: 'anonymous' } }), true);
+    assert.equal(isAnonymousDisplaySession({ sub: 'firebase-custom-user', firebase: { sign_in_provider: 'custom' } }), false);
+    assert.equal(isAnonymousDisplaySession({ sub: '', firebase: { sign_in_provider: 'anonymous' } }), false);
 });
 
 test('Firebase preview namespace isolates server paths while production remains on the original root', () => {

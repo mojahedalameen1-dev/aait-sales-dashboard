@@ -7,7 +7,6 @@ import logoutHandler from '../server/control/logout.js';
 import meHandler from '../server/control/me.js';
 import meetingsHandler from '../server/control/meetings.js';
 import passwordHandler from '../server/control/password.js';
-import pairingHandler from '../server/control/pairing.js';
 import statusHandler from '../server/control/status.js';
 
 const handlers = new Map([
@@ -20,7 +19,6 @@ const handlers = new Map([
     ['me', meHandler],
     ['meetings', meetingsHandler],
     ['password', passwordHandler],
-    ['pairing', pairingHandler],
     ['status', statusHandler]
 ]);
 

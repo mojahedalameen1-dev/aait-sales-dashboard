@@ -1,5 +1,5 @@
 import { generateSpeechForDisplay, isValidSpeechRequest, isValidWav } from './audio-cache.js';
-import { bearerToken, firebaseDatabaseReadWithEtag, firebaseDatabaseRequest, sendError, verifyTrustedDisplayToken } from './shared.js';
+import { bearerToken, firebaseDatabaseReadWithEtag, firebaseDatabaseRequest, sendError, verifyDisplayToken } from './shared.js';
 
 const CACHE_KEY_PATTERN = /^[a-f0-9]{64}$/;
 const EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
@@ -36,7 +36,7 @@ export async function claimAudioRequest(eventId, cacheKey, {
 }
 
 export function createAudioHandler({
-    verify = verifyTrustedDisplayToken,
+    verify = verifyDisplayToken,
     readEvent = id => firebaseDatabaseRequest(`calls/public/${id}`),
     claimRequest = claimAudioRequest,
     generate = generateSpeechForDisplay

@@ -47,31 +47,6 @@ function createAnnouncementSurface() {
     return surface;
 }
 
-function createPairingSurface() {
-    const gate = document.createElement('section');
-    gate.className = 'board-pairing-gate';
-    gate.setAttribute('role', 'status');
-    gate.setAttribute('aria-live', 'polite');
-    const card = document.createElement('div');
-    card.className = 'board-pairing-card';
-    const eyebrow = document.createElement('span');
-    eyebrow.className = 'board-pairing-eyebrow';
-    eyebrow.textContent = 'إعداد شاشة العرض';
-    const title = document.createElement('h1');
-    title.textContent = 'اربط هذه الشاشة بمركز النداءات';
-    const description = document.createElement('p');
-    description.textContent = 'من مركز التحكم، أدخل الرمز الظاهر أدناه لاعتماد شاشة العرض.';
-    const code = document.createElement('strong');
-    code.className = 'board-pairing-code';
-    code.dir = 'ltr';
-    const expiration = document.createElement('small');
-    expiration.textContent = 'الرمز مؤقت ويُستخدم مرة واحدة.';
-    card.append(eyebrow, title, description, code, expiration);
-    gate.append(card);
-    document.body.append(gate);
-    return { gate, code, expiration };
-}
-
 async function firebaseIdentityRequest(config, resource, values) {
     const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${resource}?key=${encodeURIComponent(config.apiKey)}`, {
         method: 'POST',
@@ -114,7 +89,6 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     let announcementTimer = null;
     let config = null;
     let surface = null;
-    let pairingSurface = null;
     let audioQueue = [];
     let audioBusy = false;
     let eventCache = new Map();
@@ -122,72 +96,6 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     const acknowledgementChains = new Map();
     const sessionStartedAt = Date.now();
     const seenEventIds = new Set();
-
-    function showPairingCode(value, expiresAt) {
-        pairingSurface ||= createPairingSurface();
-        pairingSurface.code.textContent = value;
-        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 60000));
-        pairingSurface.expiration.textContent = remaining
-            ? `تنتهي صلاحية الرمز خلال ${remaining} دقائق.`
-            : 'انتهت صلاحية الرمز؛ جارٍ إصدار رمز جديد.';
-        pairingSurface.gate.hidden = false;
-    }
-
-    function hidePairingGate() {
-        pairingSurface?.gate.remove();
-        pairingSurface = null;
-    }
-
-    async function pairingRequest(idToken) {
-        const response = await fetch('/api/control/pairing', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-            body: JSON.stringify({ action: 'request' }),
-            cache: 'no-store'
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'تعذر إنشاء طلب الاقتران');
-        return payload;
-    }
-
-    async function pairingStatus(idToken) {
-        const response = await fetch('/api/control/pairing?mode=status', {
-            headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store'
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'تعذر التحقق من اعتماد الشاشة');
-        return payload.paired === true;
-    }
-
-    async function waitUntilPaired(idToken, initialRequest) {
-        let currentToken = idToken;
-        let expiresAt = Number(initialRequest.expiresAt) || 0;
-        let requested = initialRequest;
-        if (requested.paired) return true;
-        showPairingCode(requested.pairingCode, expiresAt);
-        while (!destroyed) {
-            try {
-                currentToken = await getScreenToken(config, storage);
-                if (await pairingStatus(currentToken)) {
-                    hidePairingGate();
-                    return true;
-                }
-                if (expiresAt <= Date.now() + 1000) {
-                    requested = await pairingRequest(currentToken);
-                    if (requested.paired) {
-                        hidePairingGate();
-                        return true;
-                    }
-                    expiresAt = Number(requested.expiresAt) || 0;
-                    showPairingCode(requested.pairingCode, expiresAt);
-                }
-            } catch {
-                if (pairingSurface) pairingSurface.expiration.textContent = 'تعذر الاتصال بمركز التحكم؛ ستتم إعادة المحاولة تلقائيًا.';
-            }
-            await new Promise(resolve => { retryTimer = setTimeout(resolve, 5000); });
-        }
-        return false;
-    }
 
     function acknowledge(eventId, status) {
         const previous = acknowledgementChains.get(eventId) || Promise.resolve();
@@ -422,13 +330,9 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                 apiKey: payload.firebase.apiKey,
                 feedPath: String(payload.firebase.feedPath || 'calls/public').split('/').map(encodeURIComponent).join('/')
             };
-            const idToken = await getScreenToken(config, storage);
-            const pairing = await pairingRequest(idToken);
-            if (await waitUntilPaired(idToken, pairing)) void consumeStream();
+            await getScreenToken(config, storage);
+            void consumeStream();
         } catch {
-            pairingSurface ||= createPairingSurface();
-            pairingSurface.code.textContent = '—';
-            pairingSurface.expiration.textContent = 'تعذر إعداد اتصال Firebase؛ تحقّق من إعدادات الشاشة ثم أعد تحميل الصفحة.';
             onConnectionChange(false);
         }
     }
@@ -443,7 +347,6 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
             void currentStreamReader?.cancel().catch(() => {});
             surface?.remove();
             surface = null;
-            hidePairingGate();
         }
     };
 }

@@ -28,24 +28,18 @@ const FIREBASE_TOKEN_SCOPE = 'https://www.googleapis.com/auth/firebase.database 
 let firebaseCertificates = { values: null, expiresAt: 0 };
 const serviceAccessTokens = new Map();
 
-export function configuredDisplayUids() {
-    try {
-        const values = JSON.parse(process.env.CALL_DISPLAY_UIDS_JSON || '[]');
-        return Array.isArray(values) ? [...new Set(values.filter(uid => typeof uid === 'string' && /^[A-Za-z0-9:_-]{8,128}$/.test(uid)))].slice(0, 5) : [];
-    } catch { return []; }
+export function isAnonymousDisplaySession(claims) {
+    return claims?.firebase?.sign_in_provider === 'anonymous'
+        && typeof claims.sub === 'string'
+        && /^[A-Za-z0-9:_-]{8,128}$/.test(claims.sub);
 }
 
-export function isTrustedDisplay(claims) {
-    return claims?.firebase?.sign_in_provider === 'anonymous' && configuredDisplayUids().includes(claims.sub);
-}
-
-export async function verifyTrustedDisplayToken(idToken) {
+export async function verifyDisplayToken(idToken) {
+    // The public meeting board uses Firebase Anonymous Auth. Admin actions remain
+    // protected separately by requireAdmin and server-checked role permissions.
     const claims = await verifyFirebaseIdToken(idToken, { allowAnonymous: true });
-    if (!isTrustedDisplay(claims)) {
-        const paired = await firebaseDatabaseRequest(`controlAuth/displays/${claims.sub}`);
-        if (!paired || paired.revokedAt || !Number.isFinite(Number(paired.pairedAt))) {
-            throw Object.assign(new Error('هذه الشاشة غير معتمدة للنداءات الصوتية'), { statusCode: 403 });
-        }
+    if (!isAnonymousDisplaySession(claims)) {
+        throw Object.assign(new Error('جلسة شاشة العرض غير صالحة'), { statusCode: 403 });
     }
     return claims;
 }
@@ -90,7 +84,6 @@ export function getFirebaseClientConfig() {
         adminsConfigured,
         rateLimitConfigured,
         sessionConfigured,
-        displayConfigured: configuredDisplayUids().length > 0,
         speechConfigured: Boolean(firebaseConfigured
             && process.env.GROQ_API_KEY?.trim()
             && serviceConfigured),

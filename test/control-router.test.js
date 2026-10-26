@@ -28,22 +28,15 @@ test('control router rejects unknown endpoint paths', async () => {
     assert.deepEqual(response.payload, { error: 'Not found' });
 });
 
-test('display pairing requests require a signed anonymous Firebase identity', async () => {
-    const previousProjectId = process.env.FIREBASE_PROJECT_ID;
-    process.env.FIREBASE_PROJECT_ID = 'aait-pairing-test';
-    try {
-        const response = makeResponse();
-        await controlHandler({
-            method: 'POST',
-            url: '/api/control?path=pairing',
-            query: { path: 'pairing' },
-            headers: {},
-            body: { action: 'request' }
-        }, response);
-        assert.equal(response.statusCode, 401);
-        assert.deepEqual(response.payload, { error: 'جلسة الدخول غير صالحة' });
-    } finally {
-        if (previousProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
-        else process.env.FIREBASE_PROJECT_ID = previousProjectId;
-    }
+test('numeric display pairing endpoint is no longer exposed', async () => {
+    const response = makeResponse();
+    await controlHandler({
+        method: 'POST',
+        url: '/api/control?path=pairing',
+        query: { path: 'pairing' },
+        headers: {},
+        body: { action: 'request' }
+    }, response);
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.payload, { error: 'Not found' });
 });

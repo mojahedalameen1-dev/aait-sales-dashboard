@@ -3,14 +3,14 @@ import {
     firebaseDatabaseRequest,
     readJsonBody,
     sendError,
-    verifyTrustedDisplayToken
+    verifyDisplayToken
 } from './shared.js';
 
 const ALLOWED_STATUSES = new Set(['displayed', 'audio_started', 'audio_failed']);
 const TERMINAL_STATUSES = new Set(['audio_started', 'audio_failed']);
 const CALL_ID_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
 
-export const createAckHandler = ({ verify = verifyTrustedDisplayToken } = {}) => async function handler(request, response) {
+export const createAckHandler = ({ verify = verifyDisplayToken } = {}) => async function handler(request, response) {
     if (request.method !== 'POST') {
         response.setHeader('Allow', 'POST');
         return response.status(405).json({ error: 'Method not allowed' });
