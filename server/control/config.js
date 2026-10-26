@@ -30,6 +30,7 @@ export default async function handler(request, response) {
         sessionConfigured: config.sessionConfigured,
         adminPasswordsConfigured,
         speechConfigured: config.speechConfigured,
+        displayConfigured: config.displayConfigured,
         firebase: config.firebase,
         missing
     });

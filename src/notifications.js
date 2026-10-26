@@ -29,6 +29,7 @@ let audioUnlockPromise = null;
 let retainedAudioPlayer = null;
 let activeAudioTask = null;
 let announcementPlayer = null;
+let announcementObjectUrl = '';
 const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
 // Track recently warned meetings to avoid spamming fallbacks
@@ -118,8 +119,8 @@ export function isAudioPlaybackEnabled() {
 }
 
 /** Play a private server-generated announcement only after the page's audio was unlocked. */
-export async function playAnnouncementAudio(audioBase64, { onStarted } = {}) {
-    if (!audioBase64 || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
+export async function playAnnouncementAudio(audioBlob, { onStarted } = {}) {
+    if (!(audioBlob instanceof Blob) || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
 
     // The call system is higher priority than a queued routine meeting reminder.
     playbackGeneration++;
@@ -138,7 +139,9 @@ export async function playAnnouncementAudio(audioBase64, { onStarted } = {}) {
         try { retainedAudioPlayer.currentTime = 0; } catch { /* ignored */ }
     }
     announcementPlayer?.pause?.();
-    announcementPlayer = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+    if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
+    announcementObjectUrl = URL.createObjectURL(audioBlob);
+    announcementPlayer = new Audio(announcementObjectUrl);
     announcementPlayer.preload = 'auto';
     announcementPlayer.volume = 1;
 
@@ -152,7 +155,11 @@ export async function playAnnouncementAudio(audioBase64, { onStarted } = {}) {
             player.removeEventListener('playing', handleStarted);
             player.removeEventListener('ended', handleEnded);
             player.removeEventListener('error', handleError);
-            if (announcementPlayer === player) announcementPlayer = null;
+            if (announcementPlayer === player) {
+                announcementPlayer = null;
+                if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
+                announcementObjectUrl = '';
+            }
             resolve(result);
         };
         const handleStarted = () => {
@@ -252,6 +259,8 @@ export function stopAudioPlayback() {
     if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
     announcementPlayer?.pause?.();
     announcementPlayer = null;
+    if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
+    announcementObjectUrl = '';
     activeAudioTask = null;
     isPlaying = false;
     updateAudioState(AUDIO_STATE.LOCKED);

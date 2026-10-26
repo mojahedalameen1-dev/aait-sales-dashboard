@@ -349,9 +349,9 @@ async function submitCall(confirmedBusy = false) {
         });
         if (confirmedBusy) closeBusyDialog();
         if (result.audioStatus === 'not_configured') {
-            showResult('تم إرسال النداء المرئي للشاشة، لكن الصوت ما راح يشتغل حتى يكتمل إعداد Azure Speech.', 'warn');
+            showResult('تم إرسال النداء المرئي للشاشة، لكن الصوت يحتاج إعداد GroqCloud على الخادم.', 'warn');
         } else if (result.audioStatus === 'failed') {
-            showResult('تم إرسال النداء المرئي للشاشة، لكن تعذّر تجهيز الصوت. راجع إعداد خدمة Azure Speech.', 'warn');
+            showResult('تم إرسال النداء المرئي للشاشة، لكن تعذّر تجهيز الصوت.', 'warn');
         } else {
             showResult('تم إرسال الأمر للشاشة. ننتظر تأكيد ظهوره وبدء الصوت…');
             void monitorCallStatus(result.eventId, result.audioStatus);
@@ -375,10 +375,12 @@ async function submitCall(confirmedBusy = false) {
 
 async function monitorCallStatus(eventId, audioStatus) {
     if (!eventId || statusTimer) clearTimeout(statusTimer);
-    for (let attempt = 0; attempt < 16; attempt++) {
+    let lastStatus = 'sent';
+    for (let attempt = 0; attempt < 40; attempt++) {
         await new Promise(resolve => { statusTimer = setTimeout(resolve, 1500); });
         try {
             const current = await apiRequest(`/api/control/status?id=${encodeURIComponent(eventId)}`);
+            lastStatus = current.status || lastStatus;
             if (current.status === 'audio_started') {
                 showResult('وصل النداء إلى الشاشة وبدأ تشغيل الصوت عليها.');
                 return;
@@ -387,14 +389,16 @@ async function monitorCallStatus(eventId, audioStatus) {
                 showResult('ظهر النداء على الشاشة، لكن تشغيل الصوت تعذّر هناك.', 'warn');
                 return;
             }
-            if (current.status === 'displayed' && audioStatus !== 'ready') {
-                showResult('ظهر النداء على الشاشة. الصوت غير مهيأ في إعدادات Azure Speech.', 'warn');
+            if (current.status === 'displayed' && ['failed', 'not_configured'].includes(audioStatus)) {
+                showResult('ظهر النداء على الشاشة. خدمة الصوت غير مهيأة.', 'warn');
                 return;
             }
             if (current.status === 'displayed') showResult('ظهر النداء على الشاشة؛ ننتظر بدء التشغيل الصوتي…');
         } catch { /* Keep the most recent truthful status visible if the board is offline. */ }
     }
-    showResult('أُرسل الأمر، لكن ما وصلنا تأكيد من شاشة العرض. تحقق من اتصال الشاشة والصوت.', 'warn');
+    showResult(lastStatus === 'displayed'
+        ? 'ظهر النداء على الشاشة، لكن ما تأكد بدء الصوت حتى الآن. راجع حالة الصوت واتصال شاشة العرض.'
+        : 'أُرسل الأمر، لكن ما وصلنا تأكيد من شاشة العرض. تحقق من اتصال الشاشة والصوت.', 'warn');
 }
 
 async function handleLogin(event) {
@@ -495,10 +499,10 @@ function openWorkspace() {
         backendNotice.hidden = false;
         backendNotice.textContent = 'قاعدة النداءات ما اكتمل إعدادها على الخادم، لذلك الإرسال متوقف حاليًا.';
     }
-    if (!clientConfig.speechConfigured) {
+    if (!clientConfig.speechConfigured || !clientConfig.displayConfigured) {
         const speech = document.getElementById('speech-warning');
         speech.hidden = false;
-        speech.textContent = 'الصوت يحتاج إعداد Azure Speech؛ يمكن تجهيز الواجهة لكن لن يدّعي النظام تشغيل الصوت قبل تأكيد الشاشة.';
+        speech.textContent = 'توليد الأصوات الجديدة يحتاج إعداد GroqCloud واعتماد هوية شاشة العرض؛ الأصوات المحفوظة على الشاشة تبقى متاحة.';
     }
     renderEmployees();
     setCallTypeAvailability();
@@ -509,7 +513,7 @@ async function init() {
     refreshIcons();
     setConnectionState('جاري التحقق من الاتصال', 'pending');
     if (DESIGN_PREVIEW) {
-        clientConfig = { serviceConfigured: true, speechConfigured: true };
+        clientConfig = { serviceConfigured: true, speechConfigured: true, displayConfigured: true };
         actor = { roleId: 'business_development_manager', roleLabel: 'مدير تطوير الأعمال' };
         meetings = [{
             id: 'preview-meeting-81747',

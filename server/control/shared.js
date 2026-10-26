@@ -24,9 +24,26 @@ const SESSION_COOKIE_NAME = 'aait_control_session';
 const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 
 const FIREBASE_CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
-const TOKEN_SCOPE = 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email';
+const FIREBASE_TOKEN_SCOPE = 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email';
 let firebaseCertificates = { values: null, expiresAt: 0 };
-let serviceAccessToken = { value: '', expiresAt: 0 };
+const serviceAccessTokens = new Map();
+
+export function configuredDisplayUids() {
+    try {
+        const values = JSON.parse(process.env.CALL_DISPLAY_UIDS_JSON || '[]');
+        return Array.isArray(values) ? [...new Set(values.filter(uid => typeof uid === 'string' && /^[A-Za-z0-9:_-]{8,128}$/.test(uid)))].slice(0, 5) : [];
+    } catch { return []; }
+}
+
+export function isTrustedDisplay(claims) {
+    return claims?.firebase?.sign_in_provider === 'anonymous' && configuredDisplayUids().includes(claims.sub);
+}
+
+export async function verifyTrustedDisplayToken(idToken) {
+    const claims = await verifyFirebaseIdToken(idToken, { allowAnonymous: true });
+    if (!isTrustedDisplay(claims)) throw Object.assign(new Error('هذه الشاشة غير معتمدة للنداءات الصوتية'), { statusCode: 403 });
+    return claims;
+}
 
 export function getFirebaseClientConfig() {
     const apiKey = process.env.FIREBASE_WEB_API_KEY?.trim() || '';
@@ -54,7 +71,10 @@ export function getFirebaseClientConfig() {
         adminsConfigured,
         rateLimitConfigured,
         sessionConfigured,
-        speechConfigured: Boolean(process.env.AZURE_SPEECH_KEY?.trim() && process.env.AZURE_SPEECH_REGION?.trim()),
+        displayConfigured: configuredDisplayUids().length > 0,
+        speechConfigured: Boolean(firebaseConfigured
+            && process.env.GROQ_API_KEY?.trim()
+            && serviceConfigured),
         firebase: firebaseConfigured ? { apiKey, projectId, databaseUrl: databaseUrl.replace(/\/$/, '') } : null,
         missing: [
             ...(!apiKey ? ['FIREBASE_WEB_API_KEY'] : []),
@@ -347,8 +367,9 @@ function base64Url(value) {
     return Buffer.from(value).toString('base64url');
 }
 
-async function getServiceAccountAccessToken() {
-    if (serviceAccessToken.value && serviceAccessToken.expiresAt > Date.now() + 30000) return serviceAccessToken.value;
+async function getServiceAccountAccessToken(scope = FIREBASE_TOKEN_SCOPE) {
+    const cached = serviceAccessTokens.get(scope);
+    if (cached?.value && cached.expiresAt > Date.now() + 30000) return cached.value;
     let account;
     try { account = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || ''); }
     catch { account = null; }
@@ -360,7 +381,7 @@ async function getServiceAccountAccessToken() {
     const now = Math.floor(Date.now() / 1000);
     const unsigned = `${base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64Url(JSON.stringify({
         iss: account.client_email,
-        scope: TOKEN_SCOPE,
+        scope,
         aud: tokenUri,
         iat: now,
         exp: now + 3600
@@ -377,8 +398,9 @@ async function getServiceAccountAccessToken() {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.access_token) throw Object.assign(new Error('تعذر الاتصال بخدمة Firebase'), { statusCode: 502 });
-    serviceAccessToken = { value: result.access_token, expiresAt: Date.now() + (Number(result.expires_in) || 3600) * 1000 };
-    return serviceAccessToken.value;
+    const token = { value: result.access_token, expiresAt: Date.now() + (Number(result.expires_in) || 3600) * 1000 };
+    serviceAccessTokens.set(scope, token);
+    return token.value;
 }
 
 export async function firebaseDatabaseRequest(path, method = 'GET', body, extraHeaders = {}) {
@@ -463,56 +485,4 @@ export async function clearLoginAttempts(addressKey) {
         }
     }
     throw Object.assign(new Error('تعذر تحديث محاولات الدخول'), { statusCode: 503 });
-}
-
-export async function synthesizeArabicSpeech(text) {
-    const key = process.env.AZURE_SPEECH_KEY?.trim();
-    const region = process.env.AZURE_SPEECH_REGION?.trim();
-    if (!key || !region) return { audioBase64: '', status: 'not_configured' };
-    const voice = process.env.AZURE_SPEECH_VOICE?.trim() || 'ar-SA-HamedNeural';
-    if (!/^[a-z0-9]+$/i.test(region) || !/^[A-Za-z0-9-]{3,64}$/.test(voice)) return { audioBase64: '', status: 'failed' };
-    const escaped = String(text).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]);
-    const xml = `<speak version="1.0" xml:lang="ar-SA"><voice xml:lang="ar-SA" name="${voice}">${escaped}</voice></speak>`;
-    const response = await fetch(`https://${encodeURIComponent(region)}.tts.speech.microsoft.com/cognitiveservices/v1`, {
-        method: 'POST',
-        headers: {
-            'Ocp-Apim-Subscription-Key': key,
-            'Content-Type': 'application/ssml+xml',
-            'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
-            'User-Agent': 'aait-sales-control'
-        },
-        body: xml,
-        signal: AbortSignal.timeout(12000)
-    });
-    if (!response.ok) return { audioBase64: '', status: 'failed' };
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > 1024 * 1024) return { audioBase64: '', status: 'failed' };
-    return { audioBase64: bytes.toString('base64'), status: 'ready' };
-}
-
-export async function getOrCreateSpeech(text) {
-    const { createHash } = await import('node:crypto');
-    const cacheKey = createHash('sha256').update(text).digest('hex');
-    const cachePath = `audioCache/${cacheKey}`;
-    try {
-        const cached = await firebaseDatabaseRequest(cachePath);
-        if (cached?.audioBase64 && Number(cached.expiresAt) > Date.now()) {
-            return { audioBase64: cached.audioBase64, status: 'ready', cached: true };
-        }
-    } catch { /* the visual call must still be sent if speech cache is unavailable */ }
-    try {
-        const generated = await synthesizeArabicSpeech(text);
-        if (generated.status === 'ready') {
-            try {
-                await firebaseDatabaseRequest(cachePath, 'PUT', {
-                    audioBase64: generated.audioBase64,
-                    createdAt: Date.now(),
-                    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
-                });
-            } catch { /* use this in-memory result even if cache persistence fails */ }
-        }
-        return generated;
-    } catch {
-        return { audioBase64: '', status: 'failed' };
-    }
 }

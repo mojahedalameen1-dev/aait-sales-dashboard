@@ -1,4 +1,5 @@
 import ackHandler from '../server/control/ack.js';
+import audioHandler from '../server/control/audio.js';
 import callsHandler from '../server/control/calls.js';
 import configHandler from '../server/control/config.js';
 import loginHandler from '../server/control/login.js';
@@ -10,6 +11,7 @@ import statusHandler from '../server/control/status.js';
 
 const handlers = new Map([
     ['ack', ackHandler],
+    ['audio', audioHandler],
     ['calls', callsHandler],
     ['config', configHandler],
     ['login', loginHandler],

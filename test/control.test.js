@@ -8,9 +8,10 @@ import {
     listSelectableMeetings,
     meetingAssignedToEmployee,
     sanitizeMeetingForAdmin,
-    verifyFirebaseIdToken
+    verifyFirebaseIdToken,
+    isTrustedDisplay
 } from '../server/control/shared.js';
-import { makeCallText, sanitizeSpeechMeetingTitle } from '../server/control/calls.js';
+import { makeCallText, sanitizeSpeechMeetingTitle, prepareCallSpeech } from '../server/control/calls.js';
 import { createRiyadhPrayerAlerts } from '../src/prayer-alerts.js';
 
 function memoryStorage() {
@@ -46,10 +47,44 @@ test('fixed roles grant only the explicitly documented call types', () => {
 
 test('voice phrases identify the calling manager and safely name the selected meeting', () => {
     const mahmoud = CONTROL_EMPLOYEES.find(employee => employee.id === 'mahmoud');
-    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.general_manager.callerName), 'المهندس محمود، يرجى التوجه إلى مكتب الأستاذ محمد الزهراني.');
+    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.general_manager.callerName), 'تنبيه إداري. المهندس مَحْمُود، يُرجى التوجّه إلى مكتب الأستاذ مُحَمَّد الزَّهْرَانِي. شكرًا لتعاونك.');
     assert.equal(sanitizeSpeechMeetingTitle('اجتماع تطوير الشبكة AA81747 https://meet.google.com/secret'), 'اجتماع تطوير الشبكة');
-    assert.equal(makeCallText(mahmoud, 'meeting', '', 'مناقشة مشروع التطوير'), 'المهندس محمود، يرجى الدخول إلى اجتماع مناقشة مشروع التطوير.');
+    assert.equal(makeCallText(mahmoud, 'meeting', '', 'مناقشة مشروع التطوير'), 'تنبيه إداري. المهندس مَحْمُود، يُرجى الدخول إلى الاجتماع: مناقشة مشروع التطوير. شكرًا لتعاونك.');
     assert.equal(sanitizeSpeechMeetingTitle('اجتماع بيانات عميل خاص 0501234567'), 'الاجتماع المحدد');
+});
+
+test('the 15 fixed office announcements fit Groq input limits and remain distinct by employee and manager', () => {
+    const phrases = [];
+    for (const employee of CONTROL_EMPLOYEES) {
+        for (const role of Object.values(ADMIN_ROLES)) {
+            const phrase = makeCallText(employee, 'office', role.callerName);
+            assert.ok(Array.from(phrase).length <= 200);
+            phrases.push(phrase);
+        }
+    }
+    assert.equal(phrases.length, 15);
+    assert.equal(new Set(phrases).size, 15);
+});
+
+test('long meeting titles fit the 200-character model limit and bad speech settings preserve visual delivery', () => {
+    const employee = CONTROL_EMPLOYEES[0];
+    assert.ok(Array.from(makeCallText(employee, 'meeting', '', 'مناقشة تطوير النظام '.repeat(30))).length <= 200);
+    const previous = process.env.GROQ_VOICE;
+    process.env.GROQ_VOICE = 'invalid';
+    try { assert.deepEqual(prepareCallSpeech(employee, 'office', ADMIN_ROLES.general_manager.callerName), { descriptor: null, audioCacheKey: '', audioStatus: 'failed' }); }
+    finally { if (previous === undefined) delete process.env.GROQ_VOICE; else process.env.GROQ_VOICE = previous; }
+});
+
+test('unknown anonymous identities cannot consume a trusted display generation attempt', () => {
+    const previous = process.env.CALL_DISPLAY_UIDS_JSON;
+    process.env.CALL_DISPLAY_UIDS_JSON = '["screen-qa-0001"]';
+    try {
+        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'anonymous' } }), true);
+        assert.equal(isTrustedDisplay({ sub: 'untrusted-0001', firebase: { sign_in_provider: 'anonymous' } }), false);
+        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'custom' } }), false);
+        process.env.CALL_DISPLAY_UIDS_JSON = 'invalid';
+        assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'anonymous' } }), false);
+    } finally { if (previous === undefined) delete process.env.CALL_DISPLAY_UIDS_JSON; else process.env.CALL_DISPLAY_UIDS_JSON = previous; }
 });
 
 test('busy detection finds only a matching assigned engineer in a live, non-cancelled meeting', () => {

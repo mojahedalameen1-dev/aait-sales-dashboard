@@ -3,13 +3,13 @@ import {
     CONTROL_EMPLOYEES,
     firebaseDatabaseRequest,
     getBusyMeetingDetails,
-    getOrCreateSpeech,
     listSelectableMeetings,
     loadFreshMeetings,
     readJsonBody,
     requireAdmin,
     sendError
 } from './shared.js';
+import { prepareSpeechRequest, SPEECH_MAX_CHARS } from './audio-cache.js';
 
 const CALL_TYPES = new Set(['office', 'meeting']);
 const CALL_ID_PATTERN = /^[A-Za-z0-9_-]{16,80}$/;
@@ -29,18 +29,55 @@ export function sanitizeSpeechMeetingTitle(project) {
 }
 
 export function makeCallText(employee, callType, callerName, meetingTitle = '') {
-    const employeeName = employee.name.replace(/^م\.\s*/, '');
-    return callType === 'office'
-        ? `المهندس ${employeeName}، يرجى التوجه إلى مكتب ${callerName}.`
-        : `المهندس ${employeeName}، يرجى الدخول إلى اجتماع ${sanitizeSpeechMeetingTitle(meetingTitle)}.`;
+    const employeeName = {
+        mojahed: 'مُجَاهِد',
+        mahmoud: 'مَحْمُود',
+        ashraf: 'أَشْرَف',
+        hossam: 'حُسَام',
+        shady: 'شَادِي'
+    }[employee.id] || employee.name.replace(/^م\.\s*/, '');
+    const callers = {
+        'الأستاذ محمد الزهراني': 'الأستاذ مُحَمَّد الزَّهْرَانِي',
+        'المهندس محمد القحطاني': 'المهندس مُحَمَّد القَحْطَانِي',
+        'الأستاذ محمد العتيبي': 'الأستاذ مُحَمَّد العُتَيْبِي'
+    };
+    const spokenCaller = callers[callerName] || callerName;
+    if (callType === 'office') return `تنبيه إداري. المهندس ${employeeName}، يُرجى التوجّه إلى مكتب ${spokenCaller}. شكرًا لتعاونك.`;
+    const prefix = `تنبيه إداري. المهندس ${employeeName}، يُرجى الدخول إلى الاجتماع: `;
+    const suffix = '. شكرًا لتعاونك.';
+    const available = SPEECH_MAX_CHARS - Array.from(prefix + suffix).length;
+    const title = sanitizeSpeechMeetingTitle(meetingTitle);
+    const characters = Array.from(title);
+    let spokenTitle = title;
+    if (characters.length > available) {
+        spokenTitle = characters.slice(0, available).join('').replace(/\s+\S*$/, '').trim();
+        if (!spokenTitle) spokenTitle = 'الاجتماع المحدد';
+    }
+    return prefix + spokenTitle + suffix;
+}
+
+export function prepareCallSpeech(employee, callType, callerName, meetingTitle = '') {
+    try {
+        const descriptor = prepareSpeechRequest(makeCallText(employee, callType, callerName, meetingTitle));
+        return { descriptor, audioCacheKey: descriptor.cacheKey, audioStatus: 'pending' };
+    } catch {
+        // Broken optional speech settings must never suppress the visual announcement.
+        return { descriptor: null, audioCacheKey: '', audioStatus: 'failed' };
+    }
 }
 
 async function removeExpiredCalls() {
-    const calls = await firebaseDatabaseRequest('calls/public');
+    const [calls, audioRequests] = await Promise.all([
+        firebaseDatabaseRequest('calls/public'),
+        firebaseDatabaseRequest('calls/audioRequests')
+    ]);
     const now = Date.now();
-    await Promise.all(Object.entries(calls || {})
-        .filter(([, event]) => !event || Number(event.expiresAt) <= now)
-        .map(([id]) => firebaseDatabaseRequest(`calls/public/${id}`, 'DELETE')));
+    await Promise.all([
+        ...Object.entries(calls || {}).filter(([, event]) => !event || Number(event.expiresAt) <= now)
+            .map(([id]) => firebaseDatabaseRequest(`calls/public/${id}`, 'DELETE')),
+        ...Object.entries(audioRequests || {}).filter(([, item]) => !item || Number(item.expiresAt) <= now)
+            .map(([id]) => firebaseDatabaseRequest(`calls/audioRequests/${id}`, 'DELETE'))
+    ]);
 }
 
 export default async function handler(request, response) {
@@ -96,21 +133,27 @@ export default async function handler(request, response) {
             });
         }
 
-        // Project titles are spoken only for meeting calls; sensitive/customer markers, ticket IDs
-        // and links are removed before synthesis, and the raw phrase is never persisted in the event.
-        const speechText = makeCallText(employee, callType, actorRole.callerName, selectedMeeting?.project);
-        const speech = await getOrCreateSpeech(speechText);
+        // Only a private, short-lived text descriptor is retained. No audio bytes or meeting
+        // titles are placed in the public display feed or in Firestore.
+        const speech = prepareCallSpeech(employee, callType, actorRole.callerName, selectedMeeting?.project);
         await removeExpiredCalls();
+        const createdAt = Date.now();
+        const expiresAt = createdAt + 10 * 60 * 1000;
+        if (speech.descriptor) {
+            await firebaseDatabaseRequest(`calls/audioRequests/${callId}`, 'PUT', {
+                ...speech.descriptor, expiresAt, generationAttempted: false
+            });
+        }
         const event = {
             id: callId,
             employeeId: employee.id,
             employeeName: employee.name,
             callType,
-            audioBase64: speech.audioBase64,
-            audioStatus: speech.status,
+            audioCacheKey: speech.audioCacheKey,
+            audioStatus: speech.audioStatus,
             status: 'sent',
-            createdAt: Date.now(),
-            expiresAt: Date.now() + 10 * 60 * 1000
+            createdAt,
+            expiresAt
         };
         await firebaseDatabaseRequest(`calls/public/${callId}`, 'PUT', event);
         response.setHeader('Cache-Control', 'no-store');
@@ -118,7 +161,8 @@ export default async function handler(request, response) {
             eventId: callId,
             status: event.status,
             audioStatus: event.audioStatus,
-            speechConfigured: event.audioStatus !== 'not_configured',
+            audioCache: 'display-local',
+            speechConfigured: Boolean(process.env.GROQ_API_KEY?.trim()),
             meeting: selectedMeeting ? { id: selectedMeeting.id, title: selectedMeeting.project } : null
         });
     } catch (error) {

@@ -8,6 +8,7 @@ import controlMeApi from './server/control/me.js';
 import controlMeetingsApi from './server/control/meetings.js';
 import controlCallsApi from './server/control/calls.js';
 import controlAckApi from './server/control/ack.js';
+import controlAudioApi from './server/control/audio.js';
 import controlStatusApi from './server/control/status.js';
 import controlLoginApi from './server/control/login.js';
 import controlPasswordApi from './server/control/password.js';
@@ -22,6 +23,7 @@ const LOCAL_API_HANDLERS = new Map([
   ['/api/control/meetings', controlMeetingsApi],
   ['/api/control/calls', controlCallsApi],
   ['/api/control/ack', controlAckApi],
+  ['/api/control/audio', controlAudioApi],
   ['/api/control/status', controlStatusApi],
   ['/api/control/login', controlLoginApi],
   ['/api/control/password', controlPasswordApi],
@@ -47,6 +49,10 @@ function localMeetingsApi() {
         response.json = payload => {
           response.setHeader('Content-Type', 'application/json; charset=utf-8');
           response.end(JSON.stringify(payload));
+          return response;
+        };
+        response.send = body => {
+          response.end(body);
           return response;
         };
 

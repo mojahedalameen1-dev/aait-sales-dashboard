@@ -1,4 +1,5 @@
 import { isAudioPlaybackEnabled, playAnnouncementAudio } from './notifications.js';
+import { createAnnouncementAudioCache, requestPersistentAudioStorage } from './announcement-audio-cache.js';
 
 const BOARD_AUTH_KEY = 'aait_board_anonymous_auth_v1';
 const PROCESSED_KEY = 'aait_board_processed_calls_v1';
@@ -13,7 +14,8 @@ function readStoredJson(storage, key, fallback) {
 function saveProcessed(storage, id) {
     const values = readStoredJson(storage, PROCESSED_KEY, []);
     if (!values.includes(id)) values.push(id);
-    storage.setItem(PROCESSED_KEY, JSON.stringify(values.slice(-120)));
+    try { storage.setItem(PROCESSED_KEY, JSON.stringify(values.slice(-120))); }
+    catch { /* The receiver also keeps an in-page set when browser storage is blocked. */ }
 }
 
 function createAnnouncementSurface() {
@@ -70,18 +72,18 @@ async function getScreenToken(config, storage, forceRefresh = false) {
         });
         const payload = await response.json().catch(() => ({}));
         if (response.ok && payload.id_token) {
-            session = { idToken: payload.id_token, refreshToken: payload.refresh_token, expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000 };
+            session = { idToken: payload.id_token, refreshToken: payload.refresh_token, uid: payload.user_id || session.uid, expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000 };
             storage.setItem(BOARD_AUTH_KEY, JSON.stringify(session));
             return session.idToken;
         }
     }
     session = await firebaseIdentityRequest(config, 'accounts:signUp', { returnSecureToken: true });
-    const saved = { idToken: session.idToken, refreshToken: session.refreshToken, expiresAt: Date.now() + Number(session.expiresIn || 3600) * 1000 };
+    const saved = { idToken: session.idToken, refreshToken: session.refreshToken, uid: session.localId, expiresAt: Date.now() + Number(session.expiresIn || 3600) * 1000 };
     storage.setItem(BOARD_AUTH_KEY, JSON.stringify(saved));
     return saved.idToken;
 }
 
-export function createCallReceiver({ storage = globalThis.localStorage, onConnectionChange = () => {} } = {}) {
+export function createCallReceiver({ storage = globalThis.localStorage, onConnectionChange = () => {}, audioCache = createAnnouncementAudioCache() } = {}) {
     let destroyed = false;
     let retryDelay = 1800;
     let retryTimer = null;
@@ -94,6 +96,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     let currentStreamReader = null;
     const acknowledgementChains = new Map();
     const sessionStartedAt = Date.now();
+    const seenEventIds = new Set();
 
     function acknowledge(eventId, status) {
         const previous = acknowledgementChains.get(eventId) || Promise.resolve();
@@ -128,14 +131,28 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     }
 
     function markDisplayed(event) {
+        if (globalThis.navigator?.locks?.request) {
+            let callbackStarted = false;
+            void globalThis.navigator.locks.request(`aait-call-delivery-${event.id}`, { ifAvailable: true }, lock => {
+                callbackStarted = true;
+                if (lock && !destroyed) markDisplayedOnce(event);
+            }).catch(() => { if (!callbackStarted && !destroyed) markDisplayedOnce(event); });
+            return;
+        }
+        markDisplayedOnce(event);
+    }
+
+    function markDisplayedOnce(event) {
         const alreadyProcessed = readStoredJson(storage, PROCESSED_KEY, []);
-        if (alreadyProcessed.includes(event.id)) return;
+        if (seenEventIds.has(event.id) || alreadyProcessed.includes(event.id)) return;
         if (Number(event.expiresAt) <= Date.now() || Number(event.createdAt) < Math.max(sessionStartedAt - RECEIVE_WINDOW_MS, Date.now() - RECEIVE_WINDOW_MS)) return;
         // Persist before UI/audio so reloads and reconnects never replay this event.
+        seenEventIds.add(event.id);
         saveProcessed(storage, event.id);
-        renderCall(event, event.audioStatus === 'ready' ? 'جاري توصيل النداء الصوتي…' : 'ظهر النداء على الشاشة');
+        const canPlay = ['pending', 'ready'].includes(event.audioStatus) && /^[a-f0-9]{64}$/.test(event.audioCacheKey || '');
+        renderCall(event, canPlay ? 'جاري توصيل النداء الصوتي…' : 'ظهر النداء على الشاشة');
         void acknowledge(event.id, 'displayed');
-        if (event.audioStatus === 'ready' && event.audioBase64) {
+        if (canPlay) {
             audioQueue.push({ event, expiresAt: Date.now() + 45000 });
             if (!isAudioPlaybackEnabled()) {
                 surface._slots.status.textContent = 'الصوت مقفل؛ فعّل الصوت من الشريط السفلي';
@@ -165,7 +182,32 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                 void acknowledge(item.event.id, 'audio_failed');
                 return;
             }
-            const result = await playAnnouncementAudio(item.event.audioBase64, {
+            const cachedAudio = await audioCache.getOrCreate({
+                cacheKey: item.event.audioCacheKey,
+                callType: item.event.callType,
+                loadAsset: async () => {
+                    const response = await fetch(`/audio/calls/${item.event.audioCacheKey}.wav`, { cache: 'force-cache' });
+                    if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/')) return null;
+                    return response.blob();
+                },
+                loadGenerated: async () => {
+                    const idToken = await getScreenToken(config, storage);
+                    const audioUrl = new URL('/api/control/audio', window.location.origin);
+                    audioUrl.searchParams.set('key', item.event.audioCacheKey);
+                    audioUrl.searchParams.set('event', item.event.id);
+                    const response = await fetch(audioUrl, {
+                        headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store'
+                    });
+                    if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/wav')) {
+                        throw new Error('تعذر تحميل ملف صوت النداء');
+                    }
+                    return response.blob();
+                }
+            });
+            if (cachedAudio.warning) {
+                console.warn('[Audio cache] تعذّر حفظ الصوت محليًا؛ لن يؤثر ذلك على تشغيل النداء الحالي.');
+            }
+            const result = await playAnnouncementAudio(cachedAudio.blob, {
                 onStarted: () => {
                     renderCall(item.event, 'بدأ تشغيل الصوت على شاشة العرض');
                     void acknowledge(item.event.id, 'audio_started');
@@ -176,6 +218,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                 void acknowledge(item.event.id, 'audio_failed');
             }
         } catch {
+            renderCall(item.event, 'ظهر النداء، لكن تعذّر تجهيز الصوت على شاشة العرض');
             void acknowledge(item.event.id, 'audio_failed');
         } finally {
             audioBusy = false;
@@ -275,6 +318,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     }
 
     async function start() {
+        void requestPersistentAudioStorage();
         try {
             const response = await fetch('/api/control/config', { cache: 'no-store' });
             const payload = await response.json();
