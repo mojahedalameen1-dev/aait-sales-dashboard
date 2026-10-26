@@ -41,8 +41,27 @@ export function isTrustedDisplay(claims) {
 
 export async function verifyTrustedDisplayToken(idToken) {
     const claims = await verifyFirebaseIdToken(idToken, { allowAnonymous: true });
-    if (!isTrustedDisplay(claims)) throw Object.assign(new Error('هذه الشاشة غير معتمدة للنداءات الصوتية'), { statusCode: 403 });
+    if (!isTrustedDisplay(claims)) {
+        const paired = await firebaseDatabaseRequest(`controlAuth/displays/${claims.sub}`);
+        if (!paired || paired.revokedAt || !Number.isFinite(Number(paired.pairedAt))) {
+            throw Object.assign(new Error('هذه الشاشة غير معتمدة للنداءات الصوتية'), { statusCode: 403 });
+        }
+    }
     return claims;
+}
+
+export function firebaseDataNamespace() {
+    const value = String(process.env.FIREBASE_DATA_NAMESPACE || '').trim().replace(/^\/+|\/+$/g, '');
+    if (value && (value !== 'preview' || process.env.VERCEL_ENV === 'production')) {
+        throw Object.assign(new Error('مساحة بيانات Firebase غير صالحة'), { statusCode: 503 });
+    }
+    return value;
+}
+
+export function firebaseDatabasePath(path) {
+    const cleanPath = String(path || '').replace(/^\/+|\/+$/g, '');
+    const namespace = firebaseDataNamespace();
+    return namespace ? `${namespace}/${cleanPath}` : cleanPath;
 }
 
 export function getFirebaseClientConfig() {
@@ -75,7 +94,12 @@ export function getFirebaseClientConfig() {
         speechConfigured: Boolean(firebaseConfigured
             && process.env.GROQ_API_KEY?.trim()
             && serviceConfigured),
-        firebase: firebaseConfigured ? { apiKey, projectId, databaseUrl: databaseUrl.replace(/\/$/, '') } : null,
+        firebase: firebaseConfigured ? {
+            apiKey,
+            projectId,
+            databaseUrl: databaseUrl.replace(/\/$/, ''),
+            feedPath: firebaseDatabasePath('calls/public')
+        } : null,
         missing: [
             ...(!apiKey ? ['FIREBASE_WEB_API_KEY'] : []),
             ...(!projectId ? ['FIREBASE_PROJECT_ID'] : []),
@@ -121,12 +145,17 @@ async function getFirebaseCertificates() {
 
 export async function verifyFirebaseIdToken(idToken, { allowAnonymous = false } = {}) {
     const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
-    if (!projectId || typeof idToken !== 'string' || idToken.length > 8192) throw new Error('جلسة الدخول غير صالحة');
+    if (!projectId) throw Object.assign(new Error('إعداد Firebase غير مكتمل'), { statusCode: 503 });
+    if (typeof idToken !== 'string' || !idToken || idToken.length > 8192) {
+        throw Object.assign(new Error('جلسة الدخول غير صالحة'), { statusCode: 401 });
+    }
     const parts = idToken.split('.');
-    if (parts.length !== 3) throw new Error('جلسة الدخول غير صالحة');
+    if (parts.length !== 3) throw Object.assign(new Error('جلسة الدخول غير صالحة'), { statusCode: 401 });
     const header = decodeJwtPart(parts[0]);
     const claims = decodeJwtPart(parts[1]);
-    if (!header || header.alg !== 'RS256' || !header.kid || !claims) throw new Error('جلسة الدخول غير صالحة');
+    if (!header || header.alg !== 'RS256' || !header.kid || !claims) {
+        throw Object.assign(new Error('جلسة الدخول غير صالحة'), { statusCode: 401 });
+    }
     const now = Math.floor(Date.now() / 1000);
     if (claims.aud !== projectId
         || claims.iss !== `https://securetoken.google.com/${projectId}`
@@ -134,21 +163,27 @@ export async function verifyFirebaseIdToken(idToken, { allowAnonymous = false } 
         || claims.sub !== claims.user_id && claims.user_id !== undefined
         || !Number.isFinite(claims.exp) || claims.exp <= now
         || !Number.isFinite(claims.iat) || claims.iat > now + 60) {
-        throw new Error('انتهت صلاحية جلسة الدخول أو لم تعد صالحة');
+        throw Object.assign(new Error('انتهت صلاحية جلسة الدخول أو لم تعد صالحة'), { statusCode: 401 });
     }
     const certificates = await getFirebaseCertificates();
     const certificate = certificates[header.kid];
     if (!certificate) {
         firebaseCertificates.expiresAt = 0;
-        throw new Error('تعذر التحقق من توقيع جلسة الدخول');
+        throw Object.assign(new Error('تعذر التحقق من توقيع جلسة الدخول'), { statusCode: 401 });
     }
     const verifier = createVerify('RSA-SHA256');
     verifier.update(`${parts[0]}.${parts[1]}`);
     verifier.end();
-    if (!verifier.verify(certificate, Buffer.from(parts[2], 'base64url'))) throw new Error('توقيع جلسة الدخول غير صالح');
+    if (!verifier.verify(certificate, Buffer.from(parts[2], 'base64url'))) {
+        throw Object.assign(new Error('توقيع جلسة الدخول غير صالح'), { statusCode: 401 });
+    }
     const provider = claims.firebase?.sign_in_provider;
-    if (provider === 'anonymous' && !allowAnonymous) throw new Error('هذه الجلسة لا تملك صلاحية مسؤول');
-    if (allowAnonymous && provider !== 'anonymous') throw new Error('جلسة شاشة العرض غير صالحة');
+    if (provider === 'anonymous' && !allowAnonymous) {
+        throw Object.assign(new Error('هذه الجلسة لا تملك صلاحية مسؤول'), { statusCode: 403 });
+    }
+    if (allowAnonymous && provider !== 'anonymous') {
+        throw Object.assign(new Error('جلسة شاشة العرض غير صالحة'), { statusCode: 403 });
+    }
     return claims;
 }
 
@@ -408,7 +443,7 @@ export async function firebaseDatabaseRequest(path, method = 'GET', body, extraH
     if (!config.firebaseConfigured) throw Object.assign(new Error('إعدادات Firebase غير مكتملة'), { statusCode: 503 });
     const token = await getServiceAccountAccessToken();
     const base = config.firebase.databaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${base}/${path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}.json`, {
+    const response = await fetch(`${base}/${firebaseDatabasePath(path).split('/').map(encodeURIComponent).join('/')}.json`, {
         method,
         headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...extraHeaders },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -424,7 +459,7 @@ export async function firebaseDatabaseReadWithEtag(path) {
     if (!config.firebaseConfigured) throw Object.assign(new Error('إعدادات Firebase غير مكتملة'), { statusCode: 503 });
     const token = await getServiceAccountAccessToken();
     const base = config.firebase.databaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${base}/${path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/')}.json`, {
+    const response = await fetch(`${base}/${firebaseDatabasePath(path).split('/').map(encodeURIComponent).join('/')}.json`, {
         headers: { Authorization: `Bearer ${token}`, 'X-Firebase-ETag': 'true' },
         signal: AbortSignal.timeout(10000)
     });

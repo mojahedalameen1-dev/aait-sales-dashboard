@@ -59,6 +59,20 @@
           </div>
         </div>
 
+        <section class="display-pairing-panel" aria-labelledby="display-pairing-heading">
+          <div class="section-heading">
+            <span class="section-icon"><i data-lucide="monitor-check"></i></span>
+            <div><h2 id="display-pairing-heading">ربط شاشة العرض</h2><p>افتح الصفحة الرئيسية على جهاز العرض ثم أدخل رمز الاقتران الظاهر على الشاشة.</p></div>
+          </div>
+          <form id="display-pairing-form" class="display-pairing-form" autocomplete="off">
+            <label class="visually-hidden" for="display-pairing-code">رمز اقتران شاشة العرض</label>
+            <input id="display-pairing-code" name="pairingCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{8}" placeholder="00000000" aria-describedby="display-pairing-result" required />
+            <button id="display-pairing-submit" class="button button-primary" type="submit"><i data-lucide="link-2"></i><span>اعتماد الشاشة</span></button>
+          </form>
+          <p id="display-pairing-result" class="inline-message" role="status" hidden></p>
+          <div id="paired-display-list" class="paired-display-list" aria-live="polite"></div>
+        </section>
+
         <section id="password-panel" class="password-panel" hidden aria-labelledby="password-heading">
           <div class="section-heading">
             <span class="section-icon"><i data-lucide="key-round"></i></span>

@@ -7,6 +7,14 @@
         ".read": "auth != null && auth.token.firebase.sign_in_provider == 'anonymous'",
         ".write": false
       }
+    },
+    "preview": {
+      "calls": {
+        "public": {
+          ".read": "auth != null && auth.token.firebase.sign_in_provider == 'anonymous'",
+          ".write": false
+        }
+      }
     }
   }
 }

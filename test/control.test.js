@@ -9,7 +9,9 @@ import {
     meetingAssignedToEmployee,
     sanitizeMeetingForAdmin,
     verifyFirebaseIdToken,
-    isTrustedDisplay
+    isTrustedDisplay,
+    firebaseDataNamespace,
+    firebaseDatabasePath
 } from '../server/control/shared.js';
 import { makeCallText, sanitizeSpeechMeetingTitle, prepareCallSpeech } from '../server/control/calls.js';
 import { createRiyadhPrayerAlerts } from '../src/prayer-alerts.js';
@@ -85,6 +87,26 @@ test('unknown anonymous identities cannot consume a trusted display generation a
         process.env.CALL_DISPLAY_UIDS_JSON = 'invalid';
         assert.equal(isTrustedDisplay({ sub: 'screen-qa-0001', firebase: { sign_in_provider: 'anonymous' } }), false);
     } finally { if (previous === undefined) delete process.env.CALL_DISPLAY_UIDS_JSON; else process.env.CALL_DISPLAY_UIDS_JSON = previous; }
+});
+
+test('Firebase preview namespace isolates server paths while production remains on the original root', () => {
+    const oldNamespace = process.env.FIREBASE_DATA_NAMESPACE;
+    const oldEnvironment = process.env.VERCEL_ENV;
+    try {
+        delete process.env.FIREBASE_DATA_NAMESPACE;
+        delete process.env.VERCEL_ENV;
+        assert.equal(firebaseDataNamespace(), '');
+        assert.equal(firebaseDatabasePath('calls/public'), 'calls/public');
+        process.env.FIREBASE_DATA_NAMESPACE = 'preview';
+        process.env.VERCEL_ENV = 'preview';
+        assert.equal(firebaseDataNamespace(), 'preview');
+        assert.equal(firebaseDatabasePath('/calls/public/'), 'preview/calls/public');
+        process.env.VERCEL_ENV = 'production';
+        assert.throws(() => firebaseDataNamespace(), /مساحة بيانات Firebase غير صالحة/);
+    } finally {
+        if (oldNamespace === undefined) delete process.env.FIREBASE_DATA_NAMESPACE; else process.env.FIREBASE_DATA_NAMESPACE = oldNamespace;
+        if (oldEnvironment === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = oldEnvironment;
+    }
 });
 
 test('busy detection finds only a matching assigned engineer in a live, non-cancelled meeting', () => {

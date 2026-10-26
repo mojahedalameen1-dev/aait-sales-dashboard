@@ -1,4 +1,4 @@
-import { firebaseDatabaseRequest, getFirebaseClientConfig, parseAdminMap } from './shared.js';
+import { configuredDisplayUids, firebaseDatabaseRequest, getFirebaseClientConfig, parseAdminMap } from './shared.js';
 
 export default async function handler(request, response) {
     response.setHeader('Cache-Control', 'no-store');
@@ -8,6 +8,7 @@ export default async function handler(request, response) {
     }
     const config = getFirebaseClientConfig();
     let adminPasswordsConfigured = false;
+    let displayConfigured = configuredDisplayUids().length > 0;
     if (config.firebaseConfigured && config.serviceConfigured && config.adminsConfigured) {
         try {
             const admins = parseAdminMap();
@@ -20,6 +21,11 @@ export default async function handler(request, response) {
                     && /^scrypt\$16384\$8\$1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/.test(records[uid].passwordHash)
                     && Number.isSafeInteger(records[uid]?.sessionVersion)));
         } catch { adminPasswordsConfigured = false; }
+        try {
+            const displays = await firebaseDatabaseRequest('controlAuth/displays');
+            displayConfigured = displayConfigured || Object.values(displays || {}).some(value =>
+                value && !value.revokedAt && Number.isFinite(Number(value.pairedAt)));
+        } catch { /* Pairing remains available to authenticated admins; the board still shows its request code. */ }
     }
     const missing = [...new Set([...config.missing, ...(!adminPasswordsConfigured ? ['CONTROL_ADMIN_PASSWORDS'] : [])])];
     return response.status(200).json({
@@ -30,7 +36,7 @@ export default async function handler(request, response) {
         sessionConfigured: config.sessionConfigured,
         adminPasswordsConfigured,
         speechConfigured: config.speechConfigured,
-        displayConfigured: config.displayConfigured,
+        displayConfigured,
         firebase: config.firebase,
         missing
     });

@@ -1,7 +1,7 @@
 import './control.css';
-import { createIcons, Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X } from 'lucide';
+import { createIcons, Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, Link2, LoaderCircle, LogIn, LogOut, MonitorCheck, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X } from 'lucide';
 
-const ICONS = { Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
+const ICONS = { Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, Link2, LoaderCircle, LogIn, LogOut, MonitorCheck, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
 const EMPLOYEES = [
     { id: 'mojahed', name: 'م. مجاهد', color: '#9a78ff' },
     { id: 'mahmoud', name: 'م. محمود', color: '#f6b94a' },
@@ -31,6 +31,10 @@ const busyDialog = $('#busy-dialog');
 const busyDescription = $('#busy-description');
 const busyMeetings = $('#busy-meetings');
 const busyConfirmButton = $('#confirm-busy');
+const displayPairingForm = $('#display-pairing-form');
+const displayPairingResult = $('#display-pairing-result');
+const displayPairingButton = $('#display-pairing-submit');
+const pairedDisplayList = $('#paired-display-list');
 
 let clientConfig = null;
 let actor = null;
@@ -61,6 +65,54 @@ function clearResult() {
     callResult.hidden = true;
     callResult.textContent = '';
     callResult.className = 'call-result';
+}
+
+async function loadPairedDisplays() {
+    if (DESIGN_PREVIEW) return;
+    try {
+        const result = await apiRequest('/api/control/pairing');
+        const count = Number(result.count) || 0;
+        pairedDisplayList.textContent = count
+            ? `الشاشات المعتمدة: ${count}`
+            : 'ما فيه شاشة معتمدة حتى الآن. يظهر رمز الاقتران عند فتح لوحة الاجتماعات على جهاز العرض.';
+        if (count) {
+            clientConfig.displayConfigured = true;
+            if (clientConfig.speechConfigured) $('#speech-warning').hidden = true;
+        }
+    } catch {
+        pairedDisplayList.textContent = 'تعذر تحميل حالة الشاشات المعتمدة.';
+    }
+}
+
+async function handleDisplayPairing(event) {
+    event.preventDefault();
+    const input = $('#display-pairing-code');
+    const code = String(input.value || '').replace(/\s/g, '');
+    displayPairingResult.hidden = true;
+    displayPairingButton.disabled = true;
+    displayPairingButton.querySelector('span').textContent = 'جارٍ التحقق…';
+    try {
+        const result = await apiRequest('/api/control/pairing', {
+            method: 'POST', body: JSON.stringify({ action: 'approve', code })
+        });
+        displayPairingResult.textContent = `تم اعتماد شاشة العرض بنجاح (${result.displaySuffix}).`;
+        displayPairingResult.className = 'inline-message';
+        displayPairingResult.hidden = false;
+        input.value = '';
+        await loadPairedDisplays();
+        if (clientConfig.speechConfigured) {
+            const warning = $('#speech-warning');
+            warning.hidden = true;
+        }
+    } catch (error) {
+        displayPairingResult.textContent = error.message || 'تعذر اعتماد الشاشة؛ تحقق من الرمز وحاول مجددًا.';
+        displayPairingResult.className = 'inline-message is-error';
+        displayPairingResult.hidden = false;
+    } finally {
+        displayPairingButton.disabled = false;
+        displayPairingButton.querySelector('span').textContent = 'اعتماد الشاشة';
+        input.focus();
+    }
 }
 
 function showSetup(config) {
@@ -505,6 +557,7 @@ function openWorkspace() {
         speech.textContent = 'توليد الأصوات الجديدة يحتاج إعداد GroqCloud واعتماد هوية شاشة العرض؛ الأصوات المحفوظة على الشاشة تبقى متاحة.';
     }
     renderEmployees();
+    void loadPairedDisplays();
     setCallTypeAvailability();
     if (!DESIGN_PREVIEW && selectedCallType() === 'meeting') void loadMeetings();
 }
@@ -575,6 +628,7 @@ async function init() {
 }
 
 loginForm.addEventListener('submit', handleLogin);
+displayPairingForm.addEventListener('submit', handleDisplayPairing);
 passwordForm.addEventListener('submit', handlePasswordChange);
 callForm.querySelectorAll('input[name="callType"]').forEach(input => input.addEventListener('change', () => {
     clearResult();

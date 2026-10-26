@@ -178,6 +178,8 @@ test('RTDB rules expose display events but keep synthesis metadata and permissio
     const { rules } = JSON.parse(await readFile(new URL('../database.rules.json', import.meta.url), 'utf8'));
     assert.equal(rules['.read'], false); assert.equal(rules['.write'], false);
     assert.match(rules.calls.public['.read'], /anonymous/); assert.equal(rules.calls.public['.write'], false);
+    assert.match(rules.preview.calls.public['.read'], /anonymous/); assert.equal(rules.preview.calls.public['.write'], false);
+    assert.equal(rules.preview['.read'] ?? rules['.read'], false);
     assert.equal(rules.calls.audioRequests?.['.read'] ?? rules['.read'], false);
 });
 
