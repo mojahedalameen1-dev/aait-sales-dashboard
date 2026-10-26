@@ -65,8 +65,8 @@ function readHidden(promptText) {
 try {
     const envSource = await readFile(resolve(process.cwd(), '.env.local'), 'utf8');
     loadLocalEnvironment(envSource);
-    const { ADMIN_ROLES, initializeAdminPasswords, validateNewPassword } = await import('../server/control/auth.js');
-    const { parseAdminMap } = await import('../server/control/shared.js');
+    const { initializeAdminPasswords, validateNewPassword } = await import('../server/control/auth.js');
+    const { ADMIN_ROLES, parseAdminMap } = await import('../server/control/shared.js');
     const adminMap = parseAdminMap();
     if (!adminMap || Object.keys(adminMap).length !== Object.keys(ADMIN_ROLES).length) {
         throw new Error('أكمل CALL_ADMIN_UIDS_JSON في .env.local واربط UID ثابتًا بكل دور.');

@@ -1,0 +1,10 @@
+.git/
+.vercel/
+node_modules/
+dist/
+output/
+.audio-test/
+.env*
+*.log
+.gemini/
+.agent/
