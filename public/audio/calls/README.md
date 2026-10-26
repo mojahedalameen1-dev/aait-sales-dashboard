@@ -15,6 +15,12 @@ The filename is the server's immutable SHA-256 speech key:
 public/audio/calls/<sha256>.wav
 ```
 
+`manifest.json` lists the SHA keys of validated static WAVs. It is intentionally
+empty until fixed recordings are approved. The display skips unlisted files
+instead of probing missing WAV URLs, then uses the existing on-demand generation
+and IndexedDB cache path. The warm-up script updates the index without deleting
+older voice/version files; a dry run never changes it.
+
 The key includes the final normalized text, model, voice, and speech settings
 version. Changing a voice or configuration creates new files and preserves all
 previous versions. The script does not delete or overwrite existing WAV files.

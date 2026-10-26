@@ -1,5 +1,6 @@
 import { isAudioPlaybackEnabled, playAnnouncementAudio } from './notifications.js';
 import { createAnnouncementAudioCache, requestPersistentAudioStorage } from './announcement-audio-cache.js';
+import { createAnnouncementAssetLoader } from './announcement-audio-assets.js';
 
 const BOARD_AUTH_KEY = 'aait_board_anonymous_auth_v1';
 const PROCESSED_KEY = 'aait_board_processed_calls_v1';
@@ -82,7 +83,7 @@ async function getScreenToken(config, storage, forceRefresh = false) {
     return saved.idToken;
 }
 
-export function createCallReceiver({ storage = globalThis.localStorage, onConnectionChange = () => {}, audioCache = createAnnouncementAudioCache() } = {}) {
+export function createCallReceiver({ storage = globalThis.localStorage, onConnectionChange = () => {}, audioCache = createAnnouncementAudioCache(), loadStaticAsset = createAnnouncementAssetLoader() } = {}) {
     let destroyed = false;
     let retryDelay = 1800;
     let retryTimer = null;
@@ -184,11 +185,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
             const cachedAudio = await audioCache.getOrCreate({
                 cacheKey: item.event.audioCacheKey,
                 callType: item.event.callType,
-                loadAsset: async () => {
-                    const response = await fetch(`/audio/calls/${item.event.audioCacheKey}.wav`, { cache: 'force-cache' });
-                    if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/')) return null;
-                    return response.blob();
-                },
+                loadAsset: () => loadStaticAsset(item.event.audioCacheKey),
                 loadGenerated: async () => {
                     const idToken = await getScreenToken(config, storage);
                     const audioUrl = new URL('/api/control/audio', window.location.origin);
