@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#06111a" />
     <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <title>مركز النداءات الداخلية | أوامر الشبكة</title>
   </head>
   <body class="control-body">
@@ -34,6 +35,7 @@
 
       <section id="login-view" class="login-view" hidden>
         <form id="login-form" class="login-card" autocomplete="on">
+          <input id="login-username-hint" name="username" type="text" autocomplete="username" aria-label="الحساب يحدد تلقائيًا من كلمة المرور" tabindex="-1" readonly hidden />
           <div class="login-brand">
             <img src="/logo.svg" alt="أوامر الشبكة" />
             <h1>مركز النداءات الداخلية</h1>
@@ -66,6 +68,7 @@
             <button id="change-password-close" class="icon-button" type="button" aria-label="إغلاق"><i data-lucide="x"></i></button>
           </div>
           <form id="change-password-form" class="password-form" autocomplete="on">
+            <input id="password-username-hint" name="username" type="text" autocomplete="username" aria-label="الحساب الحالي" tabindex="-1" readonly hidden />
             <div class="password-field"><label for="current-password">كلمة المرور الحالية</label><input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required /></div>
             <div class="password-field"><label for="new-password">كلمة المرور الجديدة</label><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="14" maxlength="128" required /></div>
             <div class="password-field"><label for="confirm-password">تأكيد كلمة المرور الجديدة</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="14" maxlength="128" required /></div>
@@ -107,14 +110,14 @@
             <p id="permission-note" class="permission-note" hidden></p>
           </section>
 
-          <section id="meeting-section" class="form-section meeting-section" aria-labelledby="meeting-heading">
+          <section id="meeting-section" class="form-section meeting-section" aria-labelledby="meeting-heading" hidden>
             <div class="section-heading">
               <span class="section-icon"><i data-lucide="calendar-days"></i></span>
               <div><h2 id="meeting-heading">تفاصيل الاجتماع</h2><p>بيانات محدثة مباشرة من جدول الاجتماعات</p></div>
               <button id="refresh-meetings" class="icon-button refresh-meetings" type="button" title="تحديث الاجتماعات" aria-label="تحديث الاجتماعات"><i data-lucide="refresh-cw"></i></button>
             </div>
             <label class="field-label" for="meeting-select">اجتماعات اليوم</label>
-            <select id="meeting-select" name="meetingId" required>
+            <select id="meeting-select" name="meetingId" disabled>
               <option value="">جاري تحميل الاجتماعات…</option>
             </select>
             <p id="meetings-state" class="meetings-state" aria-live="polite"></p>

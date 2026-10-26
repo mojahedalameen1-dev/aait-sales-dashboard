@@ -21,6 +21,9 @@
       ]
     }
   ],
+  "redirects": [
+    { "source": "/favicon.ico", "destination": "/logo.svg", "permanent": true }
+  ],
   "rewrites": [
     { "source": "/control", "destination": "/control/index.html" },
     { "source": "/control/", "destination": "/control/index.html" },

@@ -1,4 +1,5 @@
 import './control.css';
+import { createCallRequest, syncMeetingFieldState } from './call-form-state.js';
 import { createIcons, Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X } from 'lucide';
 
 const ICONS = { Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
@@ -35,6 +36,8 @@ const busyConfirmButton = $('#confirm-busy');
 let clientConfig = null;
 let actor = null;
 let meetings = [];
+let meetingsLoading = false;
+let callSending = false;
 let selectedEmployeeId = EMPLOYEES[0].id;
 let pendingRequest = null;
 let lastFocus = null;
@@ -149,7 +152,10 @@ function setCallTypeAvailability() {
     callForm.querySelectorAll('.call-type-option').forEach(option => {
         option.classList.toggle('is-selected', option.querySelector('input').checked);
     });
-    $('#meeting-section').hidden = selectedCallType() !== 'meeting';
+    syncMeetingFieldState($('#meeting-section'), meetingSelect, {
+        callType: selectedCallType(), canCallMeeting, loading: meetingsLoading
+    });
+    updateMeetingDetails();
 }
 
 function createDetail(label, value, className = '') {
@@ -249,12 +255,15 @@ function setMeetingsSelect(nextMeetings) {
 function updateMeetingDetails() {
     const meeting = meetings.find(item => item.id === meetingSelect.value) || null;
     renderMeetingDetails(meeting, meetingDetails);
-    sendButton.disabled = !clientConfig?.serviceConfigured || (selectedCallType() === 'meeting' && !meeting);
+    sendButton.disabled = callSending || !clientConfig?.serviceConfigured
+        || (selectedCallType() === 'meeting' && (meetingsLoading || !meeting));
 }
 
 async function loadMeetings() {
+    if (meetingsLoading) return;
+    meetingsLoading = true;
     meetingsState.textContent = 'جاري التحقق من اجتماعات اليوم من المصدر…';
-    meetingSelect.disabled = true;
+    setCallTypeAvailability();
     $('#refresh-meetings').disabled = true;
     try {
         const payload = await apiRequest('/api/control/meetings');
@@ -269,9 +278,8 @@ async function loadMeetings() {
             : error.message;
         showResult('تعذر التحقق من الاجتماعات؛ ما تم إرسال أي نداء.', 'error');
     } finally {
-        meetingSelect.disabled = false;
+        meetingsLoading = false;
         $('#refresh-meetings').disabled = false;
-        updateMeetingDetails();
         setCallTypeAvailability();
     }
 }
@@ -331,13 +339,14 @@ function newCallId() {
 }
 
 async function submitCall(confirmedBusy = false) {
-    if (!pendingRequest || sendButton.disabled) return;
+    if (!pendingRequest || callSending || (!confirmedBusy && sendButton.disabled)) return;
     if (DESIGN_PREVIEW) {
         if (confirmedBusy) closeBusyDialog();
         showResult('هذه معاينة تصميمية محلية؛ لم يتم الاتصال بالخادم أو إرسال نداء.', 'warn');
         pendingRequest = null;
         return;
     }
+    callSending = true;
     sendButton.disabled = true;
     busyConfirmButton.disabled = true;
     sendButton.classList.add('is-loading');
@@ -365,7 +374,7 @@ async function submitCall(confirmedBusy = false) {
         if (confirmedBusy) closeBusyDialog();
         showResult(error.message || 'تعذر إرسال النداء، ولم يتم تأكيد الإرسال.', 'error');
     } finally {
-        sendButton.disabled = false;
+        callSending = false;
         sendButton.classList.remove('is-loading');
         sendButton.querySelector('span').textContent = 'إرسال النداء';
         busyConfirmButton.disabled = false;
@@ -625,12 +634,12 @@ callForm.addEventListener('submit', event => {
         showResult('اختر اجتماعًا من قائمة اجتماعات اليوم أولًا.', 'error');
         return;
     }
-    pendingRequest = {
+    pendingRequest = createCallRequest({
         callId: newCallId(),
         employeeId: selectedEmployeeId,
         callType,
-        ...(selectedMeeting ? { meetingId: selectedMeeting.id } : {})
-    };
+        meeting: selectedMeeting
+    });
     void submitCall(false);
 });
 $('#confirm-busy').addEventListener('click', () => {
