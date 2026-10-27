@@ -1,5 +1,5 @@
 import {
-    listSelectableMeetings,
+    listTodayMeetings,
     loadFreshMeetings,
     requireAdmin,
     sendError
@@ -15,7 +15,7 @@ export default async function handler(request, response) {
         const source = await loadFreshMeetings();
         response.setHeader('Cache-Control', 'no-store');
         return response.status(200).json({
-            meetings: listSelectableMeetings(source.meetings),
+            meetings: listTodayMeetings(source.meetings),
             sheetName: source.sheetName,
             fetchedAt: source.fetchedAt
         });

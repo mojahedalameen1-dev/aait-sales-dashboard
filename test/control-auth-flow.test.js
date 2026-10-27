@@ -156,7 +156,7 @@ test('password-only auth maps all admins, denies bad/unknown users, changes pass
 
     try {
         const expectedPermissions = {
-            general_manager: { office: true, meeting: false },
+            general_manager: { office: true, meeting: true },
             business_development_manager: { office: true, meeting: true },
             deputy_general_manager: { office: true, meeting: true }
         };
@@ -169,6 +169,7 @@ test('password-only auth maps all admins, denies bad/unknown users, changes pass
             assert.equal(whoAmI.statusCode, 200);
             assert.equal(whoAmI.payload.actor.roleId, entry.role);
             assert.equal(whoAmI.payload.actor.roleLabel, ADMIN_ROLES[entry.role].label);
+            assert.equal(whoAmI.payload.actor.displayName, ADMIN_ROLES[entry.role].displayName);
             assert.deepEqual(whoAmI.payload.actor.permissions, expectedPermissions[entry.role]);
         }
 

@@ -12,9 +12,9 @@ export const CONTROL_EMPLOYEES = Object.freeze([
 ]);
 
 export const ADMIN_ROLES = Object.freeze({
-    general_manager: { label: 'المدير العام', office: true, meeting: false, callerName: 'الأستاذ محمد الزهراني' },
-    business_development_manager: { label: 'مدير تطوير الأعمال', office: true, meeting: true, callerName: 'المهندس محمد القحطاني' },
-    deputy_general_manager: { label: 'نائب المدير العام', office: true, meeting: true, callerName: 'الأستاذ محمد العتيبي' }
+    general_manager: { label: 'المدير العام', displayName: 'أ. محمد الزهراني', office: true, meeting: true, callerName: 'الأستاذ محمد الزهراني' },
+    business_development_manager: { label: 'مدير تطوير الأعمال', displayName: 'م. محمد القحطاني', office: true, meeting: true, callerName: 'المهندس محمد القحطاني' },
+    deputy_general_manager: { label: 'نائب المدير العام', displayName: 'أ. محمد العتيبي', office: true, meeting: true, callerName: 'الأستاذ محمد العتيبي' }
 });
 
 const REQUIRED_ADMIN_ROLE_IDS = Object.freeze(Object.keys(ADMIN_ROLES));
@@ -187,7 +187,7 @@ export function getAdminActor(claims) {
     if (!entry) return null;
     const role = ADMIN_ROLES[entry.role];
     if (!role) return null;
-    return { uid: claims.uid || claims.sub, roleId: entry.role, roleLabel: role.label, permissions: { office: role.office, meeting: role.meeting } };
+    return { uid: claims.uid || claims.sub, roleId: entry.role, roleLabel: role.label, displayName: role.displayName, permissions: { office: role.office, meeting: role.meeting } };
 }
 
 export function isCurrentAdminSession(claims, record) {
@@ -368,6 +368,7 @@ export function sanitizeMeetingForAdmin(meeting) {
         expectedEndTime: getEndTime(meeting.time),
         project: meeting.project || '',
         team: meeting.team || '',
+        location: meeting.location || '',
         via: meeting.via || '',
         status: meeting.status || '',
         clientStatus: meeting.clientStatus || '',
@@ -376,12 +377,25 @@ export function sanitizeMeetingForAdmin(meeting) {
     };
 }
 
-export function listSelectableMeetings(meetings, now = new Date()) {
+export function getMeetingMode(meeting) {
+    const via = normalizeEmployeeText(meeting?.via || '');
+    if (/(حضوري|مكتب|داخل المقر|in person|in-person|onsite|on site)/i.test(via)) return 'in_person';
+    if (/(عن بعد|اونلاين|online|remote|zoom|meet)/i.test(via) || isSafeMeetingUrl(meeting?.meetUrl)) return 'online';
+    return '';
+}
+
+export function listTodayMeetings(meetings, now = new Date()) {
     const today = formatTodayDate(now);
-    return meetings.filter(meeting => meeting.date === today
-        && !isCancelled(meeting) && !isDone(meeting, now)
-        && ['upcoming', 'running'].includes(getMeetingTimingState(meeting, now).state))
-        .map(sanitizeMeetingForAdmin);
+    const stateRank = { running: 0, upcoming: 1, done: 2, overdue: 2, cancelled: 3, invalid: 4 };
+    return meetings.filter(meeting => meeting.date === today)
+        .map((meeting, sourceIndex) => {
+            const timing = getMeetingTimingState(meeting, now);
+            return { ...sanitizeMeetingForAdmin(meeting), state: timing.state, sourceIndex, startMinutes: timing.startMinutes ?? Infinity };
+        })
+        .sort((left, right) => (stateRank[left.state] ?? 4) - (stateRank[right.state] ?? 4)
+            || left.startMinutes - right.startMinutes
+            || left.sourceIndex - right.sourceIndex)
+        .map(({ sourceIndex, startMinutes, ...meeting }) => meeting);
 }
 
 export function getBusyMeetingDetails(meetings, employeeId, now = new Date()) {

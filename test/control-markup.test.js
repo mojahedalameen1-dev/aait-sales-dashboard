@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const controlHtml = await readFile(new URL('../control/index.html', import.meta.url), 'utf8');
+const controlScript = await readFile(new URL('../control/main.js', import.meta.url), 'utf8');
+
+test('signed-in control card shows only the authenticated admin name', () => {
+    assert.match(controlHtml, /<span class="signed-in-name" id="role-label"><\/span>/);
+    assert.doesNotMatch(controlHtml, /الدور المصرّح|الدور الممنوح/);
+});
 
 test('password-only forms provide a hidden, non-interactive username autocomplete hint', () => {
     for (const [id, passwordCount] of [['login-form', 1], ['change-password-form', 3]]) {
@@ -32,4 +38,13 @@ test('control uses the existing SVG favicon and legacy favicon requests redirect
     const policy = config.headers.flatMap(rule => rule.headers).find(header => header.key === 'Content-Security-Policy')?.value;
     assert.match(policy, /script-src 'self';/);
     assert.match(policy, /form-action 'self';/);
+});
+
+test('meeting selection uses an accessible responsive grid instead of the old dropdown', () => {
+    assert.match(controlHtml, /id="meeting-grid"[^>]*role="radiogroup"/);
+    assert.doesNotMatch(controlHtml, /id="meeting-select"|name="meetingId"/);
+    assert.match(controlScript, /role', 'radio'/);
+    assert.match(controlScript, /ArrowLeft.*ArrowRight.*ArrowUp.*ArrowDown/);
+    assert.match(controlScript, /formatControlTime\(meeting\.time\)/);
+    assert.match(controlScript, /state !== 'cancelled'/);
 });

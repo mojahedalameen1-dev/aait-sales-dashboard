@@ -3,7 +3,8 @@ import {
     CONTROL_EMPLOYEES,
     firebaseDatabaseRequest,
     getBusyMeetingDetails,
-    listSelectableMeetings,
+    getMeetingMode,
+    listTodayMeetings,
     loadFreshMeetings,
     readJsonBody,
     requireAdmin,
@@ -28,7 +29,29 @@ export function sanitizeSpeechMeetingTitle(project) {
     return title || 'الاجتماع المحدد';
 }
 
-export function makeCallText(employee, callType, callerName, meetingTitle = '') {
+function sanitizeSpeechContext(value, maxLength = 32) {
+    return Array.from(String(value || '')
+        .replace(/https?:\/\/\S+/gi, ' ')
+        .replace(/[\u0000-\u001f\u007f<>]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()).slice(0, maxLength).join('').trim();
+}
+
+function sanitizeSpeechOwner(value) {
+    return sanitizeSpeechContext(value, 32)
+        .replace(/^(?:مع\s+)?(?:المهندس|مهندس|م\s*\.?|m\s*\.?)\s*/i, '')
+        .trim();
+}
+
+function fitSpeechTitle(title, prefix, suffix) {
+    const available = Math.max(0, SPEECH_MAX_CHARS - Array.from(prefix + suffix).length);
+    const characters = Array.from(title);
+    if (characters.length <= available) return title;
+    const shortened = characters.slice(0, available).join('').replace(/\s+\S*$/, '').trim();
+    return shortened || (available >= 3 ? '…' : '');
+}
+
+export function makeCallText(employee, callType, callerName, meetingTitle = '', meetingContext = {}) {
     const employeeName = {
         mojahed: 'مُجَاهِد',
         mahmoud: 'مَحْمُود',
@@ -37,28 +60,30 @@ export function makeCallText(employee, callType, callerName, meetingTitle = '') 
         shady: 'شَادِي'
     }[employee.id] || employee.name.replace(/^م\.\s*/, '');
     const callers = {
-        'الأستاذ محمد الزهراني': 'الأستاذ مُحَمَّد الزَّهْرَانِي',
-        'المهندس محمد القحطاني': 'المهندس مُحَمَّد القَحْطَانِي',
-        'الأستاذ محمد العتيبي': 'الأستاذ مُحَمَّد العُتَيْبِي'
+        'الأستاذ محمد الزهراني': { spoken: 'الأستاذ مُحَمَّد الزَّهْرَانِي', office: 'المدير العام، الأستاذ مُحَمَّد الزَّهْرَانِي' },
+        'المهندس محمد القحطاني': { spoken: 'المهندس مُحَمَّد القَحْطَانِي', office: 'مدير تطوير الأعمال، المهندس مُحَمَّد القَحْطَانِي' },
+        'الأستاذ محمد العتيبي': { spoken: 'الأستاذ مُحَمَّد العُتَيْبِي', office: 'نائب المدير العام، الأستاذ مُحَمَّد العُتَيْبِي' }
     };
-    const spokenCaller = callers[callerName] || callerName;
-    if (callType === 'office') return `تنبيه إداري. المهندس ${employeeName}، يُرجى التوجّه إلى مكتب ${spokenCaller}. شكرًا لتعاونك.`;
-    const prefix = `تنبيه إداري. المهندس ${employeeName}، يُرجى الدخول إلى الاجتماع: `;
-    const suffix = '. شكرًا لتعاونك.';
-    const available = SPEECH_MAX_CHARS - Array.from(prefix + suffix).length;
-    const title = sanitizeSpeechMeetingTitle(meetingTitle);
-    const characters = Array.from(title);
-    let spokenTitle = title;
-    if (characters.length > available) {
-        spokenTitle = characters.slice(0, available).join('').replace(/\s+\S*$/, '').trim();
-        if (!spokenTitle) spokenTitle = 'الاجتماع المحدد';
+    const caller = callers[callerName] || { spoken: sanitizeSpeechContext(callerName, 40), office: sanitizeSpeechContext(callerName, 40) };
+    if (callType === 'office') return `يُرجى من المهندس ${employeeName} التوجّه الآن إلى مكتب ${caller.office}. شكرًا لك.`;
+
+    const safeTitle = sanitizeSpeechMeetingTitle(meetingTitle);
+    const title = safeTitle.replace(/^اجتماع\s+/u, '').trim() || safeTitle;
+    const owner = sanitizeSpeechOwner(meetingContext.ownerName);
+    const location = sanitizeSpeechContext(meetingContext.location);
+    const ownerPhrase = /^(?:الفريق|فريق)(?:\s|$)|^team(?:\s|$)/i.test(owner) ? `التابع لـ ${owner}` : `التابع للمهندس ${owner}`;
+    const suffix = `، ${ownerPhrase}، بناءً على طلب ${caller.spoken}.`;
+    if ((meetingContext.mode || meetingContext.meetingMode) === 'in_person') {
+        const prefix = `المهندس ${employeeName}، يُرجى التوجّه الآن إلى ${location}، للمشاركة في اجتماع `;
+        return `${prefix}${fitSpeechTitle(title, prefix, suffix)}${suffix}`;
     }
-    return prefix + spokenTitle + suffix;
+    const prefix = `المهندس ${employeeName}، يُرجى الانضمام الآن إلى اجتماع `;
+    return `${prefix}${fitSpeechTitle(title, prefix, suffix)}${suffix}`;
 }
 
-export function prepareCallSpeech(employee, callType, callerName, meetingTitle = '') {
+export function prepareCallSpeech(employee, callType, callerName, meetingTitle = '', meetingContext = {}) {
     try {
-        const descriptor = prepareSpeechRequest(makeCallText(employee, callType, callerName, meetingTitle));
+        const descriptor = prepareSpeechRequest(makeCallText(employee, callType, callerName, meetingTitle, meetingContext));
         return { descriptor, audioCacheKey: descriptor.cacheKey, audioStatus: 'pending' };
     } catch {
         // Broken optional speech settings must never suppress the visual announcement.
@@ -119,8 +144,20 @@ export default async function handler(request, response) {
         const meetings = source.meetings;
         let selectedMeeting = null;
         if (callType === 'meeting') {
-            selectedMeeting = listSelectableMeetings(meetings).find(item => item.id === meetingId) || null;
-            if (!selectedMeeting) return response.status(409).json({ error: 'الاجتماع لم يعد متاحًا؛ حدّث القائمة واختر اجتماعًا صالحًا' });
+            selectedMeeting = listTodayMeetings(meetings).find(item => item.id === meetingId) || null;
+            if (!selectedMeeting) return response.status(409).json({ error: 'الاجتماع لم يعد موجودًا في جدول اليوم؛ حدّث القائمة واختر اجتماعًا صالحًا' });
+            if (selectedMeeting.state === 'cancelled') return response.status(409).json({ error: 'لا يمكن إرسال نداء لاجتماع ملغي أو حالته لم يتم' });
+            if (selectedMeeting.state === 'invalid') return response.status(409).json({ error: 'وقت الاجتماع غير صالح؛ تعذر إرسال النداء' });
+            if (selectedMeeting.state === 'done' && body.confirmedEndedMeeting !== true) {
+                return response.status(409).json({ code: 'ENDED_MEETING_CONFIRMATION_REQUIRED', error: 'الاجتماع منتهٍ؛ أكّد رغبتك في إرسال النداء قبل المتابعة' });
+            }
+            const mode = getMeetingMode(selectedMeeting) || (['online', 'in_person'].includes(body.meetingMode) ? body.meetingMode : '');
+            const ownerName = String(selectedMeeting.team || body.meetingOwner || '').trim();
+            const location = String(selectedMeeting.location || body.meetingLocation || '').trim();
+            if (!ownerName) return response.status(400).json({ code: 'MEETING_OWNER_REQUIRED', error: 'أدخل اسم المهندس صاحب الاجتماع قبل الإرسال' });
+            if (!mode) return response.status(400).json({ code: 'MEETING_MODE_REQUIRED', error: 'حدّد هل الاجتماع عن بُعد أو حضوري قبل الإرسال' });
+            if (mode === 'in_person' && !location) return response.status(400).json({ code: 'MEETING_LOCATION_REQUIRED', error: 'أدخل مكان الاجتماع الحضوري قبل الإرسال' });
+            selectedMeeting = { ...selectedMeeting, mode, meetingMode: mode, ownerName, location };
         }
 
         const conflicts = getBusyMeetingDetails(meetings, employee.id);
@@ -135,7 +172,7 @@ export default async function handler(request, response) {
 
         // Only a private, short-lived text descriptor is retained. No audio bytes or meeting
         // titles are placed in the public display feed or in Firestore.
-        const speech = prepareCallSpeech(employee, callType, actorRole.callerName, selectedMeeting?.project);
+        const speech = prepareCallSpeech(employee, callType, actorRole.callerName, selectedMeeting?.project, selectedMeeting);
         await removeExpiredCalls();
         const createdAt = Date.now();
         const expiresAt = createdAt + 10 * 60 * 1000;

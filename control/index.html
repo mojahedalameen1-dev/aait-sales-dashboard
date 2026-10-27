@@ -55,7 +55,7 @@
           </div>
           <div class="signed-in-card">
             <span class="signed-in-avatar"><i data-lucide="user-round-check"></i></span>
-            <span><strong>الدور المصرّح</strong><small id="role-label"></small></span>
+            <span class="signed-in-name" id="role-label"></span>
             <button id="change-password-toggle" class="icon-button" type="button" aria-label="تغيير كلمة المرور" title="تغيير كلمة المرور"><i data-lucide="key-round"></i></button>
             <button id="logout-button" class="icon-button logout-button" type="button" aria-label="تسجيل الخروج" title="تسجيل الخروج"><i data-lucide="log-out"></i></button>
           </div>
@@ -91,7 +91,7 @@
           <section class="form-section" aria-labelledby="calltype-heading">
             <div class="section-heading">
               <span class="section-icon"><i data-lucide="phone-call"></i></span>
-              <div><h2 id="calltype-heading">نوع النداء</h2><p>النداء الصوتي عام ولا يتضمن بيانات عميل أو رابط اجتماع</p></div>
+              <div><h2 id="calltype-heading">نوع النداء</h2><p>يُذكر اسم الموظف وتفاصيل الاجتماع اللازمة فقط، دون إرسال روابط</p></div>
             </div>
             <div class="call-type-list" role="radiogroup" aria-labelledby="calltype-heading">
               <label class="call-type-option is-selected" data-call-option="meeting">
@@ -113,14 +113,11 @@
           <section id="meeting-section" class="form-section meeting-section" aria-labelledby="meeting-heading" hidden>
             <div class="section-heading">
               <span class="section-icon"><i data-lucide="calendar-days"></i></span>
-              <div><h2 id="meeting-heading">تفاصيل الاجتماع</h2><p>بيانات محدثة مباشرة من جدول الاجتماعات</p></div>
+              <div><h2 id="meeting-heading">اختر الاجتماع</h2><p>اجتماعات اليوم مرتبة حسب حالتها وموعدها · بتوقيت الرياض</p></div>
               <button id="refresh-meetings" class="icon-button refresh-meetings" type="button" title="تحديث الاجتماعات" aria-label="تحديث الاجتماعات"><i data-lucide="refresh-cw"></i></button>
             </div>
-            <label class="field-label" for="meeting-select">اجتماعات اليوم</label>
-            <select id="meeting-select" name="meetingId" disabled>
-              <option value="">جاري تحميل الاجتماعات…</option>
-            </select>
             <p id="meetings-state" class="meetings-state" aria-live="polite"></p>
+            <div id="meeting-grid" class="meeting-card-grid" role="radiogroup" aria-labelledby="meeting-heading" aria-busy="true"></div>
             <article id="meeting-details" class="meeting-details" hidden></article>
           </section>
 

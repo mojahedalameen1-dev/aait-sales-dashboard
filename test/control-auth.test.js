@@ -68,7 +68,7 @@ test('three admins are recognized by three distinct passwords, with the expected
     process.env.CALL_ADMIN_UIDS_JSON = JSON.stringify(ADMIN_MAP);
     try {
         const expected = [
-            ['general_manager', { office: true, meeting: false }],
+            ['general_manager', { office: true, meeting: true }],
             ['business_development_manager', { office: true, meeting: true }],
             ['deputy_general_manager', { office: true, meeting: true }]
         ];
@@ -77,6 +77,7 @@ test('three admins are recognized by three distinct passwords, with the expected
             assert.equal(actor.roleId, entry.role);
             assert.deepEqual(actor.permissions, expected.find(([role]) => role === entry.role)[1]);
             assert.equal(actor.roleLabel, ADMIN_ROLES[entry.role].label);
+            assert.equal(actor.displayName, ADMIN_ROLES[entry.role].displayName);
         }
     } finally {
         if (previous === undefined) delete process.env.CALL_ADMIN_UIDS_JSON;

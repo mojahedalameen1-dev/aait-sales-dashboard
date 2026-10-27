@@ -1,8 +1,10 @@
 import './control.css';
 import { createCallRequest, syncMeetingFieldState } from './call-form-state.js';
-import { createIcons, Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X } from 'lucide';
+import { meetingDisplayState, meetingMode, sortMeetingsForGrid } from './meeting-grid.js';
+import { formatTime12h, formatTodayDate, getCurrentTimeParts } from '../src/data.js';
+import { createIcons, Building2, CalendarDays, Check, CircleCheck, CircleHelp, CircleUserRound, CircleX, Clock3, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, Radio, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X } from 'lucide';
 
-const ICONS = { Building2, CalendarDays, Check, CircleUserRound, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
+const ICONS = { Building2, CalendarDays, Check, CircleCheck, CircleHelp, CircleUserRound, CircleX, Clock3, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, Radio, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
 const EMPLOYEES = [
     { id: 'mojahed', name: 'م. مجاهد', color: '#9a78ff' },
     { id: 'mahmoud', name: 'م. محمود', color: '#f6b94a' },
@@ -10,7 +12,6 @@ const EMPLOYEES = [
     { id: 'hossam', name: 'م. حسام', color: '#00c98a' },
     { id: 'shady', name: 'م. شادي', color: '#ef5da8' }
 ];
-const ROLE_MEETING_ACCESS = new Set(['business_development_manager', 'deputy_general_manager']);
 const DESIGN_PREVIEW = import.meta.env.DEV && new URLSearchParams(location.search).get('design-preview') === '1';
 const $ = selector => document.querySelector(selector);
 const setupView = $('#setup-view');
@@ -25,7 +26,8 @@ const passwordResult = $('#password-change-result');
 const callForm = $('#call-form');
 const sendButton = $('#send-call');
 const callResult = $('#call-result');
-const meetingSelect = $('#meeting-select');
+const meetingSection = $('#meeting-section');
+const meetingGrid = $('#meeting-grid');
 const meetingDetails = $('#meeting-details');
 const meetingsState = $('#meetings-state');
 const busyDialog = $('#busy-dialog');
@@ -37,6 +39,10 @@ let clientConfig = null;
 let actor = null;
 let meetings = [];
 let meetingsLoading = false;
+let meetingsError = '';
+let selectedMeetingId = '';
+let meetingContextDrafts = new Map();
+let meetingStateInterval = null;
 let callSending = false;
 let selectedEmployeeId = EMPLOYEES[0].id;
 let pendingRequest = null;
@@ -102,6 +108,12 @@ async function apiRequest(path, options = {}) {
     return payload;
 }
 
+function formatControlTime(value) {
+    const time = String(value || '').trim();
+    if (!/^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time)) return '—';
+    return formatTime12h(time);
+}
+
 function renderEmployees() {
     const list = $('#employee-list');
     list.replaceChildren(...EMPLOYEES.map(employee => {
@@ -138,21 +150,21 @@ function selectedCallType() {
 }
 
 function setCallTypeAvailability() {
-    const canCallMeeting = ROLE_MEETING_ACCESS.has(actor?.roleId);
+    const canCallMeeting = actor?.permissions?.meeting === true;
     const meetingOption = $('[data-call-option="meeting"]');
     const meetingRadio = meetingOption.querySelector('input');
     meetingRadio.disabled = !canCallMeeting;
     meetingOption.classList.toggle('is-disabled', !canCallMeeting);
     $('#permission-note').hidden = canCallMeeting;
     if (!canCallMeeting) {
-        $('#permission-note').textContent = 'حسب صلاحية المدير العام، المتاح هو نداء الحضور إلى المكتب فقط.';
+        $('#permission-note').textContent = 'هذا الحساب لا يملك صلاحية إرسال نداءات الاجتماعات.';
         meetingRadio.checked = false;
         callForm.querySelector('input[name="callType"][value="office"]').checked = true;
     }
     callForm.querySelectorAll('.call-type-option').forEach(option => {
         option.classList.toggle('is-selected', option.querySelector('input').checked);
     });
-    syncMeetingFieldState($('#meeting-section'), meetingSelect, {
+    syncMeetingFieldState(meetingSection, meetingGrid, {
         callType: selectedCallType(), canCallMeeting, loading: meetingsLoading
     });
     updateMeetingDetails();
@@ -218,14 +230,78 @@ function renderMeetingDetails(meeting, target) {
     const assignment = document.createElement('p');
     assignment.className = 'assignment-note';
     assignment.textContent = assignedLabel;
-    target.append(
-        project,
-        createDetail('المهندس المعيّن', meeting.team),
-        createDetail('التاريخ والموعد', `${meeting.date} · ${meeting.time || '—'} · الرياض`),
-        createDetail('نوع الاجتماع', meeting.via),
-        createDetail('الحالة', meeting.status),
-        assignment
-    );
+    const draft = meetingContextDrafts.get(meeting.id) || {};
+    const mode = meetingMode(meeting) || draft.mode || '';
+    const owner = String(meeting.team || draft.ownerName || '').trim();
+    const location = String(meeting.location || draft.location || '').trim();
+    target.append(project);
+    if (owner) target.append(createDetail('صاحب الاجتماع · من بيانات الجدول', owner));
+    else target.append(createEditableMeetingDetail(meeting, 'صاحب الاجتماع / الفريق', 'ownerName', draft.ownerName || '', 'اكتب الاسم كما ورد من مسؤول الاجتماع'));
+    target.append(createDetail('التاريخ والموعد', `${meeting.date || '—'} · ${formatControlTime(meeting.time)} · الرياض`));
+
+    const modeDetail = document.createElement('div');
+    modeDetail.className = 'meeting-detail is-wide';
+    const modeLabel = document.createElement('span');
+    modeLabel.textContent = 'نوع الاجتماع';
+    modeDetail.append(modeLabel);
+    if (mode) {
+        const modeValue = document.createElement('strong');
+        modeValue.textContent = mode === 'in_person' ? 'حضوري' : 'عن بُعد';
+        modeDetail.append(modeValue);
+    } else {
+        const modeChoices = document.createElement('div');
+        modeChoices.className = 'meeting-mode-choices';
+        modeChoices.setAttribute('role', 'radiogroup');
+        modeChoices.setAttribute('aria-label', 'حدد نوع الاجتماع');
+        for (const [value, label, icon] of [['online', 'عن بُعد', 'video'], ['in_person', 'حضوري', 'building-2']]) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = 'meeting-mode-choice';
+            choice.setAttribute('role', 'radio');
+            choice.setAttribute('aria-checked', String(draft.mode === value));
+            choice.tabIndex = draft.mode === value || (!draft.mode && value === 'online') ? 0 : -1;
+            choice.textContent = label;
+            const glyph = document.createElement('i');
+            glyph.setAttribute('data-lucide', icon);
+            choice.prepend(glyph);
+            choice.addEventListener('click', () => {
+                meetingContextDrafts.set(meeting.id, { ...draft, mode: value });
+                updateMeetingDetails();
+                meetingDetails.querySelector(`.meeting-mode-choice[aria-checked="true"]`)?.focus({ preventScroll: true });
+            });
+            choice.addEventListener('keydown', event => {
+                if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                event.preventDefault();
+                const choices = [...modeChoices.querySelectorAll('.meeting-mode-choice')];
+                choices[(choices.indexOf(choice) + 1) % choices.length].click();
+            });
+            modeChoices.append(choice);
+        }
+        modeDetail.append(modeChoices);
+    }
+    target.append(modeDetail);
+    if (mode === 'in_person') {
+        if (location) target.append(createDetail('مكان الاجتماع · من البيانات', location));
+        else target.append(createEditableMeetingDetail(meeting, 'مكان الاجتماع الحضوري', 'location', draft.location || '', 'أدخل الموقع قبل إرسال النداء'));
+    }
+    target.append(createDetail('نوع الاجتماع في الجدول', meeting.via), createDetail('الحالة', meeting.status || statusLabel(meeting.state)), assignment);
+
+    if (meeting.state === 'done') {
+        const confirm = document.createElement('label');
+        confirm.className = 'ended-meeting-confirm';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = draft.confirmedEndedMeeting === true;
+        checkbox.addEventListener('change', () => {
+            const current = meetingContextDrafts.get(meeting.id) || {};
+            meetingContextDrafts.set(meeting.id, { ...current, confirmedEndedMeeting: checkbox.checked });
+            updateMeetingReadiness(meeting);
+        });
+        const text = document.createElement('span');
+        text.textContent = 'أؤكد إرسال النداء رغم أن الاجتماع منتهٍ';
+        confirm.append(checkbox, text);
+        target.append(confirm);
+    }
     const links = document.createElement('div');
     links.className = 'meeting-detail is-links';
     const linkLabel = document.createElement('span');
@@ -237,45 +313,171 @@ function renderMeetingDetails(meeting, target) {
     refreshIcons(target);
 }
 
-function setMeetingsSelect(nextMeetings) {
-    meetings = nextMeetings;
-    const options = [new Option('اختر الاجتماع المطلوب', '')];
-    for (const meeting of meetings) {
-        const time = String(meeting.time || '').slice(0, 5);
-        const ticket = meeting.project?.match(/AA\d+/i)?.[0] || '';
-        const assigned = meeting.team ? ` · ${meeting.team}` : '';
-        options.push(new Option(`${time} · ${meeting.project || 'اجتماع'}${ticket ? ` · ${ticket}` : ''}${assigned}`, meeting.id));
+function createEditableMeetingDetail(meeting, label, field, value, placeholder) {
+    const wrapper = document.createElement('label');
+    wrapper.className = 'meeting-detail meeting-detail-input';
+    const title = document.createElement('span');
+    title.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = field === 'location' ? 80 : 60;
+    input.autocomplete = 'off';
+    input.placeholder = placeholder;
+    input.value = value;
+    input.dataset.meetingContext = field;
+    input.addEventListener('input', () => {
+        const current = meetingContextDrafts.get(meeting.id) || {};
+        meetingContextDrafts.set(meeting.id, { ...current, [field]: input.value });
+        updateMeetingReadiness(meeting);
+    });
+    wrapper.append(title, input);
+    return wrapper;
+}
+
+function statusLabel(state) {
+    return ({ running: 'جاري الآن', upcoming: 'قادم', done: 'منتهي', cancelled: 'ملغي أو لم يتم', invalid: 'وقت غير صالح' })[state] || 'الحالة غير محددة';
+}
+
+function renderMeetingGrid() {
+    const focusedId = document.activeElement?.dataset?.meetingId || '';
+    const ordered = sortMeetingsForGrid(meetings);
+    meetingGrid.replaceChildren();
+    for (const meeting of ordered) {
+        const card = document.createElement('button');
+        const selected = meeting.id === selectedMeetingId;
+        card.type = 'button';
+        card.className = `meeting-card is-${meeting.state}${selected ? ' is-selected' : ''}`;
+        card.setAttribute('role', 'radio');
+        card.setAttribute('aria-checked', String(selected));
+        card.setAttribute('aria-label', `${meeting.project || 'اجتماع'}، ${formatControlTime(meeting.time)}, ${statusLabel(meeting.state)}`);
+        card.dataset.meetingId = meeting.id;
+        card.tabIndex = selected || (!selectedMeetingId && ordered[0]?.id === meeting.id) ? 0 : -1;
+        const header = document.createElement('span');
+        header.className = 'meeting-card-header';
+        const badge = document.createElement('span');
+        badge.className = 'meeting-state-badge';
+        badge.textContent = statusLabel(meeting.state);
+        const time = document.createElement('strong');
+        time.className = 'meeting-card-time';
+        time.textContent = formatControlTime(meeting.time);
+        header.append(badge, time);
+        const title = document.createElement('span');
+        title.className = 'meeting-card-title';
+        title.textContent = meeting.project || 'اجتماع بلا عنوان';
+        const owner = document.createElement('span');
+        owner.className = 'meeting-card-owner';
+        owner.textContent = meeting.team || 'صاحب الاجتماع غير مذكور';
+        const metadata = document.createElement('span');
+        metadata.className = 'meeting-card-meta';
+        const mode = meetingMode(meeting);
+        const type = document.createElement('span');
+        type.className = 'meeting-card-type';
+        type.textContent = mode === 'in_person' ? 'حضوري' : mode === 'online' ? 'عن بُعد' : meeting.via || 'نوع الاجتماع غير محدد';
+        metadata.append(type);
+        const ticket = meeting.project?.match(/AA\d+/i)?.[0];
+        if (ticket) {
+            const ticketBadge = document.createElement('span');
+            ticketBadge.className = 'meeting-card-ticket';
+            ticketBadge.textContent = ticket;
+            metadata.append(ticketBadge);
+        }
+        card.append(header, title, owner, metadata);
+        card.addEventListener('click', () => selectMeeting(meeting.id));
+        card.addEventListener('keydown', navigateMeetingGrid);
+        meetingGrid.append(card);
     }
-    meetingSelect.replaceChildren(...options);
-    meetingSelect.value = meetings[0]?.id || '';
-    meetingsState.textContent = meetings.length ? `تم تحميل ${meetings.length} اجتماعات متاحة لليوم.` : 'ما فيه اجتماعات قادمة أو جارية متاحة اليوم.';
+    meetingGrid.setAttribute('aria-busy', String(meetingsLoading));
+    if (focusedId) meetingGrid.querySelector(`[data-meeting-id="${CSS.escape(focusedId)}"]`)?.focus({ preventScroll: true });
+}
+
+function selectMeeting(id) {
+    selectedMeetingId = id;
+    clearResult();
+    renderMeetingGrid();
+    updateMeetingDetails();
+    meetingGrid.querySelector(`[data-meeting-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
+
+function navigateMeetingGrid(event) {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const cards = [...meetingGrid.querySelectorAll('.meeting-card')];
+    if (!cards.length) return;
+    const currentIndex = cards.indexOf(event.currentTarget);
+    let nextIndex = currentIndex;
+    if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = cards.length - 1;
+    else {
+        const rtl = getComputedStyle(meetingGrid).direction === 'rtl';
+        const step = event.key === 'ArrowLeft' ? (rtl ? 1 : -1)
+            : event.key === 'ArrowRight' ? (rtl ? -1 : 1)
+                : event.key === 'ArrowUp' ? -1 : 1;
+        nextIndex = Math.max(0, Math.min(cards.length - 1, currentIndex + step));
+    }
+    event.preventDefault();
+    selectMeeting(cards[nextIndex].dataset.meetingId);
+}
+
+function setMeetings(nextMeetings) {
+    meetings = sortMeetingsForGrid(nextMeetings);
+    if (!meetings.some(meeting => meeting.id === selectedMeetingId)) selectedMeetingId = '';
+    meetingsState.textContent = meetings.length
+        ? `تم تحميل ${meetings.length} اجتماعات اليوم. اختر اجتماعًا لمراجعة التفاصيل.`
+        : meetingsError || 'ما فيه اجتماعات مسجلة اليوم.';
+    renderMeetingGrid();
     updateMeetingDetails();
 }
 
-function updateMeetingDetails() {
-    const meeting = meetings.find(item => item.id === meetingSelect.value) || null;
-    renderMeetingDetails(meeting, meetingDetails);
+function startMeetingStateUpdates() {
+    if (meetingStateInterval) clearInterval(meetingStateInterval);
+    meetingStateInterval = setInterval(() => {
+        if (!actor || appView.hidden || !meetings.length) return;
+        meetings = sortMeetingsForGrid(meetings);
+        renderMeetingGrid();
+        const selected = meetings.find(item => item.id === selectedMeetingId) || null;
+        if (!meetingDetails.contains(document.activeElement)) updateMeetingDetails();
+        else updateMeetingReadiness(selected);
+    }, 30_000);
+}
+
+function updateMeetingReadiness(meeting) {
+    const draft = meetingContextDrafts.get(meeting?.id) || {};
+    const owner = String(meeting?.team || draft.ownerName || '').trim();
+    const location = String(meeting?.location || draft.location || '').trim();
+    const mode = meeting ? meetingMode(meeting) || draft.mode || '' : '';
+    const endedConfirmed = meeting?.state !== 'done' || draft.confirmedEndedMeeting === true;
+    const available = Boolean(meeting && meeting.state !== 'cancelled' && meeting.state !== 'invalid'
+        && owner && mode && (mode !== 'in_person' || location) && endedConfirmed);
     sendButton.disabled = callSending || !clientConfig?.serviceConfigured
-        || (selectedCallType() === 'meeting' && (meetingsLoading || !meeting));
+        || (selectedCallType() === 'meeting' && (meetingsLoading || !available));
+    return available;
+}
+
+function updateMeetingDetails() {
+    const meeting = meetings.find(item => item.id === selectedMeetingId) || null;
+    renderMeetingDetails(meeting, meetingDetails);
+    updateMeetingReadiness(meeting);
 }
 
 async function loadMeetings() {
     if (meetingsLoading) return;
     meetingsLoading = true;
+    meetingsError = '';
     meetingsState.textContent = 'جاري التحقق من اجتماعات اليوم من المصدر…';
     setCallTypeAvailability();
     $('#refresh-meetings').disabled = true;
     try {
         const payload = await apiRequest('/api/control/meetings');
-        setMeetingsSelect(payload.meetings || []);
+        setMeetings(payload.meetings || []);
         if (payload.sheetName) meetingsState.textContent = `${meetings.length ? `تم تحميل ${meetings.length} اجتماعات` : 'ما فيه اجتماعات متاحة'} · ${payload.sheetName} · تحديث مباشر`;
     } catch (error) {
         meetings = [];
-        meetingSelect.replaceChildren(new Option('تعذر قراءة الاجتماعات', ''));
-        meetingDetails.hidden = true;
-        meetingsState.textContent = error.status === 502 || error.status === 503
+        selectedMeetingId = '';
+        meetingsError = error.status === 502 || error.status === 503
             ? 'ما قدرنا نتحقق من جدول الاجتماعات. النداء للاجتماع متوقف لين يرجع المصدر.'
             : error.message;
+        meetingGrid.replaceChildren();
+        meetingDetails.hidden = true;
+        meetingsState.textContent = meetingsError;
         showResult('تعذر التحقق من الاجتماعات؛ ما تم إرسال أي نداء.', 'error');
     } finally {
         meetingsLoading = false;
@@ -297,8 +499,8 @@ function setBusyDialog(payload) {
             ['رقم التذكرة', meeting.project?.match(/AA\d+/i)?.[0] || 'غير موجود في المصدر'],
             ['المهندس المعيّن', meeting.team],
             ['التاريخ', meeting.date],
-            ['وقت الاجتماع', `${meeting.time || '—'} · الرياض`],
-            ['النهاية المتوقعة', `${meeting.expectedEndTime || '—'} · بعد 60 دقيقة`],
+            ['وقت الاجتماع', `${formatControlTime(meeting.time)} · الرياض`],
+            ['النهاية المتوقعة', `${formatControlTime(meeting.expectedEndTime)} · بعد 60 دقيقة`],
             ['نوع الاجتماع', meeting.via],
             ['حالة الاجتماع', meeting.status],
             ['حالة العميل', meeting.clientStatus]
@@ -501,7 +703,7 @@ function openWorkspace() {
     appView.hidden = false;
     passwordPanel.hidden = true;
     passwordForm.reset();
-    $('#role-label').textContent = actor.roleLabel;
+    $('#role-label').textContent = actor.displayName || actor.roleLabel || '';
     setConnectionState('متصل ومصرّح', 'online');
     const backendNotice = document.getElementById('backend-warning');
     if (!clientConfig.serviceConfigured) {
@@ -515,7 +717,13 @@ function openWorkspace() {
     }
     renderEmployees();
     setCallTypeAvailability();
+    startMeetingStateUpdates();
     if (!DESIGN_PREVIEW && selectedCallType() === 'meeting') void loadMeetings();
+}
+
+function previewTime(offsetMinutes, fromNow = getCurrentTimeParts()) {
+    const total = Math.max(0, Math.min(23 * 60 + 59, fromNow.hours * 60 + fromNow.minutes + offsetMinutes));
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 async function init() {
@@ -523,22 +731,39 @@ async function init() {
     setConnectionState('جاري التحقق من الاتصال', 'pending');
     if (DESIGN_PREVIEW) {
         clientConfig = { serviceConfigured: true, speechConfigured: true };
-        actor = { roleId: 'business_development_manager', roleLabel: 'مدير تطوير الأعمال' };
-        meetings = [{
-            id: 'preview-meeting-81747',
-            date: '2026/10/24',
-            time: '15:30',
-            expectedEndTime: '16:30',
-            project: 'اجتماع متابعة تطبيق أوامر الشبكة AA81747',
-            team: 'م. أشرف',
-            via: 'عن بعد',
-            status: 'قائم',
-            clientStatus: 'مؤكد',
-            meetUrl: 'https://meet.google.com/abc-defg-hij',
-            ticketUrl: 'https://aait.sa/odoo/crm/81747'
-        }];
+        actor = {
+            roleId: 'business_development_manager',
+            roleLabel: 'مدير تطوير الأعمال',
+            displayName: 'م. محمد القحطاني',
+            permissions: { office: true, meeting: true }
+        };
+        const today = formatTodayDate();
+        const current = getCurrentTimeParts();
+        meetings = [
+            {
+                id: 'preview-running', date: today, time: previewTime(-20, current), project: 'اجتماع متابعة تطبيق أوامر الشبكة AA81747',
+                team: 'م. أشرف', via: 'عن بُعد', status: 'قائم', clientStatus: 'مؤكد',
+                meetUrl: 'https://meet.google.com/abc-defg-hij', ticketUrl: 'https://aait.sa/odoo/crm/81747'
+            },
+            {
+                id: 'preview-upcoming', date: today, time: previewTime(35, current), project: 'مناقشة خطة تطوير المنصة والخدمات الرقمية',
+                team: 'م. محمود', via: 'أونلاين', status: 'قائم', meetUrl: 'https://meet.google.com/abc-defg-hij'
+            },
+            {
+                id: 'preview-inperson', date: today, time: previewTime(75, current), project: 'اجتماع تنسيق مراجعة تجربة العملاء',
+                team: 'م. شادي', via: 'حضوري', status: 'قائم'
+            },
+            {
+                id: 'preview-done', date: today, time: previewTime(-80, current), project: 'اجتماع مراجعة التسليم النهائي',
+                team: 'م. حسام', via: 'عن بُعد', status: 'تم'
+            },
+            {
+                id: 'preview-cancelled', date: today, time: previewTime(110, current), project: 'اجتماع منقول بانتظار إعادة الجدولة',
+                team: 'م. مجاهد', via: 'حضوري', status: 'لم يتم'
+            }
+        ];
         openWorkspace();
-        setMeetingsSelect(meetings);
+        setMeetings(meetings);
         setConnectionState('معاينة واجهة فقط', 'online');
         if (new URLSearchParams(location.search).get('busy') === '1') {
             pendingRequest = { callId: 'preview_call_001122334455', employeeId: 'ashraf', callType: 'meeting', meetingId: meetings[0].id };
@@ -590,10 +815,10 @@ callForm.querySelectorAll('input[name="callType"]').forEach(input => input.addEv
     setCallTypeAvailability();
     if (selectedCallType() === 'meeting' && !meetings.length) void loadMeetings();
 }));
-meetingSelect.addEventListener('change', () => { clearResult(); updateMeetingDetails(); });
 $('#refresh-meetings').addEventListener('click', () => void loadMeetings());
 $('#logout-button').addEventListener('click', async () => {
     if (statusTimer) clearTimeout(statusTimer);
+    if (meetingStateInterval) clearInterval(meetingStateInterval);
     let remoteRevoked = false;
     try {
         await apiRequest('/api/control/logout', { method: 'POST' });
@@ -629,16 +854,25 @@ callForm.addEventListener('submit', event => {
     }
     clearResult();
     const callType = selectedCallType();
-    const selectedMeeting = meetings.find(item => item.id === meetingSelect.value);
+    const selectedMeeting = meetings.find(item => item.id === selectedMeetingId);
     if (callType === 'meeting' && !selectedMeeting) {
-        showResult('اختر اجتماعًا من قائمة اجتماعات اليوم أولًا.', 'error');
+        showResult('اختر اجتماعًا من البطاقات أولًا.', 'error');
+        return;
+    }
+    const draft = selectedMeeting ? meetingContextDrafts.get(selectedMeeting.id) || {} : {};
+    if (callType === 'meeting' && selectedMeeting && !updateMeetingReadiness(selectedMeeting)) {
+        showResult('أكمل بيانات صاحب الاجتماع ونوعه والموقع إذا كان حضوريًا، وأكّد الاجتماع المنتهي عند الحاجة.', 'error');
         return;
     }
     pendingRequest = createCallRequest({
         callId: newCallId(),
         employeeId: selectedEmployeeId,
         callType,
-        meeting: selectedMeeting
+        meeting: selectedMeeting,
+        meetingOwner: selectedMeeting?.team || draft.ownerName,
+        meetingLocation: selectedMeeting?.location || draft.location,
+        meetingMode: selectedMeeting ? meetingMode(selectedMeeting) || draft.mode : '',
+        confirmedEndedMeeting: selectedMeeting?.state === 'done' && draft.confirmedEndedMeeting === true
     });
     void submitCall(false);
 });

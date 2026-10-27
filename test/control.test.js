@@ -5,7 +5,7 @@ import {
     CONTROL_EMPLOYEES,
     getActiveMeetingsForEmployee,
     getBusyMeetingDetails,
-    listSelectableMeetings,
+    listTodayMeetings,
     meetingAssignedToEmployee,
     sanitizeMeetingForAdmin,
     verifyFirebaseIdToken,
@@ -40,18 +40,25 @@ function makeMeeting(overrides = {}) {
     };
 }
 
-test('fixed roles grant only the explicitly documented call types', () => {
-    assert.deepEqual(ADMIN_ROLES.general_manager, { label: 'المدير العام', office: true, meeting: false, callerName: 'الأستاذ محمد الزهراني' });
+test('all three admins can call an employee to their own office or into a meeting', () => {
+    assert.deepEqual(ADMIN_ROLES.general_manager, { label: 'المدير العام', displayName: 'أ. محمد الزهراني', office: true, meeting: true, callerName: 'الأستاذ محمد الزهراني' });
     assert.equal(ADMIN_ROLES.business_development_manager.meeting, true);
-    assert.equal(ADMIN_ROLES.deputy_general_manager.office, true);
+    assert.equal(ADMIN_ROLES.deputy_general_manager.meeting, true);
     assert.deepEqual(CONTROL_EMPLOYEES.map(employee => employee.id), ['mojahed', 'mahmoud', 'ashraf', 'hossam', 'shady']);
 });
 
 test('voice phrases identify the calling manager and safely name the selected meeting', () => {
     const mahmoud = CONTROL_EMPLOYEES.find(employee => employee.id === 'mahmoud');
-    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.general_manager.callerName), 'تنبيه إداري. المهندس مَحْمُود، يُرجى التوجّه إلى مكتب الأستاذ مُحَمَّد الزَّهْرَانِي. شكرًا لتعاونك.');
+    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.general_manager.callerName), 'يُرجى من المهندس مَحْمُود التوجّه الآن إلى مكتب المدير العام، الأستاذ مُحَمَّد الزَّهْرَانِي. شكرًا لك.');
+    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.business_development_manager.callerName), 'يُرجى من المهندس مَحْمُود التوجّه الآن إلى مكتب مدير تطوير الأعمال، المهندس مُحَمَّد القَحْطَانِي. شكرًا لك.');
+    assert.equal(makeCallText(mahmoud, 'office', ADMIN_ROLES.deputy_general_manager.callerName), 'يُرجى من المهندس مَحْمُود التوجّه الآن إلى مكتب نائب المدير العام، الأستاذ مُحَمَّد العُتَيْبِي. شكرًا لك.');
     assert.equal(sanitizeSpeechMeetingTitle('اجتماع تطوير الشبكة AA81747 https://meet.google.com/secret'), 'اجتماع تطوير الشبكة');
-    assert.equal(makeCallText(mahmoud, 'meeting', '', 'مناقشة مشروع التطوير'), 'تنبيه إداري. المهندس مَحْمُود، يُرجى الدخول إلى الاجتماع: مناقشة مشروع التطوير. شكرًا لتعاونك.');
+    assert.equal(makeCallText(mahmoud, 'meeting', ADMIN_ROLES.general_manager.callerName, 'مناقشة مشروع التطوير', {
+        mode: 'online', ownerName: 'م. مجاهد'
+    }), 'المهندس مَحْمُود، يُرجى الانضمام الآن إلى اجتماع مناقشة مشروع التطوير، التابع للمهندس مجاهد، بناءً على طلب الأستاذ مُحَمَّد الزَّهْرَانِي.');
+    assert.equal(makeCallText(mahmoud, 'meeting', ADMIN_ROLES.deputy_general_manager.callerName, 'مراجعة إطلاق المنصة', {
+        mode: 'in_person', ownerName: 'م. أشرف', location: 'قاعة الاجتماعات الرئيسية'
+    }), 'المهندس مَحْمُود، يُرجى التوجّه الآن إلى قاعة الاجتماعات الرئيسية، للمشاركة في اجتماع مراجعة إطلاق المنصة، التابع للمهندس أشرف، بناءً على طلب الأستاذ مُحَمَّد العُتَيْبِي.');
     assert.equal(sanitizeSpeechMeetingTitle('اجتماع بيانات عميل خاص 0501234567'), 'الاجتماع المحدد');
 });
 
@@ -70,7 +77,13 @@ test('the 15 fixed office announcements fit Groq input limits and remain distinc
 
 test('long meeting titles fit the 200-character model limit and bad speech settings preserve visual delivery', () => {
     const employee = CONTROL_EMPLOYEES[0];
-    assert.ok(Array.from(makeCallText(employee, 'meeting', '', 'مناقشة تطوير النظام '.repeat(30))).length <= 200);
+    const longTitle = 'مناقشة تطوير النظام '.repeat(30);
+    assert.ok(Array.from(makeCallText(employee, 'meeting', ADMIN_ROLES.general_manager.callerName, longTitle, {
+        mode: 'online', ownerName: 'م. محمد القحطاني'
+    })).length <= 200);
+    assert.ok(Array.from(makeCallText(employee, 'meeting', ADMIN_ROLES.general_manager.callerName, longTitle, {
+        mode: 'in_person', ownerName: 'م. محمد القحطاني', location: 'قاعة اجتماعات تطوير الأعمال'
+    })).length <= 200);
     const previous = process.env.GROQ_VOICE;
     process.env.GROQ_VOICE = 'invalid';
     try { assert.deepEqual(prepareCallSpeech(employee, 'office', ADMIN_ROLES.general_manager.callerName), { descriptor: null, audioCacheKey: '', audioStatus: 'failed' }); }
@@ -133,7 +146,7 @@ test('admin meeting details keep safe links and never invent absent source data'
     assert.equal(detail.ticketUrl, '');
 });
 
-test('meeting call choices include only today’s upcoming or running non-cancelled meetings', () => {
+test('meeting call choices include every meeting today and sort running, upcoming, done, then cancelled', () => {
     const now = new Date('2026-10-24T12:30:00+03:00');
     const meetings = [
         makeMeeting(),
@@ -142,7 +155,9 @@ test('meeting call choices include only today’s upcoming or running non-cancel
         makeMeeting({ id: 'cancelled', status: 'ملغي' }),
         makeMeeting({ id: 'yesterday', date: '2026/10/23' })
     ];
-    assert.deepEqual(listSelectableMeetings(meetings, now).map(meeting => meeting.id), ['meeting-1', 'future']);
+    assert.deepEqual(listTodayMeetings(meetings, now).map(meeting => meeting.id), ['meeting-1', 'future', 'done', 'cancelled']);
+    assert.equal(listTodayMeetings(meetings, now).at(-1).state, 'cancelled');
+    assert.equal(listTodayMeetings(meetings, now).find(meeting => meeting.id === 'done').state, 'done');
 });
 
 test('Firebase verification rejects malformed tokens without making a network request', async () => {
