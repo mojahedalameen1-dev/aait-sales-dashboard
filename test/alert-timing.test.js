@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldTriggerAlert } from '../src/alert-timing.js';
+import { MEETING_REMINDER_MINUTES, shouldTriggerAlert } from '../src/alert-timing.js';
 
-test('30 minute alert catches up for ten minutes but never after meeting start', () => {
-    assert.equal(shouldTriggerAlert(30 * 60, 30 * 60), true);
-    assert.equal(shouldTriggerAlert(20 * 60, 30 * 60), true);
-    assert.equal(shouldTriggerAlert(19 * 60 + 59, 30 * 60), false);
-    assert.equal(shouldTriggerAlert(-1, 30 * 60), false);
+test('meeting reminders keep only the five-minute alert, not a 30-minute alert', () => {
+    assert.deepEqual(MEETING_REMINDER_MINUTES, [5]);
+    assert.equal(shouldTriggerAlert(30 * 60, 5 * 60), false);
 });
 
 test('5 minute alert survives a throttled tab waking shortly after start', () => {

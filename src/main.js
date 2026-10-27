@@ -749,7 +749,7 @@ function updateVoiceReminderStatus() {
     if (reminder.state === 'muted') {
         text.textContent = 'النداء الصوتي متوقف';
     } else if (reminder.state === 'scheduled') {
-        const alertLabel = reminder.minutesType === 30 ? 'النداء الأول' : 'النداء الثاني';
+        const alertLabel = 'تذكير الاجتماع';
         text.textContent = reminder.secondsUntil === 0
             ? `${alertLabel} مستحق الآن`
             : `${alertLabel} بعد ${formatDuration(reminder.secondsUntil)}`;

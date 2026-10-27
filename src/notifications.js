@@ -6,7 +6,7 @@
 import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
 import { getEngineerAudioPrefix, getEngineerProfile } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
-import { ALERT_CATCHUP_MS, shouldTriggerAlert } from './alert-timing.js';
+import { ALERT_CATCHUP_MS, MEETING_REMINDER_MINUTES, shouldTriggerAlert } from './alert-timing.js';
 
 // ========================================
 // 🔊 Audio System (Queue Based)
@@ -39,7 +39,7 @@ const PLAY_COUNTS_STORAGE_KEY = 'aait_notification_play_counts';
 const AUDIO_LEADER_LOCK = 'aait-notification-audio-leader';
 const AUDIO_LEASE_KEY = 'aait_notification_audio_lease';
 const AUDIO_LEASE_MS = 12000;
-const AUDIO_FILES = ['a30.mp3', 'a5.mp3', 'm30.mp3', 'm5.mp3', 's30.mp3', 's5.mp3'];
+const AUDIO_FILES = ['a', 'm', 's'].flatMap(prefix => MEETING_REMINDER_MINUTES.map(minutes => `${prefix}${minutes}.mp3`));
 const audioTabId = globalThis.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 let playbackGeneration = 0;
 let activeSafetyTimeout = null;
@@ -642,7 +642,7 @@ export function checkMeetingTimers(meetings, todayDate) {
             .replace(/[\u064B-\u065F\u0670]/g, '')
             .trim()
             .toLowerCase();
-        for (const minutesType of [30, 5]) {
+        for (const minutesType of MEETING_REMINDER_MINUTES) {
             if (!shouldTriggerAlert(diffSeconds, minutesType * 60, ALERT_CATCHUP_MS)) continue;
             const key = `${meeting.id}_${minutesType}min`;
             if (triggeredNotifications.has(key) || pendingNotifications.has(key)
@@ -691,7 +691,7 @@ export function getNextAudioReminder(meetings, todayDate) {
         if (!Number.isFinite(hours) || !Number.isFinite(minutes)) continue;
         const diffSeconds = (hours * 3600 + minutes * 60) - nowSeconds;
 
-        for (const minutesType of [30, 5]) {
+        for (const minutesType of MEETING_REMINDER_MINUTES) {
             const key = `${meeting.id}_${minutesType}min`;
             if (triggeredNotifications.has(key) || pendingNotifications.has(key) || getStartedPlayCounts()[key] >= 2) continue;
             const secondsUntil = diffSeconds - minutesType * 60;
