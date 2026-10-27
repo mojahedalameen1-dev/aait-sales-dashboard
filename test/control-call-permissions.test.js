@@ -159,7 +159,7 @@ test('general manager can send a meeting call server-side with source owner and 
         assert.equal(response.statusCode, 201);
         assert.equal(response.payload.audioStatus, 'pending');
         assert.match(privateAudioRequests['general-manager-meeting-0001'].text, /اجتماع تسليم المنصة/);
-        assert.match(privateAudioRequests['general-manager-meeting-0001'].text, /للمهندس مجاهد/);
+        assert.match(privateAudioRequests['general-manager-meeting-0001'].text, /للمهندس مُجاهد/);
         assert.match(privateAudioRequests['general-manager-meeting-0001'].text, /الأستاذ مُحَمَّد الزَّهْرَانِي/);
         assert.doesNotMatch(privateAudioRequests['general-manager-meeting-0001'].text, /https?:\/\/|AA81747/);
         assert.doesNotMatch(JSON.stringify(publicCalls['general-manager-meeting-0001']), /تسليم المنصة|مُحَمَّد الزَّهْرَانِي|https?:\/\//);

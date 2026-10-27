@@ -45,6 +45,12 @@ function sanitizeSpeechOwner(value) {
         .trim();
 }
 
+function pronounceSpeechOwner(value) {
+    const normalized = value.normalize('NFC').replace(/[\u064B-\u065F\u0670]/g, '').toLocaleLowerCase();
+    if (!/^(?:مجاهد|mojahed)(?=$|\s)/iu.test(normalized)) return value;
+    return value.replace(/^[^\s]+/u, 'مُجاهد');
+}
+
 function fitSpeechTitle(title, prefix, suffix) {
     const available = Math.max(0, SPEECH_MAX_CHARS - Array.from(prefix + suffix).length);
     const characters = Array.from(title);
@@ -55,7 +61,7 @@ function fitSpeechTitle(title, prefix, suffix) {
 
 export function makeCallText(employee, callType, callerName, meetingTitle = '', meetingContext = {}) {
     const employeeName = {
-        mojahed: 'مُجَاهِد',
+        mojahed: 'مُجاهد',
         mahmoud: 'مَحْمُود',
         ashraf: 'أَشْرَف',
         hossam: 'حُسَام',
@@ -71,7 +77,7 @@ export function makeCallText(employee, callType, callerName, meetingTitle = '', 
 
     const safeTitle = sanitizeSpeechMeetingTitle(meetingTitle);
     const title = safeTitle.replace(/^اجتماع\s+/u, '').trim() || safeTitle;
-    const owner = sanitizeSpeechOwner(meetingContext.ownerName);
+    const owner = pronounceSpeechOwner(sanitizeSpeechOwner(meetingContext.ownerName));
     const location = sanitizeSpeechContext(meetingContext.location);
     const ownerPhrase = /^(?:الفريق|فريق)(?:\s|$)|^team(?:\s|$)/i.test(owner) ? `التابع لـ ${owner}` : `التابع للمهندس ${owner}`;
     const suffix = `، ${ownerPhrase}، بناءً على طلب ${caller.spoken}.`;

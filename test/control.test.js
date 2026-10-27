@@ -45,6 +45,7 @@ test('all three admins can call an employee to their own office or into a meetin
     assert.equal(ADMIN_ROLES.business_development_manager.meeting, true);
     assert.equal(ADMIN_ROLES.deputy_general_manager.meeting, true);
     assert.deepEqual(CONTROL_EMPLOYEES.map(employee => employee.id), ['mojahed', 'mahmoud', 'ashraf', 'hossam', 'shady']);
+    assert.equal(makeCallText(CONTROL_EMPLOYEES.find(employee => employee.id === 'mojahed'), 'office', ADMIN_ROLES.general_manager.callerName), 'يُرجى من المهندس مُجاهد التوجّه الآن إلى مكتب المدير العام، الأستاذ مُحَمَّد الزَّهْرَانِي. شكرًا لك.');
 });
 
 test('voice phrases identify the calling manager and safely name the selected meeting', () => {
@@ -55,7 +56,7 @@ test('voice phrases identify the calling manager and safely name the selected me
     assert.equal(sanitizeSpeechMeetingTitle('اجتماع تطوير الشبكة AA81747 https://meet.google.com/secret'), 'اجتماع تطوير الشبكة');
     assert.equal(makeCallText(mahmoud, 'meeting', ADMIN_ROLES.general_manager.callerName, 'مناقشة مشروع التطوير', {
         mode: 'online', ownerName: 'م. مجاهد'
-    }), 'المهندس مَحْمُود، يُرجى الانضمام الآن إلى اجتماع مناقشة مشروع التطوير، التابع للمهندس مجاهد، بناءً على طلب الأستاذ مُحَمَّد الزَّهْرَانِي.');
+    }), 'المهندس مَحْمُود، يُرجى الانضمام الآن إلى اجتماع مناقشة مشروع التطوير، التابع للمهندس مُجاهد، بناءً على طلب الأستاذ مُحَمَّد الزَّهْرَانِي.');
     assert.equal(makeCallText(mahmoud, 'meeting', ADMIN_ROLES.deputy_general_manager.callerName, 'مراجعة إطلاق المنصة', {
         mode: 'in_person', ownerName: 'م. أشرف', location: 'قاعة الاجتماعات الرئيسية'
     }), 'المهندس مَحْمُود، يُرجى التوجّه الآن إلى قاعة الاجتماعات الرئيسية، للمشاركة في اجتماع مراجعة إطلاق المنصة، التابع للمهندس أشرف، بناءً على طلب الأستاذ مُحَمَّد العُتَيْبِي.');
