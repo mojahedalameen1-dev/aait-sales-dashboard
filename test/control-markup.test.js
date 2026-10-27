@@ -40,6 +40,14 @@ test('control uses the existing SVG favicon and legacy favicon requests redirect
     assert.match(policy, /form-action 'self';/);
 });
 
+test('control includes an accessible explicit confirmation for a recent repeat call', () => {
+    assert.match(controlHtml, /id="duplicate-dialog"[^>]*hidden/);
+    assert.match(controlHtml, /id="duplicate-dialog"[\s\S]*?role="alertdialog"[^>]*aria-modal="true"/);
+    assert.match(controlHtml, /id="confirm-duplicate"[^>]*>[\s\S]*?إعادة النداء الآن/);
+    assert.match(controlScript, /RECENT_DUPLICATE_CALL/);
+    assert.match(controlScript, /confirmedRecentDuplicate/);
+});
+
 test('meeting selection uses an accessible responsive grid instead of the old dropdown', () => {
     assert.match(controlHtml, /id="meeting-grid"[^>]*role="radiogroup"/);
     assert.doesNotMatch(controlHtml, /id="meeting-select"|name="meetingId"/);

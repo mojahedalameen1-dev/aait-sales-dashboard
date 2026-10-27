@@ -34,6 +34,12 @@ const busyDialog = $('#busy-dialog');
 const busyDescription = $('#busy-description');
 const busyMeetings = $('#busy-meetings');
 const busyConfirmButton = $('#confirm-busy');
+const busyCancelButton = $('#cancel-busy');
+const duplicateDialog = $('#duplicate-dialog');
+const duplicateDescription = $('#duplicate-description');
+const duplicateDetails = $('#duplicate-details');
+const duplicateConfirmButton = $('#confirm-duplicate');
+const duplicateCancelButton = $('#cancel-duplicate');
 
 let clientConfig = null;
 let actor = null;
@@ -46,6 +52,7 @@ let meetingStateInterval = null;
 let callSending = false;
 let selectedEmployeeId = EMPLOYEES[0].id;
 let pendingRequest = null;
+let pendingConfirmations = { confirmedBusy: false, confirmedRecentDuplicate: false };
 let lastFocus = null;
 let statusTimer = null;
 
@@ -487,7 +494,6 @@ async function loadMeetings() {
 }
 
 function setBusyDialog(payload) {
-    lastFocus = document.activeElement;
     busyDescription.textContent = payload.message || `المهندس ${payload.employee || ''} مرتبط حاليًا باجتماع جارٍ. هل ترغب في إرسال النداء رغم انشغاله؟`;
     busyMeetings.replaceChildren(...(payload.conflicts || []).map(meeting => {
         const card = document.createElement('article');
@@ -525,40 +531,82 @@ function setBusyDialog(payload) {
         return card;
     }));
     busyConfirmButton.disabled = false;
-    busyDialog.hidden = false;
-    refreshIcons(busyDialog);
-    $('#cancel-busy').focus();
+    showConfirmationDialog(busyDialog, '#cancel-busy');
 }
 
-function closeBusyDialog() {
+function setDuplicateDialog(payload) {
+    duplicateDescription.textContent = payload.message || `تم إرسال نداء إلى ${payload.employee || 'هذا المهندس'} مؤخرًا. هل ترغب في إعادة النداء؟`;
+    const callType = payload.previousCallType === 'office' ? 'استدعاء إلى المكتب' : 'استدعاء لدخول اجتماع';
+    const ageMs = Math.max(0, Number(payload.ageMs) || 0);
+    const age = ageMs < 60_000 ? 'قبل أقل من دقيقة' : `قبل ${Math.floor(ageMs / 60_000)} دقيقة`;
+    duplicateDetails.textContent = `${callType} · ${age} · فترة التأكيد دقيقتان`;
+    duplicateConfirmButton.disabled = false;
+    showConfirmationDialog(duplicateDialog, '#cancel-duplicate');
+}
+
+function showConfirmationDialog(dialog, initialFocus) {
+    if (busyDialog.hidden && duplicateDialog.hidden) lastFocus = document.activeElement;
     busyDialog.hidden = true;
+    duplicateDialog.hidden = true;
+    dialog.hidden = false;
+    refreshIcons(dialog);
+    dialog.querySelector(initialFocus)?.focus();
+}
+
+function setConfirmationPending(isPending) {
+    for (const button of [busyConfirmButton, busyCancelButton, duplicateConfirmButton, duplicateCancelButton]) {
+        button.disabled = isPending;
+    }
+    const activeDialog = !busyDialog.hidden ? busyDialog : !duplicateDialog.hidden ? duplicateDialog : null;
+    for (const dialog of [busyDialog, duplicateDialog]) {
+        if (isPending && dialog === activeDialog) dialog.setAttribute('aria-busy', 'true');
+        else dialog.removeAttribute('aria-busy');
+    }
+    if (isPending) activeDialog?.querySelector('[role="alertdialog"]')?.focus();
+}
+
+function closeConfirmationDialogs() {
+    const hadDialog = !busyDialog.hidden || !duplicateDialog.hidden;
+    busyDialog.hidden = true;
+    duplicateDialog.hidden = true;
     pendingRequest = null;
-    lastFocus?.focus?.({ preventScroll: true });
+    pendingConfirmations = { confirmedBusy: false, confirmedRecentDuplicate: false };
+    if (hadDialog) {
+        const focusTarget = lastFocus;
+        setTimeout(() => {
+            if (focusTarget?.isConnected && !focusTarget.disabled && !focusTarget.closest('[hidden]')) {
+                focusTarget.focus({ preventScroll: true });
+            } else {
+                $('#call-result').focus({ preventScroll: true });
+            }
+        }, 0);
+    }
+    lastFocus = null;
 }
 
 function newCallId() {
     return globalThis.crypto?.randomUUID?.() || `call_${Date.now()}_${Math.random().toString(36).slice(2, 16)}`;
 }
 
-async function submitCall(confirmedBusy = false) {
-    if (!pendingRequest || callSending || (!confirmedBusy && sendButton.disabled)) return;
+async function submitCall() {
+    const hasConfirmation = pendingConfirmations.confirmedBusy || pendingConfirmations.confirmedRecentDuplicate;
+    if (!pendingRequest || callSending || (sendButton.disabled && !hasConfirmation)) return;
     if (DESIGN_PREVIEW) {
-        if (confirmedBusy) closeBusyDialog();
+        closeConfirmationDialogs();
         showResult('هذه معاينة تصميمية محلية؛ لم يتم الاتصال بالخادم أو إرسال نداء.', 'warn');
-        pendingRequest = null;
         return;
     }
     callSending = true;
     sendButton.disabled = true;
-    busyConfirmButton.disabled = true;
+    setConfirmationPending(true);
     sendButton.classList.add('is-loading');
     sendButton.querySelector('span').textContent = 'جاري التحقق والإرسال…';
     try {
         const result = await apiRequest('/api/control/calls', {
             method: 'POST',
-            body: JSON.stringify({ ...pendingRequest, confirmedBusy })
+            body: JSON.stringify({ ...pendingRequest, ...pendingConfirmations })
         });
-        if (confirmedBusy) closeBusyDialog();
+        closeConfirmationDialogs();
         if (result.audioStatus === 'not_configured') {
             showResult('تم إرسال النداء المرئي للشاشة، لكن الصوت يحتاج إعداد GroqCloud على الخادم.', 'warn');
         } else if (result.audioStatus === 'failed') {
@@ -567,19 +615,23 @@ async function submitCall(confirmedBusy = false) {
             showResult('تم إرسال الأمر للشاشة. ننتظر تأكيد ظهوره وبدء الصوت…');
             void monitorCallStatus(result.eventId, result.audioStatus);
         }
-        pendingRequest = null;
     } catch (error) {
-        if (error.payload?.code === 'EMPLOYEE_BUSY' && !confirmedBusy) {
+        if (error.payload?.code === 'EMPLOYEE_BUSY' && !pendingConfirmations.confirmedBusy) {
             setBusyDialog(error.payload);
             return;
         }
-        if (confirmedBusy) closeBusyDialog();
+        if (error.payload?.code === 'RECENT_DUPLICATE_CALL') {
+            pendingConfirmations.confirmedRecentDuplicate = false;
+            setDuplicateDialog(error.payload);
+            return;
+        }
+        closeConfirmationDialogs();
         showResult(error.message || 'تعذر إرسال النداء، ولم يتم تأكيد الإرسال.', 'error');
     } finally {
         callSending = false;
         sendButton.classList.remove('is-loading');
         sendButton.querySelector('span').textContent = 'إرسال النداء';
-        busyConfirmButton.disabled = false;
+        setConfirmationPending(false);
         updateMeetingDetails();
     }
 }
@@ -874,22 +926,36 @@ callForm.addEventListener('submit', event => {
         meetingMode: selectedMeeting ? meetingMode(selectedMeeting) || draft.mode : '',
         confirmedEndedMeeting: selectedMeeting?.state === 'done' && draft.confirmedEndedMeeting === true
     });
-    void submitCall(false);
+    pendingConfirmations = { confirmedBusy: false, confirmedRecentDuplicate: false };
+    void submitCall();
 });
 $('#confirm-busy').addEventListener('click', () => {
     if (!pendingRequest) return;
-    void submitCall(true);
+    pendingConfirmations.confirmedBusy = true;
+    void submitCall();
 });
-$('#cancel-busy').addEventListener('click', closeBusyDialog);
-busyDialog.addEventListener('click', event => { if (event.target === busyDialog) closeBusyDialog(); });
+busyCancelButton.addEventListener('click', closeConfirmationDialogs);
+$('#confirm-duplicate').addEventListener('click', () => {
+    if (!pendingRequest) return;
+    pendingConfirmations.confirmedRecentDuplicate = true;
+    void submitCall();
+});
+duplicateCancelButton.addEventListener('click', closeConfirmationDialogs);
+busyDialog.addEventListener('click', event => { if (event.target === busyDialog) closeConfirmationDialogs(); });
+duplicateDialog.addEventListener('click', event => { if (event.target === duplicateDialog) closeConfirmationDialogs(); });
 document.addEventListener('keydown', event => {
-    if (busyDialog.hidden) return;
+    const activeDialog = !busyDialog.hidden ? busyDialog : !duplicateDialog.hidden ? duplicateDialog : null;
+    if (!activeDialog) return;
     if (event.key === 'Escape') {
         event.preventDefault();
-        closeBusyDialog();
+        closeConfirmationDialogs();
     } else if (event.key === 'Tab') {
-        const focusable = [...busyDialog.querySelectorAll('button:not(:disabled), a[href]')];
-        if (!focusable.length) return;
+        const focusable = [...activeDialog.querySelectorAll('button:not(:disabled), a[href]')];
+        if (!focusable.length) {
+            event.preventDefault();
+            activeDialog.querySelector('[role="alertdialog"]')?.focus();
+            return;
+        }
         const first = focusable[0];
         const last = focusable.at(-1);
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }

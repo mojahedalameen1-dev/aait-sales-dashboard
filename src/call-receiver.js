@@ -18,6 +18,13 @@ function saveProcessed(storage, id) {
     catch { /* The receiver also keeps an in-page set when browser storage is blocked. */ }
 }
 
+function eventExpiry(event, fallback = Date.now() + 45000) {
+    const raw = event?.expiresAt;
+    const numeric = typeof raw === 'number' ? raw : Number(raw);
+    const parsed = Number.isFinite(numeric) && numeric > 0 ? numeric : Date.parse(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function createAnnouncementSurface() {
     const surface = document.createElement('section');
     surface.id = 'board-call-announcement';
@@ -163,7 +170,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     function markDisplayedOnce(event) {
         const alreadyProcessed = readStoredJson(storage, PROCESSED_KEY, []);
         if (seenEventIds.has(event.id) || alreadyProcessed.includes(event.id)) return;
-        if (Number(event.expiresAt) <= Date.now() || Number(event.createdAt) < Math.max(sessionStartedAt - RECEIVE_WINDOW_MS, Date.now() - RECEIVE_WINDOW_MS)) return;
+        if (eventExpiry(event) <= Date.now() || Number(event.createdAt) < Math.max(sessionStartedAt - RECEIVE_WINDOW_MS, Date.now() - RECEIVE_WINDOW_MS)) return;
         // Persist before UI/audio so reloads and reconnects never replay this event.
         seenEventIds.add(event.id);
         saveProcessed(storage, event.id);
@@ -171,7 +178,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         renderCall(event, canPlay ? 'جاري توصيل النداء الصوتي…' : 'ظهر النداء على الشاشة');
         void acknowledge(event.id, 'displayed');
         if (canPlay) {
-            audioQueue.push({ event, expiresAt: Date.now() + 45000 });
+            audioQueue.push({ event, expiresAt: Math.min(eventExpiry(event), Date.now() + 45000) });
             if (!isAudioPlaybackEnabled()) {
                 surface._slots.status.textContent = 'الصوت مقفل؛ فعّل الصوت من الشريط السفلي';
                 setTimeout(() => {
@@ -222,13 +229,23 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                 console.warn('[Audio cache] تعذّر حفظ الصوت محليًا؛ لن يؤثر ذلك على تشغيل النداء الحالي.');
             }
             const result = await playAnnouncementAudio(cachedAudio.blob, {
+                expiresAt: item.expiresAt,
+                onDeferred: ({ waitingFor }) => {
+                    if (currentAnnouncementId === item.event.id) {
+                        renderCall(item.event, waitingFor === 'prayer'
+                            ? 'مؤجل حتى انتهاء تنبيه الصلاة'
+                            : 'مؤجل حتى ينتهي الصوت الحالي');
+                    }
+                },
                 onStarted: () => {
                     renderCall(item.event, 'بدأ تشغيل الصوت على شاشة العرض');
                     void acknowledge(item.event.id, 'audio_started');
                 }
             });
             if (!result.started) {
-                surface._slots.status.textContent = 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
+                surface._slots.status.textContent = result.reason === 'expired'
+                    ? 'انتهت مهلة النداء المؤجل؛ أعد إرساله من مركز التحكم'
+                    : 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
                 void acknowledge(item.event.id, 'audio_failed');
             }
         } catch {

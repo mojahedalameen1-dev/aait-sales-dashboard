@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "setup:control-passwords": "node scripts/setup-control-passwords.js",
     "test:groq-speech": "node scripts/groq-speech-samples.js",
+    "sample:groq-prayer": "node scripts/groq-prayer-sample.js",
     "warm:call-audio": "node scripts/warm-call-audio.js",
     "test": "node --test"
   },

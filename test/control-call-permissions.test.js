@@ -65,6 +65,8 @@ test('general manager can send a meeting call server-side with source owner and 
     const dbUrl = 'https://control-call-permission-test-default-rtdb.firebaseio.com';
     const privateAudioRequests = {};
     const publicCalls = {};
+    const recentCallGuards = {};
+    const recentCallGuardVersions = new Map();
     let sheetCsv = createCsv();
 
     process.env.FIREBASE_PROJECT_ID = 'control-call-permission-test';
@@ -102,6 +104,19 @@ test('general manager can send a meeting call server-side with source owner and 
             if (path === `controlAuth/admins/${uid}`) return new Response(JSON.stringify({ role: 'general_manager', sessionVersion: 1 }), { status: 200 });
             if (path === 'calls/public') return new Response(JSON.stringify(publicCalls), { status: 200 });
             if (path === 'calls/audioRequests') return new Response(JSON.stringify(privateAudioRequests), { status: 200 });
+            if (path.startsWith('calls/recentCallGuards/')) {
+                const tag = `"${recentCallGuardVersions.get(path) || 0}"`;
+                const id = path.split('/').at(-1);
+                if (!options.method || options.method === 'GET') {
+                    return new Response(JSON.stringify(recentCallGuards[id] || null), { status: 200, headers: { ETag: tag } });
+                }
+                const expectedTag = new Headers(options.headers).get('if-match');
+                if (expectedTag !== tag) return new Response('precondition failed', { status: 412 });
+                if (options.method === 'PUT') recentCallGuards[id] = JSON.parse(options.body);
+                else if (options.method === 'DELETE') delete recentCallGuards[id];
+                recentCallGuardVersions.set(path, (recentCallGuardVersions.get(path) || 0) + 1);
+                return new Response(JSON.stringify(recentCallGuards[id] || null), { status: 200 });
+            }
             if (path.startsWith('calls/public/')) {
                 const id = path.split('/').at(-1);
                 if (options.method === 'PUT') {
@@ -148,6 +163,51 @@ test('general manager can send a meeting call server-side with source owner and 
         assert.match(privateAudioRequests['general-manager-meeting-0001'].text, /الأستاذ مُحَمَّد الزَّهْرَانِي/);
         assert.doesNotMatch(privateAudioRequests['general-manager-meeting-0001'].text, /https?:\/\/|AA81747/);
         assert.doesNotMatch(JSON.stringify(publicCalls['general-manager-meeting-0001']), /تسليم المنصة|مُحَمَّد الزَّهْرَانِي|https?:\/\//);
+
+        const repeatCallBody = { callId: 'recent-repeat-call-000001', employeeId: 'shady', callType: 'office' };
+        const repeatConfirmation = makeResponse();
+        await callsHandler({
+            method: 'POST', headers: { cookie, 'x-forwarded-proto': 'https' }, body: repeatCallBody
+        }, repeatConfirmation);
+        assert.equal(repeatConfirmation.statusCode, 409);
+        assert.equal(repeatConfirmation.payload.code, 'RECENT_DUPLICATE_CALL');
+        assert.equal(repeatConfirmation.payload.previousCallType, 'meeting');
+        assert.equal(publicCalls[repeatCallBody.callId], undefined);
+
+        const confirmedRepeat = makeResponse();
+        await callsHandler({
+            method: 'POST', headers: { cookie, 'x-forwarded-proto': 'https' },
+            body: { ...repeatCallBody, confirmedRecentDuplicate: true }
+        }, confirmedRepeat);
+        assert.equal(confirmedRepeat.statusCode, 201);
+        assert.equal(publicCalls[repeatCallBody.callId].employeeId, 'shady');
+
+        const repeatedAgain = makeResponse();
+        await callsHandler({
+            method: 'POST', headers: { cookie, 'x-forwarded-proto': 'https' },
+            body: { callId: 'recent-repeat-call-000002', employeeId: 'shady', callType: 'office' }
+        }, repeatedAgain);
+        assert.equal(repeatedAgain.statusCode, 409);
+        assert.equal(repeatedAgain.payload.code, 'RECENT_DUPLICATE_CALL');
+        assert.equal(repeatedAgain.payload.previousCallType, 'office');
+
+        const differentEmployee = makeResponse();
+        await callsHandler({
+            method: 'POST', headers: { cookie, 'x-forwarded-proto': 'https' },
+            body: { callId: 'recent-other-employee-0001', employeeId: 'mojahed', callType: 'office' }
+        }, differentEmployee);
+        assert.equal(differentEmployee.statusCode, 201);
+
+        const concurrentCalls = await Promise.all(['concurrent-repeat-call-0001', 'concurrent-repeat-call-0002'].map(async callId => {
+            const concurrentResponse = makeResponse();
+            await callsHandler({
+                method: 'POST', headers: { cookie, 'x-forwarded-proto': 'https' },
+                body: { callId, employeeId: 'hossam', callType: 'office' }
+            }, concurrentResponse);
+            return concurrentResponse;
+        }));
+        assert.deepEqual(concurrentCalls.map(result => result.statusCode).sort(), [201, 409]);
+        assert.equal(concurrentCalls.find(result => result.statusCode === 409).payload.code, 'RECENT_DUPLICATE_CALL');
 
         const callAgain = async (callId, context = {}) => {
             const failed = makeResponse();

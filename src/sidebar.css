@@ -132,6 +132,26 @@
 .settings-label { display: block; margin: 1rem 0 .45rem; font-size: .86rem; color: var(--text-white); }
 .modal-body select { width: 100%; padding: .8rem; background: var(--bg-deep); color: var(--text-white); border: 1px solid rgba(148,163,184,.3); border-radius: 10px; font-family: inherit; font-size: .9rem; }
 .settings-hint { font-size: .69rem; line-height: 1.6; margin: .45rem 0 0; color: var(--text-dim); }
+.modal-body { max-height: min(90dvh, 900px); overflow: auto; }
+.iqama-settings { margin-top: 1rem; border: 1px solid rgba(55,211,173,.25); border-radius: 12px; background: rgba(3,19,25,.35); }
+.iqama-settings > summary { padding: 11px 13px; cursor: pointer; color: #c6f6e9; font-size: .83rem; font-weight: 700; }
+.iqama-warning { margin: 0 12px 12px; padding: 9px 10px; border-radius: 8px; background: rgba(245,158,11,.09); color: #f3d69a; font-size: .68rem; line-height: 1.6; }
+.iqama-profile { min-width: 0; margin: 0 10px 12px; padding: 10px; border: 1px solid rgba(148,163,184,.2); border-radius: 9px; }
+.iqama-profile legend { padding: 0 5px; font-size: .73rem; color: var(--text-white); }
+.iqama-enable, .iqama-confirm { display: flex; align-items: flex-start; gap: 7px; font-size: .68rem; line-height: 1.6; color: var(--text-dim); }
+.iqama-enable input, .iqama-confirm input { width: 16px; height: 16px; flex: 0 0 16px; margin: 1px 0 0; accent-color: #05c99a; }
+.iqama-interval-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 6px; margin: 9px 0; }
+.iqama-date-grid, .iqama-source-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 8px 0; }
+.iqama-profile label:not(.iqama-enable):not(.iqama-confirm) { min-width: 0; color: var(--text-dim); font-size: .63rem; line-height: 1.5; }
+.iqama-profile input:not([type=checkbox]) { display: block; width: 100%; min-width: 0; margin: 3px 0 0; padding: 7px 6px; border: 1px solid rgba(148,163,184,.27); border-radius: 7px; background: rgba(0,0,0,.22); color: var(--text-white); font-family: inherit; font-size: .68rem; font-weight: 500; line-height: 1.4; }
+.iqama-profile input[type=number] { text-align: center; }
+.iqama-error { margin: 0 12px 12px; padding: 8px 10px; border: 1px solid rgba(248,113,113,.35); border-radius: 8px; background: rgba(127,29,29,.16); color: #fecaca; font-size: .7rem; line-height: 1.6; }
+.iqama-error[hidden] { display: none; }
+.prayer-alert-status { margin: 7px 0 0; padding: 7px 9px; border: 1px solid rgba(74,222,190,.4); border-radius: 9px; background: rgba(1,46,45,.78); color: #e5fff7; text-align: center; font-size: .75rem; line-height: 1.5; box-shadow: 0 5px 18px rgba(0,0,0,.18); animation: prayer-alert-in .22s ease-out both; }
+.prayer-alert-status[hidden] { display: none; }
+@keyframes prayer-alert-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 540px) { .iqama-interval-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .iqama-date-grid, .iqama-source-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .prayer-alert-status { animation: none; } }
 .light-mode .sidebar, .light-mode .sidebar .controls { background: #f5f9fa; }
 .light-mode .sidebar .clock-section, .light-mode .sidebar .next-meeting-countdown, .light-mode .sidebar .stat-card { background: #fff; border-color: #d9e4e8; }
 .light-mode .view-meeting-btn { background: #edf4f4; color: #18353f; border-color: #d2e2e6; }

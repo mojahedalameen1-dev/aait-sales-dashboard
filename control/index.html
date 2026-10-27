@@ -121,7 +121,7 @@
             <article id="meeting-details" class="meeting-details" hidden></article>
           </section>
 
-          <div id="call-result" class="call-result" role="status" aria-live="polite" hidden></div>
+          <div id="call-result" class="call-result" role="status" aria-live="polite" tabindex="-1" hidden></div>
           <div class="submit-row">
             <p><i data-lucide="info"></i><span>قبل الإرسال، بنتحقق من المصدر ومن انشغال الموظف الحالي.</span></p>
             <button id="send-call" class="button button-primary send-button" type="submit"><i data-lucide="send"></i><span>إرسال النداء</span></button>
@@ -131,7 +131,7 @@
     </main>
 
     <div id="busy-dialog" class="dialog-backdrop" hidden>
-      <section class="busy-dialog" role="alertdialog" aria-modal="true" aria-labelledby="busy-title" aria-describedby="busy-description">
+      <section class="busy-dialog" role="alertdialog" aria-modal="true" aria-labelledby="busy-title" aria-describedby="busy-description" tabindex="-1">
         <span class="busy-icon"><i data-lucide="triangle-alert"></i></span>
         <div class="busy-copy">
           <span class="eyebrow is-danger">تأكيد قبل الإرسال</span>
@@ -142,6 +142,22 @@
         <div class="dialog-actions">
           <button id="cancel-busy" class="button button-secondary" type="button">إلغاء النداء</button>
           <button id="confirm-busy" class="button button-danger" type="button"><i data-lucide="triangle-alert"></i><span>إرسال رغم الانشغال</span></button>
+        </div>
+      </section>
+    </div>
+
+    <div id="duplicate-dialog" class="dialog-backdrop" hidden>
+      <section class="busy-dialog duplicate-dialog" role="alertdialog" aria-modal="true" aria-labelledby="duplicate-title" aria-describedby="duplicate-description duplicate-details" tabindex="-1">
+        <span class="busy-icon duplicate-icon"><i data-lucide="refresh-cw"></i></span>
+        <div class="busy-copy">
+          <span class="eyebrow is-warning">تأكيد قبل التكرار</span>
+          <h2 id="duplicate-title">أُرسل نداء لهذا المهندس مؤخرًا</h2>
+          <p id="duplicate-description"></p>
+          <p id="duplicate-details" class="duplicate-details"></p>
+        </div>
+        <div class="dialog-actions">
+          <button id="cancel-duplicate" class="button button-secondary" type="button">إلغاء</button>
+          <button id="confirm-duplicate" class="button button-duplicate" type="button"><i data-lucide="refresh-cw"></i><span>إعادة النداء الآن</span></button>
         </div>
       </section>
     </div>

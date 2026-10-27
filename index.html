@@ -20,7 +20,48 @@
             <p id="sheet-key-error" class="field-error" role="status" hidden></p>
             <label class="settings-label" for="prayer-city-select">مدينة مواقيت الصلاة</label>
             <select id="prayer-city-select" aria-describedby="prayer-city-hint"></select>
-            <p id="prayer-city-hint" class="settings-hint">طريقة أم القرى · بتوقيت السعودية · دون تشغيل أذان تلقائي</p>
+            <p id="prayer-city-hint" class="settings-hint">طريقة أم القرى · بتوقيت السعودية. تذكيرات الصوت والإقامة مخصصة للرياض</p>
+            <details class="iqama-settings">
+                <summary>إعداد تذكير الإقامة</summary>
+                <p class="iqama-warning">اقتراحك غير المفعّل: الفجر 15–20 دقيقة، الظهر والعصر والعشاء 15 دقيقة، والمغرب 5–10 دقائق. اختر الرقم المؤكد من مسجدكم وسجّل مصدره وتاريخ التحقق؛ لن يعمل التنبيه قبل ذلك. ولا يُستخدم موعد الظهر لتذكير الجمعة.</p>
+                <fieldset class="iqama-profile" data-iqama-profile="regular">
+                    <legend>الجدول المعتاد</legend>
+                    <label class="iqama-enable"><input id="iqama-regular-enabled" type="checkbox"> تفعيل هذا الجدول بعد التأكد منه</label>
+                    <div class="iqama-interval-grid">
+                        <label>الفجر <input id="iqama-regular-Fajr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>الظهر <input id="iqama-regular-Dhuhr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>العصر <input id="iqama-regular-Asr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>المغرب <input id="iqama-regular-Maghrib" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>العشاء <input id="iqama-regular-Isha" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                    </div>
+                    <div class="iqama-source-grid">
+                        <label>مصدر التحقق <input id="iqama-regular-source" type="text" maxlength="240" placeholder="إمام المسجد أو تعميم معتمد"></label>
+                        <label>تاريخ التحقق <input id="iqama-regular-verified" type="date"></label>
+                    </div>
+                    <label class="iqama-confirm"><input id="iqama-regular-confirmed" type="checkbox"> أؤكد أن هذه المدد تخص المسجد المقصود والجدول المعتاد</label>
+                </fieldset>
+                <fieldset class="iqama-profile" data-iqama-profile="ramadan">
+                    <legend>جدول رمضان (اختياري ومستقل)</legend>
+                    <label class="iqama-enable"><input id="iqama-ramadan-enabled" type="checkbox"> تفعيل الجدول للفترة المحددة فقط</label>
+                    <div class="iqama-date-grid">
+                        <label>يبدأ في <input id="iqama-ramadan-start" type="date"></label>
+                        <label>ينتهي في <input id="iqama-ramadan-end" type="date"></label>
+                    </div>
+                    <div class="iqama-interval-grid">
+                        <label>الفجر <input id="iqama-ramadan-Fajr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>الظهر <input id="iqama-ramadan-Dhuhr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>العصر <input id="iqama-ramadan-Asr" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>المغرب <input id="iqama-ramadan-Maghrib" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                        <label>العشاء <input id="iqama-ramadan-Isha" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="دقيقة"></label>
+                    </div>
+                    <div class="iqama-source-grid">
+                        <label>مصدر التحقق <input id="iqama-ramadan-source" type="text" maxlength="240" placeholder="تعميم الموسم أو المسجد"></label>
+                        <label>تاريخ التحقق <input id="iqama-ramadan-verified" type="date"></label>
+                    </div>
+                    <label class="iqama-confirm"><input id="iqama-ramadan-confirmed" type="checkbox"> أؤكد أن هذه المدد خاصة برمضان والفترة المحددة</label>
+                </fieldset>
+                <p id="iqama-config-error" class="iqama-error" role="alert" hidden></p>
+            </details>
             <div class="modal-actions">
                 <button class="btn-prime" id="save-settings-btn" type="button">حفظ وتحديث</button>
                 <button class="btn-secondary" id="test-sound-btn" type="button">تجربة وتفعيل الصوت</button>
@@ -96,6 +137,7 @@
                 </div>
                 <ol id="prayer-timeline" class="prayer-timeline" aria-label="مواقيت الصلوات الخمس"></ol>
                 <div class="prayer-status-row"><p id="prayer-status" class="prayer-status" role="status">وفق طريقة أم القرى · بتوقيت السعودية</p><button id="prayer-retry" type="button" hidden>إعادة المحاولة</button></div>
+                <p id="prayer-alert-status" class="prayer-alert-status" role="status" aria-live="assertive" hidden></p>
             </section>
 
             <section id="dhikr-card" class="dhikr-card" aria-labelledby="dhikr-title">

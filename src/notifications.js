@@ -7,6 +7,8 @@ import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate 
 import { getEngineerAudioPrefix, getEngineerProfile } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
 import { ALERT_CATCHUP_MS, MEETING_REMINDER_MINUTES, shouldTriggerAlert } from './alert-timing.js';
+import { createAudioPriorityQueue } from './audio-priority.js';
+import { createPrayerAudioSequence } from './prayer-audio-assets.js';
 
 // ========================================
 // 🔊 Audio System (Queue Based)
@@ -50,6 +52,7 @@ let releaseWebAudioLock = null;
 let leaderRetryInterval = null;
 let leaseRenewInterval = null;
 let leaseConfirmationTimeout = null;
+const priorityAudioQueue = createAudioPriorityQueue({ onIdle: () => processQueue() });
 
 /**
  * Set a callback for UI updates when audio state changes
@@ -119,25 +122,15 @@ export function isAudioPlaybackEnabled() {
 }
 
 /** Play a private server-generated announcement only after the page's audio was unlocked. */
-export async function playAnnouncementAudio(audioBlob, { onStarted } = {}) {
+export function playAnnouncementAudio(audioBlob, { onStarted, onDeferred, expiresAt = Infinity } = {}) {
     if (!(audioBlob instanceof Blob) || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
+    return priorityAudioQueue.enqueue('admin', () => playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt }), { expiresAt, onDeferred });
+}
 
-    // The call system is higher priority than a queued routine meeting reminder.
-    playbackGeneration++;
-    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
-    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
-    activeSafetyTimeout = null;
-    queueAdvanceTimeout = null;
-    for (const task of playQueue.splice(0)) task.onDelivered?.(false);
-    activeAudioTask?.onDelivered?.(false);
-    activeAudioTask = null;
-    isPlaying = false;
-    if (retainedAudioPlayer) {
-        retainedAudioPlayer.onended = null;
-        retainedAudioPlayer.onerror = null;
-        retainedAudioPlayer.pause?.();
-        try { retainedAudioPlayer.currentTime = 0; } catch { /* ignored */ }
-    }
+async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infinity } = {}) {
+    if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
+    if (!(audioBlob instanceof Blob) || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
+    stopRoutineAudioForPriority();
     announcementPlayer?.pause?.();
     if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
     announcementObjectUrl = URL.createObjectURL(audioBlob);
@@ -176,8 +169,27 @@ export async function playAnnouncementAudio(audioBlob, { onStarted } = {}) {
     });
 }
 
-/** A quiet, non-verbal reminder; it is deliberately not a full adhan recording. */
-export async function playPrayerReminder() {
+function stopRoutineAudioForPriority() {
+    // Prayer and admin speech take priority over scheduled meeting reminder files.
+    playbackGeneration++;
+    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
+    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
+    activeSafetyTimeout = null;
+    queueAdvanceTimeout = null;
+    for (const task of playQueue.splice(0)) task.onDelivered?.(false);
+    activeAudioTask?.onDelivered?.(false);
+    activeAudioTask = null;
+    isPlaying = false;
+    if (retainedAudioPlayer) {
+        retainedAudioPlayer.onended = null;
+        retainedAudioPlayer.onerror = null;
+        retainedAudioPlayer.pause?.();
+        try { retainedAudioPlayer.currentTime = 0; } catch { /* ignored */ }
+    }
+}
+
+/** A short, calm chime that must finish before the prayer speech asset begins. */
+async function playPrayerBeepNow() {
     if (!isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
     const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AudioContextClass) return { started: false, reason: 'unsupported' };
@@ -205,12 +217,39 @@ export async function playPrayerReminder() {
             oscillator.start(start);
             oscillator.stop(start + 0.42);
         }
-        window.setTimeout(() => { void context.close().catch(() => {}); }, 2100);
+        await new Promise(resolve => globalThis.setTimeout(resolve, 1450));
+        await context.close().catch(() => {});
         return { started: true };
     } catch {
         if (context && context.state !== 'closed') void context.close().catch(() => {});
         return { started: false, reason: 'playback_failed' };
     }
+}
+
+/** Priority order is prayer announcement, administrator call, then normal reminders. */
+export function playPrayerAnnouncement(audioBlobOrLoader, { onStarted, onDeferred, expiresAt = Infinity } = {}) {
+    if (!isAudioPlaybackEnabled()) return Promise.resolve({ started: false, reason: 'locked' });
+    return priorityAudioQueue.enqueue('prayer', async () => {
+        if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
+        stopRoutineAudioForPriority();
+        const audioBlob = typeof audioBlobOrLoader === 'function' ? await audioBlobOrLoader() : audioBlobOrLoader;
+        if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
+        const playSequence = createPrayerAudioSequence({
+            playBeep: playPrayerBeepNow,
+            playSpeech: blob => playAnnouncementAudioNow(blob, { onStarted, expiresAt })
+        });
+        return playSequence(audioBlob);
+    }, { expiresAt, onDeferred });
+}
+
+/** Backward-compatible short chime used only by existing integrations. */
+export function playPrayerReminder({ expiresAt = Infinity } = {}) {
+    if (!isAudioPlaybackEnabled()) return Promise.resolve({ started: false, reason: 'locked' });
+    return priorityAudioQueue.enqueue('prayer', playPrayerBeepNow, { expiresAt });
+}
+
+export function getPriorityAudioState() {
+    return { active: priorityAudioQueue.activeLevel, queued: priorityAudioQueue.queuedCount };
 }
 
 /**
@@ -270,7 +309,7 @@ export function stopAudioPlayback() {
  * Process the Audio Queue (STRICT MODE: Files Only)
  */
 async function processQueue() {
-    if (isPlaying || playQueue.length === 0) return;
+    if (isPlaying || playQueue.length === 0 || priorityAudioQueue.activeLevel || priorityAudioQueue.queuedCount) return;
     if (playQueue[0]?.meetingId !== 'audio-test' && !hasCurrentAudioLeadership()) return;
     
     if (currentAudioState !== AUDIO_STATE.ENABLED) {
