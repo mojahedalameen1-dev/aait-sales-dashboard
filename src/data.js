@@ -1,4 +1,5 @@
 import { APP_TIME_ZONE, DEFAULT_MEETING_DURATION_MINUTES } from './config.js';
+import { resolveIqamaSettings } from './prayer-iqama.js';
 
 // ========================================
 // 🔧 SETTINGS & CONFIG
@@ -32,9 +33,10 @@ const DEFAULT_SETTINGS = {
 export function getSettings() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
-        return stored ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) } : DEFAULT_SETTINGS;
+        const settings = stored ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) } : { ...DEFAULT_SETTINGS };
+        return { ...settings, prayerIqama: resolveIqamaSettings(settings.prayerIqama) };
     } catch {
-        return DEFAULT_SETTINGS;
+        return { ...DEFAULT_SETTINGS, prayerIqama: resolveIqamaSettings() };
     }
 }
 

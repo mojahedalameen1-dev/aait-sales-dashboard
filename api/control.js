@@ -8,10 +8,12 @@ import meHandler from '../server/control/me.js';
 import meetingsHandler from '../server/control/meetings.js';
 import passwordHandler from '../server/control/password.js';
 import statusHandler from '../server/control/status.js';
+import prayerAudioHandler from '../server/control/prayer-audio.js';
 
 const handlers = new Map([
     ['ack', ackHandler],
     ['audio', audioHandler],
+    ['prayer-audio', prayerAudioHandler],
     ['calls', callsHandler],
     ['config', configHandler],
     ['login', loginHandler],

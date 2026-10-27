@@ -32,6 +32,7 @@ let retainedAudioPlayer = null;
 let activeAudioTask = null;
 let announcementPlayer = null;
 let announcementObjectUrl = '';
+let cancelAnnouncementPlayback = null;
 const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
 // Track recently warned meetings to avoid spamming fallbacks
@@ -127,10 +128,11 @@ export function playAnnouncementAudio(audioBlob, { onStarted, onDeferred, expire
     return priorityAudioQueue.enqueue('admin', () => playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt }), { expiresAt, onDeferred });
 }
 
-async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infinity } = {}) {
+async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infinity, priorityOwned = false } = {}) {
     if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
     if (!(audioBlob instanceof Blob) || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
-    stopRoutineAudioForPriority();
+    if (!priorityOwned) stopRoutineAudioForPriority();
+    cancelAnnouncementPlayback?.();
     announcementPlayer?.pause?.();
     if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
     announcementObjectUrl = URL.createObjectURL(audioBlob);
@@ -142,13 +144,16 @@ async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infi
         const player = announcementPlayer;
         let started = false;
         let settled = false;
+        let safetyTimer;
         const finish = result => {
             if (settled) return;
             settled = true;
+            if (safetyTimer) clearTimeout(safetyTimer);
             player.removeEventListener('playing', handleStarted);
             player.removeEventListener('ended', handleEnded);
             player.removeEventListener('error', handleError);
             if (announcementPlayer === player) {
+                cancelAnnouncementPlayback = null;
                 announcementPlayer = null;
                 if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
                 announcementObjectUrl = '';
@@ -162,9 +167,11 @@ async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infi
         };
         const handleEnded = () => finish({ started });
         const handleError = () => finish({ started, reason: 'playback_failed' });
+        cancelAnnouncementPlayback = () => { player.pause(); finish({ started, reason: 'interrupted' }); };
         player.addEventListener('playing', handleStarted);
         player.addEventListener('ended', handleEnded);
         player.addEventListener('error', handleError);
+        safetyTimer = setTimeout(() => { player.pause(); finish({ started, reason: 'playback_timeout' }); }, Math.max(1, Math.min(45000, expiresAt - Date.now())));
         player.play().catch(() => finish({ started: false, reason: 'playback_blocked' }));
     });
 }
@@ -227,16 +234,20 @@ async function playPrayerBeepNow() {
 }
 
 /** Priority order is prayer announcement, administrator call, then normal reminders. */
-export function playPrayerAnnouncement(audioBlobOrLoader, { onStarted, onDeferred, expiresAt = Infinity } = {}) {
+export function playPrayerAnnouncement(audioBlobOrLoader, { onStarted, onDeferred, expiresAt = Infinity, isRelevant = () => true } = {}) {
     if (!isAudioPlaybackEnabled()) return Promise.resolve({ started: false, reason: 'locked' });
     return priorityAudioQueue.enqueue('prayer', async () => {
-        if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
+        if (expiresAt <= Date.now() || !isRelevant()) return { started: false, reason: 'expired' };
         stopRoutineAudioForPriority();
-        const audioBlob = typeof audioBlobOrLoader === 'function' ? await audioBlobOrLoader() : audioBlobOrLoader;
+        const generation = playbackGeneration;
+        let audioBlob;
+        try { audioBlob = typeof audioBlobOrLoader === 'function' ? await audioBlobOrLoader() : audioBlobOrLoader; }
+        catch { audioBlob = null; } // A missing voice never suppresses the card or the short chime.
         if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
         const playSequence = createPrayerAudioSequence({
             playBeep: playPrayerBeepNow,
-            playSpeech: blob => playAnnouncementAudioNow(blob, { onStarted, expiresAt })
+            playSpeech: (blob, repetition) => playAnnouncementAudioNow(blob, { onStarted: () => onStarted?.(repetition), expiresAt, priorityOwned: true }),
+            canContinue: () => generation === playbackGeneration && isRelevant() && isAudioPlaybackEnabled() && Date.now() < expiresAt
         });
         return playSequence(audioBlob);
     }, { expiresAt, onDeferred });
@@ -296,6 +307,7 @@ export function stopAudioPlayback() {
         retainedAudioPlayer.pause?.();
     }
     if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
+    cancelAnnouncementPlayback?.();
     announcementPlayer?.pause?.();
     announcementPlayer = null;
     if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);

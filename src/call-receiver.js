@@ -1,6 +1,7 @@
 import { isAudioPlaybackEnabled, playAnnouncementAudio } from './notifications.js';
 import { createAnnouncementAudioCache, requestPersistentAudioStorage } from './announcement-audio-cache.js';
 import { createAnnouncementAssetLoader } from './announcement-audio-assets.js';
+import { createPrayerAudioResolver } from './prayer-audio-resolver.js';
 
 const BOARD_AUTH_KEY = 'aait_board_anonymous_auth_v1';
 const PROCESSED_KEY = 'aait_board_processed_calls_v1';
@@ -360,6 +361,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
             config = {
                 databaseUrl: payload.firebase.databaseUrl,
                 apiKey: payload.firebase.apiKey,
+                prayerAudio: payload.prayerAudio,
                 feedPath: String(payload.firebase.feedPath || 'calls/public').split('/').map(encodeURIComponent).join('/')
             };
             await getScreenToken(config, storage);
@@ -369,8 +371,26 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         }
     }
 
-    void start();
+    const ready = start();
+    const loadPrayerAudio = createPrayerAudioResolver({
+        audioCache,
+        getManifest: async () => { await ready; if (!config && !destroyed) await start(); return config?.prayerAudio; },
+        loadGenerated: async ({ key, kind, cacheKey }) => {
+            if (destroyed || !config) throw new Error('اتصال شاشة العرض غير متاح');
+            const idToken = await getScreenToken(config, storage);
+            const query = new URLSearchParams({ key, kind, cache: cacheKey });
+            const response = await fetch(`/api/control/prayer-audio?${query}`, {
+                headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store'
+            });
+            if (!response.ok || response.headers.get('X-Audio-Cache-Key') !== cacheKey
+                || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/wav')) {
+                throw new Error('تعذر تحميل صوت الصلاة؛ يظل التنبيه المرئي متاحًا');
+            }
+            return response.blob();
+        }
+    });
     return {
+        loadPrayerAudio,
         notifyAudioEnabled: processAudioQueue,
         destroy() {
             destroyed = true;

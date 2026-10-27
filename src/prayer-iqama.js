@@ -2,6 +2,22 @@ import { PRAYERS, isPrayerDate, normalizePrayerTime } from './prayer-times.js';
 
 const MAX_VERIFICATION_AGE_DAYS = 366;
 const MAX_INTERVAL_MINUTES = 120;
+export const IQAMA_PRESET_VERSION = 'owner-2026-10-27-v1';
+
+/** Explicit manual intervals approved by the owner, not an official mosque timetable. */
+export function resolveIqamaSettings(value) {
+    const saved = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    if (saved.presetVersion === IQAMA_PRESET_VERSION) return saved;
+    return {
+        ...saved,
+        presetVersion: IQAMA_PRESET_VERSION,
+        regular: {
+            city: 'riyadh', enabled: true, confirmed: true,
+            source: 'مدد إقامة يدوية أكدها مالك اللوحة', verifiedAt: '2026-10-27',
+            intervals: { Fajr: 20, Dhuhr: 15, Asr: 15, Maghrib: 10, Isha: 15 }
+        }
+    };
+}
 
 function isFreshVerification(date, today) {
     if (!isPrayerDate(date) || !isPrayerDate(today) || date > today) return false;
@@ -35,10 +51,10 @@ export function validateIqamaProfile(profile, name, today) {
         const rangeDays = (Date.parse(`${endDate}T12:00:00+03:00`) - Date.parse(`${startDate}T12:00:00+03:00`)) / 86400000;
         if (rangeDays > 36) return { valid: false, profile: null, reason: 'ramadan_range_invalid' };
     }
-    return { valid: true, profile: { source, verifiedAt, intervals, name, startDate: profile.startDate, endDate: profile.endDate } };
+    return { valid: true, profile: { source, verifiedAt, intervals, name, city: profile.city || 'riyadh', startDate: profile.startDate, endDate: profile.endDate } };
 }
 
-/** Only returns a profile after an explicit confirmation and recent mosque-specific source. */
+/** Only returns a profile after explicit confirmation and a recently dated source. */
 export function getVerifiedIqamaProfile(settings, today) {
     if (!settings) return null;
     const ramadan = settings.ramadan;
@@ -49,9 +65,9 @@ export function getVerifiedIqamaProfile(settings, today) {
     return validateIqamaProfile(settings.regular, 'regular', today).profile;
 }
 
-export function getIqamaEvents(schedule, date, settings) {
+export function getIqamaEvents(schedule, date, settings, city = 'riyadh') {
     const profile = getVerifiedIqamaProfile(settings, date);
-    if (!profile || !schedule || schedule.date !== date) return [];
+    if (!profile || profile.city !== city || !schedule || schedule.date !== date) return [];
     // Noon in Riyadh is always the same UTC calendar date, independent of the TV's local zone.
     const weekday = new Date(`${date}T12:00:00+03:00`).getUTCDay();
     const events = [];

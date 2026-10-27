@@ -20,10 +20,10 @@
             <p id="sheet-key-error" class="field-error" role="status" hidden></p>
             <label class="settings-label" for="prayer-city-select">مدينة مواقيت الصلاة</label>
             <select id="prayer-city-select" aria-describedby="prayer-city-hint"></select>
-            <p id="prayer-city-hint" class="settings-hint">طريقة أم القرى · بتوقيت السعودية. تذكيرات الصوت والإقامة مخصصة للرياض</p>
+            <p id="prayer-city-hint" class="settings-hint">طريقة أم القرى · التنبيهات تتبع مواقيت المدينة المعروضة. الإقامة حسب جدولك المعتمد للوحة</p>
             <details class="iqama-settings">
                 <summary>إعداد تذكير الإقامة</summary>
-                <p class="iqama-warning">اقتراحك غير المفعّل: الفجر 15–20 دقيقة، الظهر والعصر والعشاء 15 دقيقة، والمغرب 5–10 دقائق. اختر الرقم المؤكد من مسجدكم وسجّل مصدره وتاريخ التحقق؛ لن يعمل التنبيه قبل ذلك. ولا يُستخدم موعد الظهر لتذكير الجمعة.</p>
+                <p class="iqama-warning">مددك اليدوية المعتمدة للرياض: الفجر 20 دقيقة، الظهر والعصر والعشاء 15 دقيقة، والمغرب 10 دقائق. هذا جدول من اختيار مالك اللوحة، وليس مواقيت رسمية لمسجد معيّن. يمكنك تعديله أو إيقافه هنا؛ ولا يُستخدم موعد الظهر لتذكير الجمعة.</p>
                 <fieldset class="iqama-profile" data-iqama-profile="regular">
                     <legend>الجدول المعتاد</legend>
                     <label class="iqama-enable"><input id="iqama-regular-enabled" type="checkbox"> تفعيل هذا الجدول بعد التأكد منه</label>
@@ -38,7 +38,7 @@
                         <label>مصدر التحقق <input id="iqama-regular-source" type="text" maxlength="240" placeholder="إمام المسجد أو تعميم معتمد"></label>
                         <label>تاريخ التحقق <input id="iqama-regular-verified" type="date"></label>
                     </div>
-                    <label class="iqama-confirm"><input id="iqama-regular-confirmed" type="checkbox"> أؤكد أن هذه المدد تخص المسجد المقصود والجدول المعتاد</label>
+                    <label class="iqama-confirm"><input id="iqama-regular-confirmed" type="checkbox"> أؤكد اعتماد هذه المدد للوحة ضمن الجدول المعتاد</label>
                 </fieldset>
                 <fieldset class="iqama-profile" data-iqama-profile="ramadan">
                     <legend>جدول رمضان (اختياري ومستقل)</legend>
@@ -126,14 +126,15 @@
         <section class="wellbeing-section" aria-label="الصلاة والأذكار">
             <section id="prayer-card" class="prayer-card" aria-labelledby="prayer-card-title" aria-busy="true">
                 <div class="wellbeing-heading">
-                    <h2 id="prayer-card-title"><i data-lucide="moon-star"></i>أقرب صلاة</h2>
+                    <h2 id="prayer-card-title"><i data-lucide="moon-star"></i><span id="prayer-phase-label">أقرب صلاة</span></h2>
                     <button id="prayer-city-button" class="city-chip" type="button" aria-label="تغيير مدينة مواقيت الصلاة"><i data-lucide="map-pin"></i><span id="prayer-city-label">الرياض</span></button>
                 </div>
                 <div class="prayer-main">
                     <h3 id="prayer-name">جاري تحميل المواقيت</h3>
                     <div class="prayer-appointment"><time id="prayer-time" class="en-nums">--:--</time><span id="prayer-day-label"></span></div>
                     <div id="prayer-countdown" class="prayer-countdown en-nums" role="timer" aria-label="المتبقي للصلاة القادمة">--:--:--</div>
-                    <span class="prayer-countdown-caption">ساعة · دقيقة · ثانية</span>
+                    <span id="prayer-countdown-caption" class="prayer-countdown-caption">ساعة · دقيقة · ثانية</span>
+                    <p id="prayer-next-detail" class="prayer-next-detail" hidden></p>
                 </div>
                 <ol id="prayer-timeline" class="prayer-timeline" aria-label="مواقيت الصلوات الخمس"></ol>
                 <div class="prayer-status-row"><p id="prayer-status" class="prayer-status" role="status">وفق طريقة أم القرى · بتوقيت السعودية</p><button id="prayer-retry" type="button" hidden>إعادة المحاولة</button></div>

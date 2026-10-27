@@ -1,8 +1,8 @@
-import { PRAYERS, getRiyadhDate, createPrayerService } from './prayer-times.js';
-import { getIqamaEvents } from './prayer-iqama.js';
+import { getRiyadhDate, createPrayerService } from './prayer-times.js';
+import { getPrayerScheduleEvents } from './prayer-experience.js';
 
 const STORAGE_KEY = 'aait_prayer_alerts_riyadh_v1';
-const GRACE_PERIOD_MS = 3000;
+const GRACE_PERIOD_MS = 15000;
 
 function readMarkers(storage) {
     try {
@@ -11,11 +11,13 @@ function readMarkers(storage) {
     } catch { return new Set(); }
 }
 
-export function createRiyadhPrayerAlerts({
+export function createPrayerAlerts({
     service = createPrayerService(),
+    getSnapshot,
     storage = globalThis.localStorage,
     now = () => new Date(),
     onAlert = () => {},
+    isActive = () => true,
     getIqamaSettings = () => null,
     locks = globalThis.navigator?.locks
 } = {}) {
@@ -49,7 +51,7 @@ export function createRiyadhPrayerAlerts({
         const latest = readMarkers(storage);
         if (latest.has(marker)) { sessionMarkers.add(marker); return true; }
         // Keep old adhan markers valid across the scheduler schema upgrade.
-        if (kind !== 'adhan') return false;
+        if (kind !== 'adhan' || !marker.startsWith('riyadh:')) return false;
         const [, date, key] = marker.split(':');
         const wasPlayed = latest.has(`${date}:${key}`);
         if (wasPlayed) sessionMarkers.add(marker);
@@ -88,40 +90,26 @@ export function createRiyadhPrayerAlerts({
         persist(event.id);
     }
 
-    function buildEvents(schedule, currentDay) {
-        const events = [];
-        for (const prayer of PRAYERS) {
-            const rawTime = schedule.timings?.[prayer.key];
-            if (!rawTime || !/^\d{2}:\d{2}$/.test(rawTime)) continue;
-            events.push({
-                id: `riyadh:${currentDay}:${prayer.key}:adhan`, date: currentDay, key: prayer.key,
-                label: prayer.label, time: rawTime, city: 'الرياض', kind: 'adhan'
-            });
-        }
-        for (const event of getIqamaEvents(schedule, currentDay, getIqamaSettings())) {
-            events.push({
-                ...event, id: `riyadh:${currentDay}:${event.key}:iqama`, date: currentDay,
-                city: 'الرياض', kind: 'iqama'
-            });
-        }
-        return events;
-    }
-
     function tick(time = now()) {
-        if (destroyed) return;
+        if (destroyed || !isActive()) return;
         const currentDay = getRiyadhDate(time);
         if (day !== currentDay) {
             day = currentDay;
             payload = null;
             retryAt = 0;
-            void load();
+            if (!getSnapshot) void load();
         }
+        if (getSnapshot) {
+            const snapshot = getSnapshot();
+            payload = snapshot?.payload || null;
+            payloadReadyAt = snapshot?.readyAt ?? Infinity;
+        } else if (!loading && Date.now() >= retryAt) void load();
         if (!payload) return;
         const schedule = payload.days?.find(item => item.date === currentDay);
         if (!schedule) return;
         const currentTime = time.getTime();
-        for (const event of buildEvents(schedule, currentDay)) {
-            const instant = Date.parse(`${currentDay}T${event.time}:00+03:00`);
+        for (const event of getPrayerScheduleEvents(payload, currentDay, getIqamaSettings())) {
+            const instant = event.timestamp;
             if (!Number.isFinite(instant) || stored(event.id, event.kind)) continue;
             if (instant <= Math.max(sessionStartedAt, suppressThrough) || instant < payloadReadyAt) {
                 markMissed(event);
@@ -145,7 +133,10 @@ export function createRiyadhPrayerAlerts({
     return {
         tick,
         skipMissed,
-        refresh: () => load(true),
+        refresh: () => getSnapshot ? tick(now()) : load(true),
         destroy() { destroyed = true; }
     };
 }
+
+// Kept for callers using the original Riyadh-only API; the board uses createPrayerAlerts.
+export const createRiyadhPrayerAlerts = createPrayerAlerts;

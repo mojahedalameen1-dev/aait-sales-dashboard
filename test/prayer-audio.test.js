@@ -32,7 +32,7 @@ test('the ten Arabic phrases are unique, concise and cover adhan plus iqama for 
     assert.equal(phrases.length, 10);
     assert.equal(new Set(phrases).size, 10);
     assert.ok(phrases.every(text => Array.from(text).length <= 200));
-    assert.equal(getPrayerSpeechText('Fajr', 'adhan'), 'حان الآن وقت أذان صلاة الفجر.');
+    assert.equal(getPrayerSpeechText('Fajr', 'adhan'), 'حان الآن موعد صلاة الفجر.');
     assert.equal(getPrayerSpeechText('Isha', 'iqama'), 'حان الآن موعد إقامة صلاة العشاء.');
     assert.equal(getPrayerSpeechText('Friday', 'iqama'), null);
 });
@@ -65,18 +65,21 @@ test('short tone completes before the speech asset starts', async () => {
     const order = [];
     const sequence = createPrayerAudioSequence({
         playBeep: async () => { order.push('beep-start'); await Promise.resolve(); order.push('beep-end'); return { started: true }; },
-        playSpeech: async () => { order.push('speech-start'); return { started: true }; }
+        playSpeech: async () => { order.push('speech-start'); return { started: true }; },
+        wait: async () => { order.push('pause'); }
     });
     const result = await sequence(wav);
-    assert.deepEqual(order, ['beep-start', 'beep-end', 'speech-start']);
+    assert.deepEqual(order, ['beep-start', 'beep-end', 'speech-start', 'pause', 'speech-start']);
     assert.equal(result.started, true);
     assert.equal(result.toneStarted, true);
+    assert.equal(result.repetitions, 2);
 });
 
 test('missing speech keeps only the short chime and reports unavailable speech', async () => {
     const result = await createPrayerAudioSequence({
         playBeep: async () => ({ started: true }),
-        playSpeech: async () => assert.fail('missing audio must not call speech playback')
+        playSpeech: async () => assert.fail('missing audio must not call speech playback'),
+        wait: async () => {}
     })(null);
-    assert.deepEqual(result, { started: true, speechAvailable: false, reason: 'speech_asset_missing' });
+    assert.deepEqual(result, { started: true, speechAvailable: false, reason: 'speech_asset_missing', repetitions: 2, expectedRepetitions: 2 });
 });

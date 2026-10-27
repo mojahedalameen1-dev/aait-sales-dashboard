@@ -13,6 +13,7 @@ import controlStatusApi from './server/control/status.js';
 import controlLoginApi from './server/control/login.js';
 import controlPasswordApi from './server/control/password.js';
 import controlLogoutApi from './server/control/logout.js';
+import prayerAudioApi from './server/control/prayer-audio.js';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const LOCAL_API_HANDLERS = new Map([
@@ -24,6 +25,7 @@ const LOCAL_API_HANDLERS = new Map([
   ['/api/control/calls', controlCallsApi],
   ['/api/control/ack', controlAckApi],
   ['/api/control/audio', controlAudioApi],
+  ['/api/control/prayer-audio', prayerAudioApi],
   ['/api/control/status', controlStatusApi],
   ['/api/control/login', controlLoginApi],
   ['/api/control/password', controlPasswordApi],

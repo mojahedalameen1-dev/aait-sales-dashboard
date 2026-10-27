@@ -12,12 +12,13 @@ export const PRAYER_AUDIO_ASSETS = Object.freeze(Object.fromEntries(KEYS.map(key
 export const PRAYER_SPEECH_TEXT = Object.freeze(Object.fromEntries(KEYS.map(key => {
     const name = PRAYER_NAMES[key];
     return [key, Object.freeze({
-        adhan: `حان الآن وقت أذان صلاة ${name}.`,
+        adhan: `حان الآن موعد صلاة ${name}.`,
         iqama: `حان الآن موعد إقامة صلاة ${name}.`
     })];
 })));
 
 export function getPrayerSpeechText(key, kind) {
+    if (!KEYS.includes(key) || !['adhan', 'iqama'].includes(kind)) return null;
     return PRAYER_SPEECH_TEXT[key]?.[kind] || null;
 }
 
@@ -67,11 +68,30 @@ export function createPrayerAudioAssetLoader({ fetchImpl = globalThis.fetch, bas
     };
 }
 
-export function createPrayerAudioSequence({ playBeep, playSpeech }) {
-    return async (blob, options = {}) => {
+export function createPrayerAudioSequence({ playBeep, playSpeech, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), canContinue = () => true }) {
+    return async (blob, { gapMs = 1400 } = {}) => {
+        const expected = 2; // Each prayer reminder is confirmed exactly twice, never an unbounded retry.
+        if (!canContinue()) return { started: false, reason: 'expired', repetitions: 0 };
         const beep = await playBeep();
-        if (!blob) return { started: beep?.started === true, speechAvailable: false, reason: 'speech_asset_missing' };
-        const speech = await playSpeech(blob, options);
-        return { ...speech, toneStarted: beep?.started === true, speechAvailable: true };
+        if (!blob) {
+            let tones = beep?.started === true ? 1 : 0;
+            if (tones && canContinue()) {
+                await wait(gapMs);
+                if (canContinue() && (await playBeep())?.started) tones++;
+            }
+            return { started: tones > 0, speechAvailable: false, reason: 'speech_asset_missing', repetitions: tones, expectedRepetitions: expected };
+        }
+        let completed = 0;
+        let started = 0;
+        let result;
+        for (let repetition = 1; repetition <= expected; repetition++) {
+            if (repetition > 1) await wait(gapMs);
+            if (!canContinue()) return { started: started > 0, reason: 'expired', repetitions: started, completedRepetitions: completed, speechAvailable: true };
+            result = await playSpeech(blob, { repetition, total: expected });
+            if (result?.started) started++;
+            if (result?.started && !result.reason) completed++;
+            if (!result?.started || result.reason) break;
+        }
+        return { ...result, started: started > 0, toneStarted: beep?.started === true, speechAvailable: true, repetitions: started, completedRepetitions: completed, expectedRepetitions: expected };
     };
 }

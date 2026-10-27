@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>اختبار بطاقة الصلاة المعزول</title></head>
+<body>
+    <div class="qa-layout">
+        <header><h1>معاينة معزولة لبطاقة الصلاة</h1><p>جدول وهمي فقط · لا اتصال بـ Firebase أو Groq · لا تشغيل صوت</p></header>
+        <nav aria-label="حالات البطاقة">
+            <button data-at="14:45:00">قبل الأذان</button><button data-at="14:52:00">دخول الوقت</button>
+            <button data-at="14:54:00">انتظار الإقامة</button><button data-at="15:07:00">وقت الإقامة</button>
+            <button data-at="15:08:00">بعد الإقامة</button><button id="without-iqama">بدون جدول إقامة</button>
+        </nav>
+        <aside class="sidebar" id="preview-card"></aside>
+        <output id="qa-result" aria-live="polite"></output>
+    </div>
+    <script type="module">
+        import '/src/style.css'; import '/src/sidebar.css';
+        import '@fontsource/ibm-plex-sans-arabic/400.css'; import '@fontsource/ibm-plex-sans-arabic/700.css';
+        import { createPrayerCard } from '/src/prayer-card.js';
+        import { createPrayerAlerts } from '/src/prayer-alerts.js';
+        import { resolveIqamaSettings } from '/src/prayer-iqama.js';
+        import { createIcons, MoonStar, MapPin } from 'lucide';
+        const date = '2026-10-27';
+        let current = new Date(`${date}T14:45:00+03:00`);
+        let enabled = true;
+        const settings = resolveIqamaSettings();
+        const markup = await (await fetch('/')).text();
+        const parser = new DOMParser().parseFromString(markup, 'text/html');
+        document.getElementById('preview-card').append(parser.querySelector('#prayer-card'));
+        createIcons({ icons: { MoonStar, MapPin } });
+        const card = createPrayerCard(document.getElementById('prayer-card'), {
+            now: () => current, getIqamaSettings: () => enabled ? settings : null,
+            service: { load: async () => ({ city: 'riyadh', method: 4, timeZone: 'Asia/Riyadh', fetchedAt: new Date(`${date}T10:00:00+03:00`).toISOString(), days: [date, '2026-10-28'].map(date => ({ date, timings: { Fajr: '04:38', Dhuhr: '11:37', Asr: '14:52', Maghrib: '17:17', Isha: '18:47' } })) }) }
+        });
+        const alerts = [];
+        const markers = new Map();
+        const scheduler = createPrayerAlerts({ now: () => current, getSnapshot: card.getSnapshot,
+            getIqamaSettings: () => enabled ? settings : null, locks: null,
+            storage: { getItem: key => markers.get(key), setItem: (key, value) => markers.set(key, value) },
+            onAlert: event => { alerts.push(event.kind); document.getElementById('qa-result').textContent = `الأحداث المعزولة: ${alerts.join('، ')} · كل حدث صوتي مبرمج لتكرارين`; }
+        });
+        for (const button of document.querySelectorAll('[data-at]')) button.addEventListener('click', () => {
+            enabled = true; current = new Date(`${date}T${button.dataset.at}+03:00`); card.tick(current); scheduler.tick(current);
+        });
+        document.getElementById('without-iqama').addEventListener('click', () => { enabled = false; current = new Date(`${date}T14:54:00+03:00`); card.tick(current); });
+    </script>
+    <style>
+        body { display: grid !important; place-items: center; min-height: 100vh; margin: 0; background: #030c12; color: #e9f5f5; overflow: auto !important; }
+        .qa-layout { width: min(740px, 95vw); text-align: center; padding: 24px; }
+        header h1 { font-size: 1.2rem; margin: 0 0 7px; } header p { color: #9fbdc7; font-size: .8rem; }
+        nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 18px 0; }
+        nav button { border: 1px solid #375566; border-radius: 8px; background: #102531; color: white; padding: 8px 12px; font: inherit; font-size: .8rem; cursor: pointer; }
+        .qa-layout .sidebar { position: relative; inset: auto; width: min(420px, 100%); height: auto; min-height: 0; padding: 14px; margin: auto; display: block; }
+        #qa-result { display: block; margin-top: 14px; min-height: 3rem; font-size: .8rem; color: #ade5cd; }
+    </style>
+</body>
+</html>

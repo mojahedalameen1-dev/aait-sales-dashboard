@@ -7,8 +7,8 @@ import './sidebar.css';
 import './meeting-cards.css';
 import './call-announcement.css';
 import { createPrayerCard, populatePrayerCities } from './prayer-card.js';
-import { createRiyadhPrayerAlerts } from './prayer-alerts.js';
-import { createPrayerAudioAssetLoader } from './prayer-audio-assets.js';
+import { createPrayerAlerts } from './prayer-alerts.js';
+import { getPrayerSpeechText } from './prayer-audio-assets.js';
 import { validateIqamaProfile } from './prayer-iqama.js';
 import { createCallReceiver } from './call-receiver.js';
 import { getPrayerCity } from './prayer-times.js';
@@ -96,7 +96,6 @@ let pendingPrayerReminderTimeout = null;
 let prayerAlertStatusTimeout = null;
 let dhikrSlider = null;
 let currentAudioState = AUDIO_STATE.LOCKED;
-const loadPrayerAudioAsset = createPrayerAudioAssetLoader();
 const IQAMA_PRAYER_KEYS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 let meetingGridResizeObserver = null;
 let meetingGridResizeFrame = 0;
@@ -938,6 +937,7 @@ function readIqamaProfileSettings(name) {
         return [key, Number.isInteger(value) ? value : null];
     }));
     return {
+        city: document.getElementById('prayer-city-select')?.value || 'riyadh',
         enabled: Boolean(document.getElementById(`iqama-${name}-enabled`)?.checked),
         confirmed: Boolean(document.getElementById(`iqama-${name}-confirmed`)?.checked),
         source: document.getElementById(`iqama-${name}-source`)?.value.trim() || '',
@@ -975,10 +975,10 @@ function hydrateIqamaSettings(settings = {}) {
 }
 
 function collectIqamaSettings() {
-    const settings = { regular: readIqamaProfileSettings('regular'), ramadan: readIqamaProfileSettings('ramadan') };
+    const settings = { ...getSettings().prayerIqama, regular: readIqamaProfileSettings('regular'), ramadan: readIqamaProfileSettings('ramadan') };
     const error = document.getElementById('iqama-config-error');
     const messages = {
-        confirmation_required: 'فعّل التذكير بعد تأكيد مدد مسجدكم ومصدرها فقط.',
+        confirmation_required: 'فعّل التذكير بعد تأكيد مدد الإقامة ومصدرها فقط.',
         source_required: 'اكتب مصدرًا واضحًا للتحقق، مثل اسم المسجد أو مرجع التعميم.',
         verification_date_invalid: 'أدخل تاريخ تحقق صحيحًا وحديثًا (خلال آخر 366 يومًا).',
         intervals_invalid: 'أدخل مدة صحيحة من 1 إلى 120 دقيقة لكل صلاة.',
@@ -1011,23 +1011,21 @@ function showPrayerAlertStatus(message, durationMs = 10000, eventId = '') {
     }, durationMs);
 }
 
-function clearPrayerAlertStatus(eventId) {
-    const status = document.getElementById('prayer-alert-status');
-    if (!status || status.dataset.eventId !== eventId) return;
-    showPrayerAlertStatus('', 0, eventId);
-    status.dataset.eventId = '';
-}
-
 async function playPrayerAlert(prayer) {
     const label = prayer.kind === 'iqama' ? `إقامة صلاة ${prayer.label}` : `أذان صلاة ${prayer.label}`;
-    const result = await playPrayerAnnouncement(() => loadPrayerAudioAsset({ key: prayer.key, kind: prayer.kind }), {
+    const result = await playPrayerAnnouncement(() => callReceiver?.loadPrayerAudio(prayer), {
         expiresAt: prayer.expiresAt,
+        isRelevant: () => prayerCard?.getSnapshot()?.city === prayer.cityId && document.visibilityState !== 'hidden',
         onDeferred: () => showPrayerAlertStatus(`تأخر ${label} قليلًا لحين انتهاء الصوت الحالي.`, 10000, prayer.id),
-        onStarted: () => showPrayerAlertStatus(`يُشغّل الآن ${label}.`, 10000, prayer.id)
+        onStarted: ({ repetition, total }) => showPrayerAlertStatus(`يُشغّل الآن تذكير ${label} · ${repetition} من ${total}.`, 10000, prayer.id)
     });
-    if (result.reason === 'speech_asset_missing') showPrayerAlertStatus(`تم تشغيل التنبيه التمهيدي؛ ملف عبارة ${label} غير جاهز بعد.`, 10000, prayer.id);
+    if (result.reason === 'speech_asset_missing') showPrayerAlertStatus(result.started
+        ? `تعذر تحميل نطق ${label}؛ شُغّل الجرس فقط.`
+        : `حان ${label}؛ الصوت غير متاح على شاشة العرض.`, 10000, prayer.id);
     else if (!result.started) showPrayerAlertStatus(`ظهر تذكير ${label} على الشاشة، لكن تعذر تشغيل الصوت.`, 10000, prayer.id);
-    else if (result.speechAvailable) setTimeout(() => clearPrayerAlertStatus(prayer.id), 400);
+    else if (result.speechAvailable) {
+        showPrayerAlertStatus(result.completedRepetitions === 2 ? `اكتمل تذكير ${label} مرتين.` : `لم يكتمل تكرار تذكير ${label}.`, 5000, prayer.id);
+    }
     return result;
 }
 
@@ -1185,13 +1183,18 @@ async function initApp() {
 
     const settings = getSettings();
     populatePrayerCities(document.getElementById('prayer-city-select'), settings.prayerCity);
-    prayerCard = createPrayerCard(document.getElementById('prayer-card'), { city: settings.prayerCity });
-    prayerAlerts = createRiyadhPrayerAlerts({
+    prayerCard = createPrayerCard(document.getElementById('prayer-card'), {
+        city: settings.prayerCity,
+        getIqamaSettings: () => getSettings().prayerIqama
+    });
+    callReceiver = createCallReceiver();
+    prayerAlerts = createPrayerAlerts({
+        getSnapshot: () => prayerCard.getSnapshot(),
+        isActive: () => document.visibilityState !== 'hidden',
         getIqamaSettings: () => getSettings().prayerIqama,
         onAlert: prayer => {
-            const isIqama = prayer.kind === 'iqama';
-            const phrase = isIqama ? `حان موعد إقامة صلاة ${prayer.label}` : `دخل الآن وقت صلاة ${prayer.label}`;
-            showPrayerAlertStatus(`${phrase} في الرياض.`, 10000, prayer.id);
+            const phrase = getPrayerSpeechText(prayer.key, prayer.kind);
+            showPrayerAlertStatus(`${phrase} · ${prayer.city}`, 10000, prayer.id);
             if (isAudioPlaybackEnabled()) return playPrayerAlert(prayer);
             if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
             if (Date.now() < prayer.expiresAt) {
@@ -1203,7 +1206,6 @@ async function initApp() {
             }
         }
     });
-    callReceiver = createCallReceiver();
     dhikrSlider = createDhikrSlider(document.getElementById('dhikr-card'));
     startClock();
 
@@ -1217,6 +1219,12 @@ async function initApp() {
     document.getElementById('prayer-city-button')?.addEventListener('click', () => {
         window.toggleSettings();
         queueMicrotask(() => document.getElementById('prayer-city-select')?.focus());
+    });
+    document.getElementById('prayer-city-select')?.addEventListener('change', event => {
+        for (const name of ['regular', 'ramadan']) {
+            const savedCity = getSettings().prayerIqama?.[name]?.city || 'riyadh';
+            if (savedCity !== event.target.value) document.getElementById(`iqama-${name}-confirmed`).checked = false;
+        }
     });
 
     // Theme sync

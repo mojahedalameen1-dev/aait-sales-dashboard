@@ -1,4 +1,5 @@
 import { firebaseDatabaseRequest, getFirebaseClientConfig, parseAdminMap } from './shared.js';
+import { getPrayerAudioManifest } from './prayer-audio.js';
 
 export default async function handler(request, response) {
     response.setHeader('Cache-Control', 'no-store');
@@ -30,6 +31,7 @@ export default async function handler(request, response) {
         sessionConfigured: config.sessionConfigured,
         adminPasswordsConfigured,
         speechConfigured: config.speechConfigured,
+        prayerAudio: getPrayerAudioManifest(),
         firebase: config.firebase,
         missing
     });
