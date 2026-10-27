@@ -26,6 +26,8 @@ function createAnnouncementSurface() {
     surface.setAttribute('role', 'status');
     surface.setAttribute('aria-live', 'assertive');
     surface.setAttribute('aria-atomic', 'true');
+    const panel = document.createElement('div');
+    panel.className = 'board-call-panel';
     const symbol = document.createElement('span');
     symbol.className = 'board-call-symbol';
     symbol.setAttribute('aria-hidden', 'true');
@@ -42,7 +44,8 @@ function createAnnouncementSurface() {
     const status = document.createElement('small');
     status.className = 'board-call-status';
     copy.append(eyebrow, employee, reason, status);
-    surface.append(symbol, copy);
+    panel.append(symbol, copy);
+    surface.append(panel);
     surface._slots = { employee, reason, status };
     document.body.append(surface);
     return surface;
@@ -88,6 +91,9 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     let retryDelay = 1800;
     let retryTimer = null;
     let announcementTimer = null;
+    let announcementHideTimer = null;
+    let currentAnnouncementId = null;
+    let announcementExpiresAt = 0;
     let config = null;
     let surface = null;
     let audioQueue = [];
@@ -121,13 +127,25 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         surface._slots.employee.textContent = event.employeeName || 'الموظف المحدد';
         surface._slots.reason.textContent = event.callType === 'office' ? 'يرجى الحضور إلى المكتب' : 'يرجى الدخول إلى الاجتماع';
         surface._slots.status.textContent = state;
+        if (currentAnnouncementId !== event.id) {
+            if (announcementTimer) clearTimeout(announcementTimer);
+            if (announcementHideTimer) clearTimeout(announcementHideTimer);
+            currentAnnouncementId = event.id;
+            announcementExpiresAt = Date.now() + 10000;
+            const announcementId = event.id;
+            announcementTimer = setTimeout(() => {
+                if (currentAnnouncementId !== announcementId) return;
+                surface?.classList.add('is-hiding');
+                announcementTimer = null;
+                announcementHideTimer = setTimeout(() => {
+                    if (surface && currentAnnouncementId === announcementId) surface.hidden = true;
+                    announcementHideTimer = null;
+                }, 450);
+            }, 10000);
+        }
+        if (Date.now() >= announcementExpiresAt) return;
         surface.hidden = false;
         surface.classList.remove('is-hiding');
-        if (announcementTimer) clearTimeout(announcementTimer);
-        announcementTimer = setTimeout(() => {
-            surface?.classList.add('is-hiding');
-            setTimeout(() => { if (surface) surface.hidden = true; }, 450);
-        }, 12000);
     }
 
     function markDisplayed(event) {
@@ -341,6 +359,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
             destroyed = true;
             if (retryTimer) clearTimeout(retryTimer);
             if (announcementTimer) clearTimeout(announcementTimer);
+            if (announcementHideTimer) clearTimeout(announcementHideTimer);
             void currentStreamReader?.cancel().catch(() => {});
             surface?.remove();
             surface = null;
