@@ -272,12 +272,15 @@ export function parseTimeStr(timeStr) {
     const isPM = /pm|م|مساء/i.test(original);
     const isAM = /am|ص|صباح/i.test(original);
     const cleaned = original.replace(/[^\d:]/g, '');
-    const match = cleaned.match(/^(\d{1,2}):(\d{2})$/);
+    // Spreadsheet time cells may include seconds (for example: 11:00:00 ص).
+    // Seconds do not affect the meeting start time, but validate them if present.
+    const match = cleaned.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (!match) return '';
 
     let h = parseInt(match[1], 10);
     const m = parseInt(match[2], 10);
-    if (m > 59 || h > 23) return '';
+    const s = match[3] === undefined ? 0 : parseInt(match[3], 10);
+    if (m > 59 || s > 59 || h > 23) return '';
 
     // جدول التشغيل يستخدم 1:00..9:00 للفترة المسائية إذا لم تُذكر ص/م.
     if (!isPM && !isAM) {
