@@ -1505,8 +1505,6 @@ input[aria-invalid="true"] {
     background: #fffbeb;
     border-color: #fbbf24;
 }
-#audio-unlock-overlay[hidden] { display: none !important; }
-
 #meeting-now-badge.has-running {
     align-self: center;
     margin: 0 0 0.55rem;
@@ -1809,6 +1807,9 @@ body {
 .icon-btn:hover::after,
 .icon-btn:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 .icon-btn.is-success { color: #22c55e; border-color: rgba(34,197,94,.4); }
+.icon-btn[aria-busy="true"] svg { animation: control-spin .9s linear infinite; }
+.icon-btn.is-audio-pending { color: #fbbf24; border-color: rgba(251,191,36,.38); }
+@keyframes control-spin { to { transform: rotate(360deg); } }
 
 .display-mode #settings-toggle-btn { display: none; }
 .display-mode .sidebar { box-shadow: none; }
@@ -1868,106 +1869,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
     .next-meeting-countdown { padding: 1rem; }
     #live-clock { font-size: 2.5rem; }
     #countdown-timer { font-size: 3.5rem; }
-}
-
-/* ========================================
-   🔉 Audio System UI
-   ======================================== */
-
-.audio-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    background: rgba(5, 8, 10, 0.85);
-    backdrop-filter: blur(15px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-}
-
-.audio-overlay.active {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.overlay-content {
-    text-align: center;
-    padding: 3rem;
-    background: var(--bg-sidebar);
-    border-radius: 30px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 30px 60px rgba(0,0,0,0.5);
-    max-width: 500px;
-    width: 90%;
-    transform: translateY(20px);
-    transition: transform 0.5s ease;
-}
-
-.audio-overlay.active .overlay-content {
-    transform: translateY(0);
-}
-
-.pulse-icon {
-    width: 80px;
-    height: 80px;
-    background: var(--color-pending);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 1.5rem;
-    font-size: 2.5rem;
-    animation: icon-pulse 2s infinite;
-}
-
-@keyframes icon-pulse {
-    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
-    70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(59, 130, 246, 0); }
-    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-}
-
-.overlay-content h2 {
-    font-size: 2rem;
-    margin-bottom: 1rem;
-}
-
-.overlay-content p {
-    color: var(--text-dim);
-    margin-bottom: 2rem;
-}
-
-.audio-status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-radius: 50px;
-    font-size: 0.85rem;
-    font-weight: 700;
-    margin-top: 1rem;
-    border: 1px solid transparent;
-    transition: var(--transition);
-}
-
-.audio-status-badge.locked {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-dim);
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-.audio-status-badge.enabled {
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
-    border-color: rgba(34, 197, 94, 0.2);
-}
-
-.audio-status-badge.failed {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border-color: rgba(239, 68, 68, 0.2);
 }
 
 /* ========================================
@@ -2097,19 +1998,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
     .mc-status.is-running svg,
     #meeting-now-badge,
     .meeting-card.current,
-    .mc-quick-join { animation: none !important; }
-}
-
-#audio-status.locked {
-    color: #fbbf24;
-    background: rgba(245, 158, 11, .12);
-    border-color: rgba(245, 158, 11, .32);
-}
-
-#audio-status.failed {
-    color: #fb7185;
-    background: rgba(239, 68, 68, .12);
-    border-color: rgba(239, 68, 68, .3);
+    .mc-quick-join,
+    .icon-btn[aria-busy="true"] svg { animation: none !important; }
 }
 
 /* Authoritative sidebar layout overrides. */

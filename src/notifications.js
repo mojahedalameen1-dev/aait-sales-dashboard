@@ -87,7 +87,7 @@ export function unlockAudio() {
             return true;
         }).catch(error => {
             console.warn('[Audio] Unlock failed:', error);
-            updateAudioState(AUDIO_STATE.FAILED);
+            updateAudioState(error?.name === 'NotAllowedError' ? AUDIO_STATE.LOCKED : AUDIO_STATE.FAILED);
             return false;
         }).finally(() => {
             audioUnlockPromise = null;

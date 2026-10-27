@@ -829,10 +829,12 @@ function setControlFeedback(button, message, kind = 'success') {
     if (!button) return;
     const original = button.dataset.tooltip;
     button.dataset.tooltip = message;
+    button.title = message;
     button.classList.toggle('is-success', kind === 'success');
     button.classList.toggle('is-error', kind === 'error');
     setTimeout(() => {
         button.dataset.tooltip = original;
+        button.title = original;
         button.classList.remove('is-success', 'is-error');
     }, 1800);
 }
@@ -855,6 +857,14 @@ window.manualRefresh = async () => {
         updateReminderMeetings(activeMeetings);
         updateSyncStatus(result);
         renderUI(activeMeetings);
+    } catch (error) {
+        activeSyncResult = {
+            ...(activeSyncResult || {}),
+            meetings: activeMeetings,
+            stale: true,
+            error: error?.message || 'تعذر تحديث البيانات'
+        };
+        updateSyncStatus(activeSyncResult);
     } finally {
         window._isManualRefreshing = false;
         if (btn) {
@@ -878,20 +888,12 @@ window.toggleTheme = () => {
 };
 
 window.toggleSound = () => {
-    const settings = getSettings();
-    if (settings.soundEnabled && currentAudioState !== AUDIO_STATE.ENABLED) {
-        unlockAudio();
-        requestNotificationPermission();
-        return;
-    }
-    const soundEnabled = !settings.soundEnabled;
+    const soundEnabled = !getSettings().soundEnabled;
     updateSettings({ soundEnabled });
     if (soundEnabled) {
-        unlockAudio();
+        void unlockAudio();
         requestNotificationPermission();
-    }
-    
-    if (!soundEnabled) stopAudioPlayback();
+    } else stopAudioPlayback();
     updateAudioControl();
 };
 
@@ -901,15 +903,18 @@ function updateAudioControl(state = currentAudioState) {
     if (!button) return;
     const enabled = getSettings().soundEnabled;
     const failed = enabled && state === AUDIO_STATE.FAILED;
-    const label = !enabled ? 'تفعيل صوت تنبيهات الاجتماعات'
-        : failed ? 'تعذر تشغيل الصوت؛ اضغط لإعادة التفعيل'
-            : state === AUDIO_STATE.ENABLED ? 'كتم صوت تنبيهات الاجتماعات' : 'تفعيل صوت تنبيهات الاجتماعات';
+    const pending = enabled && state === AUDIO_STATE.LOCKED;
+    const label = enabled ? 'كتم صوت تنبيهات الاجتماعات' : 'تفعيل صوت تنبيهات الاجتماعات';
+    const tooltip = pending
+        ? 'الصوت مفعّل؛ ينتظر أول تفاعل من المتصفح'
+        : failed ? 'تعذر تشغيل الصوت؛ أوقفه ثم فعّله للمحاولة' : label;
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(enabled));
-    button.title = label;
-    button.dataset.tooltip = label;
+    button.title = tooltip;
+    button.dataset.tooltip = tooltip;
     button.classList.toggle('is-audio-failed', failed);
-    button.innerHTML = `<i data-lucide="${failed ? 'alert-circle' : enabled && state === AUDIO_STATE.ENABLED ? 'volume-2' : 'volume-x'}"></i>`;
+    button.classList.toggle('is-audio-pending', pending);
+    button.innerHTML = `<i data-lucide="${failed ? 'alert-circle' : enabled ? 'volume-2' : 'volume-x'}"></i>`;
     refreshIcons(button);
 }
 
@@ -967,6 +972,7 @@ async function toggleDisplayMode() {
         }
     } catch (error) {
         console.warn('[Display] Fullscreen request failed:', error);
+        setControlFeedback(document.getElementById('display-mode-btn'), 'تعذر تشغيل شاشة العرض', 'error');
     }
 }
 
@@ -976,7 +982,9 @@ function syncDisplayModeButton() {
     if (!active) screenWakeLock?.release?.();
     const button = document.getElementById('display-mode-btn');
     if (!button) return;
+    const label = active ? 'إنهاء العرض' : 'شاشة العرض';
     button.dataset.tooltip = active ? 'إنهاء العرض' : 'شاشة العرض';
+    button.title = label;
     button.setAttribute('aria-label', active ? 'إنهاء وضع شاشة العرض' : 'تشغيل وضع شاشة العرض');
     button.innerHTML = `<i data-lucide="${active ? 'minimize-2' : 'maximize-2'}"></i>`;
     refreshIcons();
@@ -1100,60 +1108,18 @@ async function initApp() {
         document.body.classList.add('light-mode');
     }
 
-    // Sound sync
-    if (!settings.soundEnabled) {
-        const icon = document.querySelector('#sound-toggle-btn i, #sound-toggle-btn svg');
-        if (icon) {
-            icon.setAttribute('data-lucide', 'volume-x');
-            refreshIcons();
-        }
-    }
-
     // Audio State UI Handling
-    const soundToggleButton = document.getElementById('sound-toggle-btn');
-    const audioOverlay = document.getElementById('audio-unlock-overlay');
-    const audioEnableButton = audioOverlay?.querySelector('.btn-prime');
-    const continueWithoutSoundButton = document.getElementById('continue-without-sound');
-
-    const setAudioOverlayVisible = visible => {
-        if (!audioOverlay) return;
-        if (!visible && !audioOverlay.classList.contains('active')) return;
-
-        if (visible) {
-            audioOverlay.hidden = false;
-            audioOverlay.inert = false;
-            audioOverlay.classList.add('active');
-            audioOverlay.setAttribute('aria-hidden', 'false');
-            setModalBackgroundInert(audioOverlay, true);
-            if (!audioOverlay.contains(document.activeElement)) queueMicrotask(() => audioEnableButton?.focus());
-            return;
-        }
-
-        setModalBackgroundInert(audioOverlay, false);
-        if (audioOverlay.contains(document.activeElement)) soundToggleButton?.focus({ preventScroll: true });
-        audioOverlay.classList.remove('active');
-        audioOverlay.setAttribute('aria-hidden', 'true');
-        audioOverlay.inert = true;
-        audioOverlay.hidden = true;
+    const resumeAudioFromGesture = event => {
+        if (!getSettings().soundEnabled || currentAudioState === AUDIO_STATE.ENABLED) return;
+        if (event.target instanceof Element && event.target.closest('#sound-toggle-btn')) return;
+        void unlockAudio();
     };
-
-    audioEnableButton?.addEventListener('click', () => {
-        unlockAudio();
-        requestNotificationPermission();
-    });
-
-    continueWithoutSoundButton?.addEventListener('click', () => {
-        updateSettings({ soundEnabled: false });
-        stopAudioPlayback();
-        setAudioOverlayVisible(false);
-        const soundButton = document.getElementById('sound-toggle-btn');
-        if (soundButton) soundButton.innerHTML = '<i data-lucide="volume-x"></i>';
-        updateAudioControl();
-        refreshIcons();
-    });
-
-    if (!settings.soundEnabled) setAudioOverlayVisible(false);
-    else setAudioOverlayVisible(true);
+    const resumeAudioFromKey = event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        resumeAudioFromGesture(event);
+    };
+    document.addEventListener('pointerdown', resumeAudioFromGesture, { passive: true });
+    document.addEventListener('keydown', resumeAudioFromKey);
 
     const sheetKeyInput = document.getElementById('sheet-key-input');
     sheetKeyInput?.addEventListener('input', () => {
@@ -1168,18 +1134,18 @@ async function initApp() {
     setAudioStateListener((state) => {
         updateAudioControl(state);
         if (state === AUDIO_STATE.ENABLED) {
-            setAudioOverlayVisible(false);
+            document.removeEventListener('pointerdown', resumeAudioFromGesture);
+            document.removeEventListener('keydown', resumeAudioFromKey);
             callReceiver?.notifyAudioEnabled();
             if (pendingPrayerReminder && Date.now() - pendingPrayerReminder.createdAt <= 60000) {
                 pendingPrayerReminder = null;
                 if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
                 void playPrayerReminder();
             }
-        } else if (state !== AUDIO_STATE.FAILED) {
-            if (getSettings().soundEnabled) setAudioOverlayVisible(true);
         }
     });
     updateAudioControl();
+    if (settings.soundEnabled) void unlockAudio();
 
     if (layoutPreviewMeetings) {
         activeMeetings = layoutPreviewMeetings;
@@ -1209,7 +1175,7 @@ async function initApp() {
     document.getElementById('test-sound-btn')?.addEventListener('click', event => {
         updateSettings({ soundEnabled: true });
         updateAudioControl();
-        unlockAudio();
+        void unlockAudio();
         const button = event.currentTarget;
         playTestAlert(success => setControlFeedback(
             button,
@@ -1220,17 +1186,12 @@ async function initApp() {
 
     document.addEventListener('keydown', event => {
         const modal = document.getElementById('settings-modal');
-        const audioDialog = document.getElementById('audio-unlock-overlay');
         if (modal?.classList.contains('active')) {
             if (event.key === 'Escape') {
                 window.toggleSettings();
                 return;
             }
             trapDialogFocus(event, modal);
-            return;
-        }
-        if (audioDialog?.classList.contains('active')) {
-            trapDialogFocus(event, audioDialog);
             return;
         }
         if (!modal?.classList.contains('active')) {

@@ -10,17 +10,6 @@
 
 <body class="dark-mode">
 
-    <!-- Audio Unlock Overlay -->
-    <div id="audio-unlock-overlay" class="audio-overlay active" role="dialog" aria-modal="true" aria-labelledby="audio-overlay-title" aria-hidden="false">
-        <div class="overlay-content" tabindex="-1">
-            <div class="pulse-icon"><i data-lucide="volume-2"></i></div>
-            <h2 id="audio-overlay-title">تنبيهات الاجتماعات</h2>
-            <p>يرجى الضغط في أي مكان داخل لوحة التحكم لتفعيل صوت المنبهات</p>
-            <button class="btn-prime">تفعيل الصوت الآن</button>
-            <button class="btn-link" id="continue-without-sound">المتابعة بدون صوت</button>
-        </div>
-    </div>
-
     <!-- Settings Modal -->
     <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true" inert>
         <div class="modal-body" tabindex="-1">
@@ -129,7 +118,7 @@
             <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع" aria-label="تبديل الوضع" data-tooltip="تبديل الوضع">
                 <i data-lucide="moon"></i>
             </button>
-            <button class="icon-btn" id="sound-toggle-btn" title="كتم الصوت" aria-label="تبديل الصوت" data-tooltip="تبديل الصوت">
+            <button class="icon-btn" id="sound-toggle-btn" title="كتم صوت تنبيهات الاجتماعات" aria-label="كتم صوت تنبيهات الاجتماعات" aria-pressed="true" data-tooltip="كتم صوت تنبيهات الاجتماعات">
                 <i data-lucide="volume-2"></i>
             </button>
             <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات" aria-label="الإعدادات" data-tooltip="الإعدادات">
