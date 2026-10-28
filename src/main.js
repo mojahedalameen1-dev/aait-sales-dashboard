@@ -497,6 +497,16 @@ function renderUI(meetings) {
             : /موجل|موجلة|تاجيل|postponed/.test(normalizedStatus)
                 ? { label: 'مؤجل', className: 'is-cancelled', icon: 'info' }
                 : { label: 'ملغي', className: 'is-cancelled', icon: 'info' };
+        const outcomeMeta = done
+            ? { label: 'تم', className: 'is-complete', symbol: '✓', ariaLabel: 'اجتماع مكتمل، تم' }
+            : cancelled && cancelledStatusMeta.label !== 'مؤجل'
+                ? {
+                    label: cancelledStatusMeta.label,
+                    className: 'is-not-complete',
+                    symbol: '×',
+                    ariaLabel: cancelledStatusMeta.label === 'لم يتم' ? 'الاجتماع لم يتم' : 'الاجتماع ملغي'
+                }
+                : null;
         const statusMeta = done
             ? { label: 'منتهي', className: 'is-done', icon: 'check-circle-2' }
             : cancelled
@@ -521,7 +531,9 @@ function renderUI(meetings) {
                  ${isUltraLayout ? `role="button" tabindex="0" aria-haspopup="dialog" aria-label="عرض تفاصيل الاجتماع: ${safeDisplayText(ultraTitle)}"` : 'tabindex="-1"'}>
               <div class="card-bg-pattern"></div>
               <header class="mc-header">
-              ${isUltraLayout || timingState !== 'running'
+              ${outcomeMeta
+                ? `<div class="mc-outcome-badge ${outcomeMeta.className}" title="${safeDisplayText(outcomeMeta.ariaLabel)}" aria-label="${safeDisplayText(outcomeMeta.ariaLabel)}"><span class="mc-outcome-symbol" aria-hidden="true">${outcomeMeta.symbol}</span><span>${safeDisplayText(outcomeMeta.label)}</span></div>`
+                : isUltraLayout || timingState !== 'running'
                 ? `<div class="mc-status ${statusMeta.className}" title="${safeDisplayText(statusMeta.label)}" aria-label="الحالة: ${safeDisplayText(statusMeta.label)}"><i data-lucide="${statusMeta.icon}"></i><span>${statusMeta.label}</span></div>`
                 : ''}
 

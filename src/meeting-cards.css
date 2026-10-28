@@ -99,6 +99,56 @@
 
 .meeting-card .mc-status { border: 1px solid rgba(255,255,255,.25); }
 .meeting-card .mc-status svg { flex: 0 0 13px; width: 13px; height: 13px; }
+.meeting-card .mc-outcome-badge {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    max-width: min(100%, 116px);
+    min-height: 26px;
+    margin: 0;
+    padding: 3px 9px 3px 6px;
+    gap: 5px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    direction: rtl;
+    white-space: nowrap;
+    box-shadow: 0 3px 10px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.16);
+}
+.meeting-card .mc-outcome-badge.is-complete {
+    border-color: rgba(134,239,172,.78);
+    background: linear-gradient(135deg, rgba(20,128,77,.96), rgba(8,82,54,.96));
+    color: #e7ffef;
+}
+.meeting-card .mc-outcome-badge.is-not-complete {
+    border-color: rgba(252,165,165,.82);
+    background: linear-gradient(135deg, rgba(185,48,57,.97), rgba(122,27,39,.97));
+    color: #fff0f0;
+}
+.meeting-card .mc-outcome-symbol {
+    display: inline-grid;
+    flex: 0 0 17px;
+    width: 17px;
+    height: 17px;
+    place-items: center;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 0 0 2px rgba(255,255,255,.1);
+}
+.meeting-card .mc-outcome-badge > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .meeting-card .mc-quick-join { min-width: 28px; animation: none; text-decoration: none; }
 .meeting-card .mc-quick-join:hover { transform: none; }
 .meeting-card .mc-quick-join svg { flex: 0 0 16px; width: 16px; height: 16px; }
@@ -285,6 +335,8 @@
 #meetings-grid.layout-compact .meeting-card .mc-status,
 #meetings-grid.layout-compact .meeting-card .mc-quick-join,
 #meetings-grid.layout-compact .meeting-card .mc-location-state { min-height: 22px; padding: 2px 6px; font-size: 12px; }
+#meetings-grid.layout-compact .meeting-card .mc-outcome-badge { min-height: 22px; padding: 2px 7px 2px 5px; gap: 4px; font-size: 11px; }
+#meetings-grid.layout-compact .meeting-card .mc-outcome-symbol { flex-basis: 15px; width: 15px; height: 15px; font-size: 12px; }
 #meetings-grid.layout-compact .meeting-card .card-content { gap: 2px; }
 #meetings-grid.layout-compact .mc-details {
     display: grid;
@@ -330,6 +382,23 @@
 }
 #meetings-grid.layout-ultra .meeting-card .mc-status svg { display: none; }
 #meetings-grid.layout-ultra .meeting-card .mc-status span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#meetings-grid.layout-ultra .meeting-card .mc-outcome-badge {
+    min-height: 16px;
+    height: 16px;
+    padding: 1px 5px 1px 3px;
+    gap: 3px;
+    border-radius: 7px;
+    font-size: 10px;
+    line-height: 1;
+    box-shadow: 0 1px 5px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.16);
+}
+#meetings-grid.layout-ultra .meeting-card .mc-outcome-symbol {
+    flex-basis: 12px;
+    width: 12px;
+    height: 12px;
+    font-size: 10px;
+    box-shadow: none;
+}
 #meetings-grid.layout-ultra .meeting-card .mc-quick-join { display: none; }
 #meetings-grid.layout-ultra .meeting-card .mc-location-state { display: none; }
 #meetings-grid.layout-ultra .meeting-card .card-content {
@@ -519,8 +588,15 @@
     background: linear-gradient(145deg, #414951 0%, #2b3138 54%, #1c2228 100%) !important;
     border: 1px solid rgba(226, 232, 240, .58);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 8px 22px rgba(0,0,0,.25);
-    filter: grayscale(1);
+    filter: none;
     opacity: .94;
+}
+
+#meetings-grid .meeting-card.completed > :not(.mc-header),
+#meetings-grid .meeting-card.cancelled > :not(.mc-header),
+#meetings-grid .meeting-card.completed .mc-header > :not(.mc-outcome-badge),
+#meetings-grid .meeting-card.cancelled .mc-header > :not(.mc-outcome-badge) {
+    filter: grayscale(1);
 }
 
 #meetings-grid .meeting-card.completed .mc-client,
@@ -589,9 +665,11 @@
     opacity: .045 !important;
 }
 
+#meetings-grid .meeting-card.completed::after,
+#meetings-grid .meeting-card.cancelled::after { filter: grayscale(1); }
+
 .light-mode #meetings-grid .meeting-card.completed,
 .light-mode #meetings-grid .meeting-card.cancelled {
     background: linear-gradient(145deg, #414951 0%, #2b3138 54%, #1c2228 100%) !important;
-    filter: grayscale(1);
     opacity: .94;
 }
