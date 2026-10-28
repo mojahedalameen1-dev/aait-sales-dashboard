@@ -1019,11 +1019,11 @@ async function playPrayerAlert(prayer) {
         onDeferred: () => showPrayerAlertStatus(`تأخر ${label} قليلًا لحين انتهاء الصوت الحالي.`, 10000, prayer.id),
         onStarted: ({ repetition, total }) => showPrayerAlertStatus(`يُشغّل الآن تذكير ${label} · ${repetition} من ${total}.`, 10000, prayer.id)
     });
-    if (result.reason === 'speech_asset_missing') showPrayerAlertStatus(result.started
-        ? `تعذر تحميل نطق ${label}؛ شُغّل الجرس فقط.`
-        : `حان ${label}؛ الصوت غير متاح على شاشة العرض.`, 10000, prayer.id);
+    if (result.reason === 'speech_unavailable' || result.reason === 'beep_unavailable' || result.reason === 'beep_playback_failed') {
+        showPrayerAlertStatus(`حان ${label}؛ تعذر تشغيل تسلسل الصوت كاملًا على شاشة العرض.`, 10000, prayer.id);
+    }
     else if (!result.started) showPrayerAlertStatus(`ظهر تذكير ${label} على الشاشة، لكن تعذر تشغيل الصوت.`, 10000, prayer.id);
-    else if (result.speechAvailable) {
+    else {
         showPrayerAlertStatus(result.completedRepetitions === 2 ? `اكتمل تذكير ${label} مرتين.` : `لم يكتمل تكرار تذكير ${label}.`, 5000, prayer.id);
     }
     return result;

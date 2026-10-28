@@ -130,7 +130,7 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         return next;
     }
 
-    function renderCall(event, state) {
+    function renderCall(event, state, { keepVisible = false } = {}) {
         surface ||= createAnnouncementSurface();
         surface._slots.employee.textContent = event.employeeName || 'الموظف المحدد';
         surface._slots.reason.textContent = event.callType === 'office' ? 'يرجى الحضور إلى المكتب' : 'يرجى الدخول إلى الاجتماع';
@@ -138,7 +138,18 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         if (currentAnnouncementId !== event.id) {
             if (announcementTimer) clearTimeout(announcementTimer);
             if (announcementHideTimer) clearTimeout(announcementHideTimer);
+            announcementTimer = null;
+            announcementHideTimer = null;
             currentAnnouncementId = event.id;
+            announcementExpiresAt = 0;
+        }
+        if (keepVisible) {
+            if (announcementTimer) clearTimeout(announcementTimer);
+            if (announcementHideTimer) clearTimeout(announcementHideTimer);
+            announcementTimer = null;
+            announcementHideTimer = null;
+            announcementExpiresAt = Infinity;
+        } else if (!announcementTimer && !announcementHideTimer) {
             announcementExpiresAt = Date.now() + 10000;
             const announcementId = event.id;
             announcementTimer = setTimeout(() => {
@@ -176,22 +187,25 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         seenEventIds.add(event.id);
         saveProcessed(storage, event.id);
         const canPlay = ['pending', 'ready'].includes(event.audioStatus) && /^[a-f0-9]{64}$/.test(event.audioCacheKey || '');
-        renderCall(event, canPlay ? 'جاري توصيل النداء الصوتي…' : 'ظهر النداء على الشاشة');
         void acknowledge(event.id, 'displayed');
         if (canPlay) {
             audioQueue.push({ event, expiresAt: Math.min(eventExpiry(event), Date.now() + 45000) });
+            if (!audioBusy && audioQueue.length === 1) {
+                renderCall(event, 'جاري توصيل النداء الصوتي…', { keepVisible: isAudioPlaybackEnabled() });
+            }
             if (!isAudioPlaybackEnabled()) {
-                surface._slots.status.textContent = 'الصوت مقفل؛ فعّل الصوت من الشريط السفلي';
+                if (currentAnnouncementId === event.id) surface._slots.status.textContent = 'الصوت مقفل؛ فعّل الصوت من الشريط السفلي';
                 setTimeout(() => {
                     const item = audioQueue.find(entry => entry.event.id === event.id);
                     if (!item || isAudioPlaybackEnabled()) return;
                     audioQueue = audioQueue.filter(entry => entry.event.id !== event.id);
-                    surface._slots.status.textContent = 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
+                    if (currentAnnouncementId === event.id) surface._slots.status.textContent = 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
                     void acknowledge(event.id, 'audio_failed');
                 }, 45000);
             }
             void processAudioQueue();
         } else {
+            renderCall(event, 'ظهر النداء على الشاشة');
             surface._slots.status.textContent = event.audioStatus === 'not_configured'
                 ? 'ظهر النداء؛ الصوت غير مهيأ على الخادم'
                 : 'ظهر النداء؛ تعذّر تجهيز الصوت';
@@ -205,9 +219,11 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
         const item = audioQueue.shift();
         try {
             if (item.expiresAt <= Date.now()) {
+                renderCall(item.event, 'انتهت مهلة النداء المؤجل');
                 void acknowledge(item.event.id, 'audio_failed');
                 return;
             }
+            renderCall(item.event, 'جاري تجهيز النداء الصوتي…', { keepVisible: true });
             const cachedAudio = await audioCache.getOrCreate({
                 cacheKey: item.event.audioCacheKey,
                 callType: item.event.callType,
@@ -235,18 +251,21 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                     if (currentAnnouncementId === item.event.id) {
                         renderCall(item.event, waitingFor === 'prayer'
                             ? 'مؤجل حتى انتهاء تنبيه الصلاة'
-                            : 'مؤجل حتى ينتهي الصوت الحالي');
+                            : 'مؤجل حتى ينتهي الصوت الحالي', { keepVisible: true });
                     }
                 },
-                onStarted: () => {
-                    renderCall(item.event, 'بدأ تشغيل الصوت على شاشة العرض');
-                    void acknowledge(item.event.id, 'audio_started');
+                onStarted: ({ repetition, total }) => {
+                    renderCall(item.event, `يُشغّل النداء · ${repetition} من ${total}`, { keepVisible: true });
+                    if (repetition === 1) void acknowledge(item.event.id, 'audio_started');
+                },
+                onCompleted: () => {
+                    renderCall(item.event, 'اكتمل تشغيل النداء مرتين');
                 }
             });
-            if (!result.started) {
-                surface._slots.status.textContent = result.reason === 'expired'
-                    ? 'انتهت مهلة النداء المؤجل؛ أعد إرساله من مركز التحكم'
-                    : 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
+            if (result.completedRepetitions !== 2) {
+                renderCall(item.event, result.reason === 'expired'
+                    ? 'انتهت مهلة النداء قبل اكتمال التكرار؛ أعد إرساله من مركز التحكم'
+                    : 'لم يكتمل تشغيل النداء مرتين على شاشة العرض');
                 void acknowledge(item.event.id, 'audio_failed');
             }
         } catch {

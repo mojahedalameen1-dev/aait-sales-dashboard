@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { getPrayerPresentation, getPrayerScheduleEvents } from '../src/prayer-experience.js';
 import { createPrayerAlerts } from '../src/prayer-alerts.js';
-import { createPrayerAudioSequence, getPrayerSpeechText } from '../src/prayer-audio-assets.js';
+import { getPrayerSpeechText } from '../src/prayer-audio-assets.js';
 import { createPrayerAudioResolver } from '../src/prayer-audio-resolver.js';
 import { createAnnouncementAudioCache } from '../src/announcement-audio-cache.js';
 import { claimPrayerAudio, createPrayerAudioHandler, getPrayerAudioManifest } from '../server/control/prayer-audio.js';
@@ -132,40 +132,6 @@ test('an inactive tab cannot consume the reminder before the visible board recei
     current = new Date(instant('14:52:00'));
     inactive.tick(current); active.tick(current); await settle();
     assert.equal(events.length, 1); inactive.destroy(); active.destroy();
-});
-
-test('each valid prayer phrase plays exactly twice from one blob with an explicit pause and no overlap', async () => {
-    const order = []; const blob = wav();
-    const sequence = createPrayerAudioSequence({
-        playBeep: async () => { order.push('tone'); return { started: true }; },
-        playSpeech: async (input, { repetition, total }) => {
-            assert.equal(input, blob); assert.equal(total, 2);
-            order.push(`start-${repetition}`); await Promise.resolve(); order.push(`end-${repetition}`);
-            return { started: true };
-        }, wait: async ms => { assert.equal(ms, 1400); order.push('pause'); }
-    });
-    const result = await sequence(blob);
-    assert.equal(result.repetitions, 2);
-    assert.deepEqual(order, ['tone', 'start-1', 'end-1', 'pause', 'start-2', 'end-2']);
-});
-
-test('muting or expiring during the gap suppresses the second repetition without another generation', async () => {
-    let enabled = true; let plays = 0;
-    const result = await createPrayerAudioSequence({
-        canContinue: () => enabled, playBeep: async () => ({ started: true }),
-        playSpeech: async () => { plays++; return { started: true }; }, wait: async () => { enabled = false; }
-    })(wav());
-    assert.equal(plays, 1); assert.equal(result.reason, 'expired'); assert.equal(result.repetitions, 1);
-});
-
-test('an interrupted clip is never reported as two completed prayer announcements', async () => {
-    let plays = 0;
-    const result = await createPrayerAudioSequence({
-        playBeep: async () => ({ started: true }), wait: async () => {},
-        playSpeech: async () => { plays++; return { started: true, reason: 'playback_failed' }; }
-    })(wav());
-    assert.equal(plays, 1); assert.equal(result.started, true);
-    assert.equal(result.completedRepetitions, 0); assert.equal(result.reason, 'playback_failed');
 });
 
 test('a prayer WAV is generated once and survives a new resolver/cache instance, while a voice change creates a new key', async () => {

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Isolated beeb media check</title></head>
+<body>
+  <pre id="result">checking</pre>
+  <audio id="beeb" preload="metadata" src="/sounds/beeb.mp3"></audio>
+  <script>
+    const audio = document.getElementById('beeb');
+    const result = document.getElementById('result');
+    const report = status => {
+      result.textContent = JSON.stringify({
+        status,
+        canPlayType: audio.canPlayType('audio/mpeg'),
+        durationSeconds: Number.isFinite(audio.duration) ? audio.duration : null,
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+        src: new URL(audio.currentSrc).pathname
+      });
+    };
+    audio.addEventListener('loadedmetadata', () => report('decoded'));
+    audio.addEventListener('error', () => report(`error-${audio.error?.code || 'unknown'}`));
+    audio.load();
+    setTimeout(() => { if (result.textContent === 'checking') report('metadata-timeout'); }, 8000);
+  </script>
+</body>
+</html>
