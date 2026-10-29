@@ -45,7 +45,7 @@ export async function importGroqEnvironment(sourcePath) {
     }
     const additions = [];
     if (!existing.get('GROQ_API_KEY')?.trim()) additions.push(`GROQ_API_KEY=${key}`);
-    if (!existing.has('GROQ_VOICE')) additions.push('GROQ_VOICE=fahad');
+    if (!existing.has('GROQ_VOICE')) additions.push('GROQ_VOICE=abdullah');
     if (additions.length) await writeFile(targetPath, `${current.replace(/\s*$/, '')}\n${additions.join('\n')}\n`, { mode: 0o600 });
     return { targetPath, configured: true, changed: additions.length > 0 };
 }

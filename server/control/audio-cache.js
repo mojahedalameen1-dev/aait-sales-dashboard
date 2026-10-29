@@ -19,7 +19,7 @@ export function normalizeSpeechText(value) {
 }
 
 export function getSpeechSettings(env = process.env) {
-    const voice = env.GROQ_VOICE?.trim() || 'fahad';
+    const voice = env.GROQ_VOICE?.trim() || 'abdullah';
     if (!SUPPORTED_GROQ_VOICES.includes(voice)) throw new Error('Unsupported Groq voice');
     const version = env.GROQ_SPEECH_CONFIG_VERSION?.trim() || SPEECH_CONFIG_VERSION;
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(version)) throw new Error('Unsupported speech configuration version');

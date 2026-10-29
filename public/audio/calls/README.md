@@ -33,7 +33,7 @@ npm run warm:call-audio -- --dry-run
 
 The dry run reads no `.env.local` key, writes no files, and contacts no service.
 It reports only hit, miss, failure, and byte counts. Its voice/configuration use
-the current process values, or the safe default `fahad` settings.
+the current process values, or the safe default `abdullah` settings.
 
 ## Generate only after voice approval
 

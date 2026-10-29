@@ -6,7 +6,7 @@ import { getSpeechSettings, isValidWav, synthesizeGroqSpeech } from '../server/c
 import { parseEnvironment, PROJECT_ROOT, requireProviderConfirmation } from './audio-env.js';
 
 const SAMPLE_TEXT = 'حان الآن وقت أذان صلاة الفجر.';
-const SAMPLE_PATH = join(PROJECT_ROOT, '.audio-test', 'prayer-sample-fajr-adhan.wav');
+const SAMPLE_PATH = join(PROJECT_ROOT, '.audio-test', 'prayer-sample-abdullah-fajr-adhan.wav');
 const LOCK_PATH = join(PROJECT_ROOT, '.audio-test', 'prayer-sample.lock');
 
 function inspectWav(bytes) {
@@ -39,7 +39,7 @@ try {
     const apiKey = environment.get('GROQ_API_KEY')?.trim();
     if (!/^gsk_[A-Za-z0-9]{20,}$/.test(apiKey || '')) throw new Error('لم يُرسل أي طلب: GROQ_API_KEY غير مضبوط في ملف المشروع.');
     const settings = getSpeechSettings({
-        GROQ_VOICE: 'fahad',
+        GROQ_VOICE: 'abdullah',
         GROQ_SPEECH_CONFIG_VERSION: 'aait-prayer-ar-v1'
     });
     let audio;
@@ -49,7 +49,7 @@ try {
     } catch (error) {
         const code = error.code || 'unavailable';
         const status = Number.isInteger(error.providerStatus) ? error.providerStatus : null;
-        console.error(JSON.stringify({ sample: 'fajr-adhan', voice: 'fahad', code, status }));
+        console.error(JSON.stringify({ sample: 'fajr-adhan', voice: 'abdullah', code, status }));
         throw new Error('فشل توليد العينة الصوتية.');
     }
     if (!isValidWav(audio)) throw new Error('رفض الاختبار ملفًا ليس WAV سليمًا.');

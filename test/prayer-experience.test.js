@@ -142,10 +142,10 @@ test('a prayer WAV is generated once and survives a new resolver/cache instance,
         getManifest: () => getPrayerAudioManifest({ GROQ_VOICE: voice }),
         loadGenerated: async () => { requests++; return wav(); }
     });
-    await resolver('fahad')(event);
-    await resolver('fahad')(event);
+    await resolver('abdullah')(event);
+    await resolver('abdullah')(event);
     assert.equal(requests, 1);
-    await resolver('sultan')(event);
+    await resolver('fahad')(event);
     assert.equal(requests, 2);
 });
 
@@ -161,7 +161,7 @@ test('authenticated screen generation accepts only a fixed prayer phrase and ret
     let generated = 0;
     const handler = createPrayerAudioHandler({
         verify: async token => { assert.equal(token, 'display-test-token'); return { sub: 'display-test-uid' }; },
-        configured: () => true, settings: () => ({ model: 'canopylabs/orpheus-arabic-saudi', voice: 'fahad', speed: .95, sampleRate: 24000, version: 'aait-ar-sa-v1' }),
+        configured: () => true, settings: () => ({ model: 'canopylabs/orpheus-arabic-saudi', voice: 'abdullah', speed: .95, sampleRate: 24000, version: 'aait-ar-sa-v1' }),
         claim: async uid => assert.equal(uid, 'display-test-uid'),
         generate: async descriptor => { generated++; assert.equal(descriptor.text, 'حان الآن موعد صلاة العصر.'); return wavBytes(); }
     });
@@ -186,7 +186,7 @@ test('unauthorized requests, arbitrary text and prototype properties cannot trig
 });
 
 test('the public prayer audio manifest contains cache keys and voice metadata, never a provider credential', () => {
-    const manifest = getPrayerAudioManifest({ GROQ_API_KEY: 'isolated-secret-fixture', GROQ_VOICE: 'fahad' });
+    const manifest = getPrayerAudioManifest({ GROQ_API_KEY: 'isolated-secret-fixture', GROQ_VOICE: 'abdullah' });
     assert.equal(Object.keys(manifest.assets).length, 5);
     assert.equal(Object.values(manifest.assets).flatMap(value => Object.values(value)).length, 10);
     assert.doesNotMatch(JSON.stringify(manifest), /isolated-secret-fixture|apiKey|GROQ_API_KEY/);

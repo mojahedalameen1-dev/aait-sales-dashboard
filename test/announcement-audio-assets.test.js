@@ -121,7 +121,7 @@ test('the generator dry run does not update the manifest or use any service key'
     const before = await readFile(manifestPath, 'utf8');
     const beforeStat = await stat(manifestPath);
     const child = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/warm-call-audio.js', import.meta.url)), '--dry-run'], {
-        encoding: 'utf8', env: { ...process.env, GROQ_API_KEY: 'must-not-be-used-during-dry-run', GROQ_VOICE: 'fahad' }
+        encoding: 'utf8', env: { ...process.env, GROQ_API_KEY: 'must-not-be-used-during-dry-run', GROQ_VOICE: 'abdullah' }
     });
     assert.equal(child.status, 0);
     assert.equal(JSON.parse(child.stdout.trim()).dryRun, true);

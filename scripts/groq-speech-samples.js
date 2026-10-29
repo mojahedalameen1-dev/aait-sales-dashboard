@@ -40,7 +40,7 @@ try {
     if (!process.env.GROQ_API_KEY?.trim()) throw new Error('مفتاح Groq غير موجود في ملف المشروع؛ لم يُرسل أي طلب.');
     const runId = new Date().toISOString().replace(/[:.]/g, '-');
     const token = randomBytes(24).toString('hex');
-    const settings = getSpeechSettings({ GROQ_VOICE: 'fahad', GROQ_SPEECH_CONFIG_VERSION: `qa-${Date.now()}` });
+    const settings = getSpeechSettings({ GROQ_VOICE: 'abdullah', GROQ_SPEECH_CONFIG_VERSION: `qa-${Date.now()}` });
     const text = makeCallText(CONTROL_EMPLOYEES[0], 'office', ADMIN_ROLES.general_manager.callerName);
     const descriptor = prepareSpeechRequest(text, settings);
     const outputDir = join(PROJECT_ROOT, '.audio-test', runId);
@@ -49,7 +49,7 @@ try {
     const clientConfig = JSON.stringify({ token, cacheKey: descriptor.cacheKey, text, voice: settings.voice });
     const html = `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><title>اختبار Groq والكاش المعزول</title>
 <style>body{font-family:system-ui;background:#09131a;color:#edf8fc;max-width:920px;margin:40px auto;padding:24px}pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#13232e;padding:20px;border-radius:12px}audio{width:100%}</style>
-<h1>عينة واحدة معزولة بصوت فهد</h1><p>لا توجد نداءات إلى شاشة الاجتماعات، ولا تشغيل تلقائي للصوت.</p><p id="phrase"></p><pre id="result">جاري اختبار التوليد والتخزين…</pre><audio id="sample" controls></audio>
+<h1>عينة واحدة معزولة بصوت عبدالله</h1><p>لا توجد نداءات إلى شاشة الاجتماعات، ولا تشغيل تلقائي للصوت.</p><p id="phrase"></p><pre id="result">جاري اختبار التوليد والتخزين…</pre><audio id="sample" controls></audio>
 <script type="module">
 import { createIndexedDbAudioStore, createAnnouncementAudioCache, requestPersistentAudioStorage } from '/cache.js';
 const config = ${clientConfig}; document.querySelector('#phrase').textContent = config.text;
@@ -85,7 +85,7 @@ try {
                 catch(error) { providerError={code:error.code||'unavailable',status:error.providerStatus||null}; console.log(JSON.stringify({providerCalls,providerError})); return json(502,{error:'Groq sample unavailable',...providerError}); }
                 if (!isValidWav(audio)) throw new Error('Invalid WAV');
                 metrics = {bytes:audio.length,responseMs:Math.round(performance.now()-startedAt),characters:Array.from(text).length,...wavStats(audio)};
-                const samplePath=join(outputDir,'mojahed-fahad.wav'); await writeFile(samplePath,audio,{flag:'wx'});
+                const samplePath=join(outputDir,'mojahed-abdullah.wav'); await writeFile(samplePath,audio,{flag:'wx'});
                 console.log(JSON.stringify({providerCalls,samplePath,metrics}));
                 response.writeHead(200,{'Content-Type':'audio/wav','Content-Length':audio.length}); return response.end(audio);
             }
@@ -98,7 +98,7 @@ try {
             return json(404,{error:'Not found'});
         } catch { if (!response.headersSent) json(500,{error:'Isolated sample test failed'}); else response.end(); }
     });
-    server.listen(0,'127.0.0.1',()=>console.log(JSON.stringify({testUrl:`http://127.0.0.1:${server.address().port}/`,outputDir,maxProviderCalls:1,voice:'fahad'})));
+    server.listen(0,'127.0.0.1',()=>console.log(JSON.stringify({testUrl:`http://127.0.0.1:${server.address().port}/`,outputDir,maxProviderCalls:1,voice:'abdullah'})));
     process.on('SIGINT',()=>server.close(()=>process.exit(0)));
     process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
 } catch (error) { console.error(error.message || 'Isolated speech test failed.'); process.exitCode=1; }

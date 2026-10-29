@@ -44,7 +44,7 @@ test('SHA-256 identity normalizes whitespace but preserves punctuation, diacriti
     assert.equal(createSpeechCacheKey('تنبيه\n إداري.', a), createSpeechCacheKey(' تنبيه إداري. ', a));
     assert.notEqual(createSpeechCacheKey('مُجَاهِد', a), createSpeechCacheKey('مجاهد', a));
     assert.notEqual(createSpeechCacheKey('تنبيه.', a), createSpeechCacheKey('تنبيه،', a));
-    for (const voice of ['sultan', 'abdullah']) assert.notEqual(createSpeechCacheKey('تنبيه.', a), createSpeechCacheKey('تنبيه.', getSpeechSettings({ GROQ_VOICE: voice })));
+    for (const voice of ['fahad', 'sultan']) assert.notEqual(createSpeechCacheKey('تنبيه.', a), createSpeechCacheKey('تنبيه.', getSpeechSettings({ GROQ_VOICE: voice })));
     assert.notEqual(createSpeechCacheKey('تنبيه.', a), createSpeechCacheKey('تنبيه.', getSpeechSettings({ GROQ_SPEECH_CONFIG_VERSION: 'v2' })));
 });
 
@@ -82,7 +82,7 @@ test('Groq request pins the server key, Saudi model, voice and WAV output withou
     assert.equal(captured.url, 'https://api.groq.com/openai/v1/audio/speech');
     assert.equal(captured.options.headers.Authorization, 'Bearer unit-test-only');
     assert.equal(captured.body.model, 'canopylabs/orpheus-arabic-saudi');
-    assert.equal(captured.body.voice, 'fahad'); assert.equal(captured.body.response_format, 'wav');
+    assert.equal(captured.body.voice, 'abdullah'); assert.equal(captured.body.response_format, 'wav');
     assert.equal(captured.body.speed, 0.95); assert.doesNotMatch(captured.body.input, /\[[^\]]+\]/);
 });
 
