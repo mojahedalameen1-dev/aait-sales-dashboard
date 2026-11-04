@@ -2,7 +2,7 @@
 import { mkdir, open, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { getSpeechSettings, isValidWav, synthesizeGroqSpeech } from '../server/control/audio-cache.js';
+import { getPrayerSpeechSettings, isValidWav, PRAYER_SPEECH_CONFIG_VERSION, synthesizeGroqSpeech } from '../server/control/audio-cache.js';
 import { parseEnvironment, PROJECT_ROOT, requireProviderConfirmation } from './audio-env.js';
 
 const SAMPLE_TEXT = 'حان الآن وقت أذان صلاة الفجر.';
@@ -38,9 +38,9 @@ try {
     const environment = parseEnvironment(environmentText);
     const apiKey = environment.get('GROQ_API_KEY')?.trim();
     if (!/^gsk_[A-Za-z0-9]{20,}$/.test(apiKey || '')) throw new Error('لم يُرسل أي طلب: GROQ_API_KEY غير مضبوط في ملف المشروع.');
-    const settings = getSpeechSettings({
+    const settings = getPrayerSpeechSettings({
         GROQ_VOICE: 'abdullah',
-        GROQ_SPEECH_CONFIG_VERSION: 'aait-prayer-ar-v1'
+        GROQ_PRAYER_SPEECH_CONFIG_VERSION: PRAYER_SPEECH_CONFIG_VERSION
     });
     let audio;
     const startedAt = performance.now();

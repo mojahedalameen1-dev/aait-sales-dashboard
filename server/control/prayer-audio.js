@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { getPrayerSpeechText } from '../../src/prayer-audio-assets.js';
 import { PRAYERS, getRiyadhDate, addPrayerDays } from '../../src/prayer-times.js';
-import { prepareSpeechRequest, getSpeechSettings, generateSpeechForDisplay, isValidWav } from './audio-cache.js';
+import { prepareSpeechRequest, getPrayerSpeechSettings, generateSpeechForDisplay, isValidWav } from './audio-cache.js';
 import { bearerToken, verifyDisplayToken, firebaseDatabaseReadWithEtag, firebaseDatabaseRequest, getFirebaseClientConfig, sendError } from './shared.js';
 
 export function getPrayerAudioManifest(env = process.env) {
     try {
-        const settings = getSpeechSettings(env);
+        const settings = getPrayerSpeechSettings(env);
         return { voice: settings.voice, assets: Object.fromEntries(PRAYERS.map(({ key }) => [key, Object.fromEntries(['adhan', 'iqama'].map(kind => [kind, { cacheKey: prepareSpeechRequest(getPrayerSpeechText(key, kind), settings).cacheKey }]))])) };
     } catch { return null; }
 }
@@ -32,7 +32,7 @@ export async function claimPrayerAudio(uid, cacheKey, { read = firebaseDatabaseR
     }
 }
 
-export function createPrayerAudioHandler({ verify = verifyDisplayToken, claim = claimPrayerAudio, generate = generateSpeechForDisplay, configured = () => getFirebaseClientConfig().speechConfigured, settings = getSpeechSettings } = {}) {
+export function createPrayerAudioHandler({ verify = verifyDisplayToken, claim = claimPrayerAudio, generate = generateSpeechForDisplay, configured = () => getFirebaseClientConfig().speechConfigured, settings = getPrayerSpeechSettings } = {}) {
     return async function handler(request, response) {
         response.setHeader('Cache-Control', 'private, no-store');
         response.setHeader('X-Content-Type-Options', 'nosniff');

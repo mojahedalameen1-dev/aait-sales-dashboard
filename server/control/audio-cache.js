@@ -9,6 +9,8 @@ export const GROQ_TTS_MODEL = 'canopylabs/orpheus-arabic-saudi';
 export const SUPPORTED_GROQ_VOICES = Object.freeze(['fahad', 'sultan', 'abdullah']);
 export const SPEECH_MAX_CHARS = 200;
 export const SPEECH_CONFIG_VERSION = 'aait-ar-sa-v1';
+export const PRAYER_SPEECH_SPEED = 0.8;
+export const PRAYER_SPEECH_CONFIG_VERSION = 'aait-prayer-ar-sa-v2';
 export const MAX_WAV_BYTES = 4 * 1024 * 1024;
 const LOCK_TTL_MS = 45000;
 const LOCK_PATH = 'controlAudioLocks';
@@ -30,6 +32,13 @@ export function getSpeechSettings(env = process.env) {
         sampleRate: 24000,
         version
     };
+}
+
+export function getPrayerSpeechSettings(env = process.env) {
+    const common = getSpeechSettings(env);
+    const version = env.GROQ_PRAYER_SPEECH_CONFIG_VERSION?.trim() || PRAYER_SPEECH_CONFIG_VERSION;
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(version)) throw new Error('Unsupported prayer speech configuration version');
+    return { ...common, speed: PRAYER_SPEECH_SPEED, version };
 }
 
 export function createSpeechCacheKey(text, settings = getSpeechSettings()) {
@@ -55,9 +64,13 @@ export function prepareSpeechRequest(text, settings = getSpeechSettings()) {
 export function isValidSpeechRequest(request) {
     try {
         if (!request || !/^[a-f0-9]{64}$/.test(request.cacheKey || '')) return false;
-        const settings = getSpeechSettings({ GROQ_VOICE: request.settings?.voice, GROQ_SPEECH_CONFIG_VERSION: request.settings?.version });
-        if (Object.keys(settings).some(key => settings[key] !== request.settings?.[key])) return false;
-        return prepareSpeechRequest(request.text, settings).cacheKey === request.cacheKey;
+        const env = { GROQ_VOICE: request.settings?.voice };
+        const profiles = [
+            getSpeechSettings({ ...env, GROQ_SPEECH_CONFIG_VERSION: request.settings?.version }),
+            getPrayerSpeechSettings({ ...env, GROQ_PRAYER_SPEECH_CONFIG_VERSION: request.settings?.version })
+        ];
+        const settings = profiles.find(profile => Object.keys(profile).every(key => profile[key] === request.settings?.[key]));
+        return Boolean(settings) && prepareSpeechRequest(request.text, settings).cacheKey === request.cacheKey;
     } catch { return false; }
 }
 
