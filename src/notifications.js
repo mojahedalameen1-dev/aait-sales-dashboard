@@ -4,7 +4,7 @@
  */
 
 import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
-import { getEngineerAudioPrefix, getEngineerProfile } from './config.js';
+import { getEngineerAudioPrefix, getEngineerProfile, isEngineerMeetingReminderAudioEnabled } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
 import { ALERT_CATCHUP_MS, MEETING_REMINDER_MINUTES, shouldTriggerAlert } from './alert-timing.js';
 import { createAudioPriorityQueue } from './audio-priority.js';
@@ -611,7 +611,8 @@ function recordStartedPlay(task) {
 
 function isReminderStillValid(reminder, allowExhausted = false) {
     const meeting = latestMeetingsById.get(reminder.meetingId);
-    if (!meeting || meeting.date !== formatTodayDate() || !meeting.time || isDone(meeting) || isCancelled(meeting)) return false;
+    if (!meeting || !isEngineerMeetingReminderAudioEnabled(meeting.team)
+        || meeting.date !== formatTodayDate() || !meeting.time || isDone(meeting) || isCancelled(meeting)) return false;
     if (!allowExhausted && (getStartedPlayCounts()[reminder.key] || 0) >= 2) return false;
 
     const [hours, minutes] = meeting.time.split(':').map(Number);
@@ -745,7 +746,7 @@ export function checkMeetingTimers(meetings, todayDate) {
         const onDelivered = success => candidates.forEach(item => markNotificationDelivered(item.key, success));
         const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered, candidates);
         if (!queued) {
-            // Muted audio or an unknown engineer is an intentional no-audio result.
+            // Muted audio, a disabled engineer, or an unknown engineer is intentional silence.
             const intentionalSilence = !selected.prefix;
             onDelivered(intentionalSilence);
         }
@@ -765,7 +766,8 @@ export function getNextAudioReminder(meetings, todayDate) {
     const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
     const candidates = [];
 
-    for (const meeting of meetings.filter(item => item.date === todayDate && item.time && !isDone(item) && !isCancelled(item))) {
+    for (const meeting of meetings.filter(item => isEngineerMeetingReminderAudioEnabled(item.team)
+        && item.date === todayDate && item.time && !isDone(item) && !isCancelled(item))) {
         const [hours, minutes] = meeting.time.split(':').map(Number);
         if (!Number.isFinite(hours) || !Number.isFinite(minutes)) continue;
         const diffSeconds = (hours * 3600 + minutes * 60) - nowSeconds;
@@ -803,7 +805,7 @@ function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders
                 }
             }
         });
-    } else {
+    } else if (isEngineerMeetingReminderAudioEnabled(meeting.team)) {
         console.warn(`[Audio] No mapping found for engineer: "${meeting.team}" (id: ${meeting.id}). Skipping sound.`);
     }
 
@@ -823,17 +825,19 @@ function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders
         icon
     });
 
-    sendPushNotification(meeting, timeText);
+    sendPushNotification(meeting, timeText, {
+        silent: !isEngineerMeetingReminderAudioEnabled(meeting.team) || currentAudioState === AUDIO_STATE.ENABLED
+    });
     return audioQueued;
 }
 
-function sendPushNotification(meeting, timeText) {
+function sendPushNotification(meeting, timeText, { silent = currentAudioState === AUDIO_STATE.ENABLED } = {}) {
     if (!("Notification" in window)) return;
 
     if (Notification.permission === "granted") {
         new Notification(`تنبيه: ${meeting.project}`, {
             body: `${meeting.team || 'الفريق'} - ${timeText}`,
-            silent: currentAudioState === AUDIO_STATE.ENABLED
+            silent
         });
     }
 }

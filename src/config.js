@@ -32,8 +32,8 @@ export const ENGINEERS = [
         aliases: ['حسام', 'hossam', 'hussam'],
         theme: 'hossam',
         color: '#FF6D00',
-        // لا يوجد ملف صوت مستقل لحسام حاليًا، لذلك يستخدم ملف الفريق (a).
-        audioPrefix: 'a'
+        meetingReminderAudioEnabled: false,
+        audioPrefix: null
     }
 ];
 
@@ -51,7 +51,13 @@ export function getEngineerColor(teamName) {
 }
 
 export function getEngineerAudioPrefix(teamName) {
-    return getEngineerProfile(teamName)?.audioPrefix || null;
+    const profile = getEngineerProfile(teamName);
+    if (profile?.meetingReminderAudioEnabled === false) return null;
+    return profile?.audioPrefix || null;
+}
+
+export function isEngineerMeetingReminderAudioEnabled(teamName) {
+    return getEngineerProfile(teamName)?.meetingReminderAudioEnabled !== false;
 }
 
 export function getEngineerLabel(teamName) {
