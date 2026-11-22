@@ -2,7 +2,7 @@ import { getRiyadhDate, createPrayerService } from './prayer-times.js';
 import { getPrayerScheduleEvents } from './prayer-experience.js';
 
 const STORAGE_KEY = 'aait_prayer_alerts_riyadh_v1';
-const GRACE_PERIOD_MS = 15000;
+export const PRAYER_ALERT_GRACE_MS = 120000;
 
 function readMarkers(storage) {
     try {
@@ -26,10 +26,8 @@ export function createPrayerAlerts({
     let loading = false;
     let retryAt = 0;
     let destroyed = false;
-    let payloadReadyAt = Infinity;
-    let suppressThrough = 0;
-    const sessionStartedAt = now().getTime();
     const inFlight = new Set();
+    const attempted = new Set();
     const sessionMarkers = new Set();
 
     async function load(force = false) {
@@ -37,7 +35,6 @@ export function createPrayerAlerts({
         loading = true;
         try {
             payload = await service.load('riyadh', { force });
-            payloadReadyAt = now().getTime();
             retryAt = Date.now() + (payload.stale ? 5 : 12) * 60 * 1000;
         } catch {
             retryAt = Date.now() + 60 * 1000;
@@ -74,9 +71,12 @@ export function createPrayerAlerts({
         if (inFlight.has(marker)) return;
         inFlight.add(marker);
         const emit = async () => {
-            if (destroyed || stored(marker, event.kind) || !persist(marker)) return;
-            try { await onAlert(event); }
-            catch { /* A playback/UI issue must not cause a duplicate prayer alert. */ }
+            if (destroyed || attempted.has(marker) || stored(marker, event.kind) || now().getTime() >= event.expiresAt) return;
+            attempted.add(marker);
+            try {
+                const result = await onAlert(event);
+                if (result?.completedRepetitions === 2) persist(marker);
+            } catch { /* A failed delivery is not recorded as played. */ }
         };
         try {
             if (locks?.request) {
@@ -86,15 +86,12 @@ export function createPrayerAlerts({
         finally { inFlight.delete(marker); }
     }
 
-    function markMissed(event) {
-        persist(event.id);
-    }
-
     function tick(time = now()) {
         if (destroyed || !isActive()) return;
         const currentDay = getRiyadhDate(time);
         if (day !== currentDay) {
             day = currentDay;
+            attempted.clear();
             payload = null;
             retryAt = 0;
             if (!getSnapshot) void load();
@@ -102,7 +99,6 @@ export function createPrayerAlerts({
         if (getSnapshot) {
             const snapshot = getSnapshot();
             payload = snapshot?.payload || null;
-            payloadReadyAt = snapshot?.readyAt ?? Infinity;
         } else if (!loading && Date.now() >= retryAt) void load();
         if (!payload) return;
         const schedule = payload.days?.find(item => item.date === currentDay);
@@ -110,29 +106,16 @@ export function createPrayerAlerts({
         const currentTime = time.getTime();
         for (const event of getPrayerScheduleEvents(payload, currentDay, getIqamaSettings())) {
             const instant = event.timestamp;
-            if (!Number.isFinite(instant) || stored(event.id, event.kind)) continue;
-            if (instant <= Math.max(sessionStartedAt, suppressThrough) || instant < payloadReadyAt) {
-                markMissed(event);
-                continue;
-            }
-            if (currentTime < instant) continue;
-            if (currentTime - instant > GRACE_PERIOD_MS) {
-                markMissed(event);
-                continue;
-            }
-            void dispatchOnce({ ...event, dueAt: instant, expiresAt: instant + 60000 });
+            if (!Number.isFinite(instant) || currentTime < instant || currentTime >= instant + PRAYER_ALERT_GRACE_MS
+                || attempted.has(event.id) || stored(event.id, event.kind)) continue;
+            void dispatchOnce({ ...event, dueAt: instant, expiresAt: instant + PRAYER_ALERT_GRACE_MS });
         }
-    }
-
-    function skipMissed(time = now()) {
-        suppressThrough = Math.max(suppressThrough, time.getTime());
-        tick(time);
     }
 
     tick(now());
     return {
         tick,
-        skipMissed,
+        resume: tick,
         refresh: () => getSnapshot ? tick(now()) : load(true),
         destroy() { destroyed = true; }
     };

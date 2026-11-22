@@ -14,7 +14,13 @@ export default async function handler(request, response) {
         const event = await firebaseDatabaseRequest(`calls/public/${id}`);
         if (!event) return response.status(404).json({ error: 'النداء غير موجود' });
         response.setHeader('Cache-Control', 'no-store');
-        return response.status(200).json({ status: event.status || 'sent', statusAt: event.statusAt || null, audioStatus: event.audioStatus });
+        const verified = event.statusVerified === true;
+        return response.status(200).json({
+            status: verified ? event.status || 'sent' : 'sent',
+            statusAt: verified ? event.statusAt || null : null,
+            audioStatus: event.audioStatus,
+            verified
+        });
     } catch (error) {
         return sendError(response, error, 'تعذر قراءة حالة النداء');
     }

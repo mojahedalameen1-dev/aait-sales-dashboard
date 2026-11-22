@@ -20,6 +20,15 @@ const ARABIC_MONTH_NAMES = [
     'يوليو', 'اغسطس', 'سبتمبر', 'اكتوبر', 'نوفمبر', 'ديسمبر'
 ];
 
+export function getMeetingsPublishKey(requested = '') {
+    const requestedKey = typeof requested === 'string' ? requested.trim() : '';
+    const configuredKey = process.env.GOOGLE_SHEETS_PUBLISH_KEY?.trim();
+    const environmentKey = /^2PACX-[A-Za-z0-9_-]+$/.test(configuredKey || '') ? configuredKey : '';
+    const hasValidRequestedKey = /^2PACX-[A-Za-z0-9_-]+$/.test(requestedKey);
+    return environmentKey && (!hasValidRequestedKey || requestedKey === DEFAULT_PUBLISH_KEY)
+        ? environmentKey : hasValidRequestedKey ? requestedKey : DEFAULT_PUBLISH_KEY;
+}
+
 export function getCurrentSheetName() {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: TIME_ZONE,
@@ -155,13 +164,7 @@ export default async function handler(request, response) {
         return response.status(405).json({ error: 'Method not allowed' });
     }
 
-    const requestedKey = typeof request.query?.key === 'string' ? request.query.key.trim() : '';
-    const configuredKey = process.env.GOOGLE_SHEETS_PUBLISH_KEY?.trim();
-    const environmentKey = /^2PACX-[A-Za-z0-9_-]+$/.test(configuredKey || '') ? configuredKey : '';
-    const hasValidRequestedKey = /^2PACX-[A-Za-z0-9_-]+$/.test(requestedKey);
-    const publishKey = environmentKey && (!hasValidRequestedKey || requestedKey === DEFAULT_PUBLISH_KEY)
-        ? environmentKey
-        : hasValidRequestedKey ? requestedKey : DEFAULT_PUBLISH_KEY;
+    const publishKey = getMeetingsPublishKey(request.query?.key);
     const sheetName = getCurrentSheetName();
     const payloadCacheKey = `${publishKey}:${normalizeArabic(sheetName)}`;
 

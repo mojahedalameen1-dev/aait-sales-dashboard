@@ -6,7 +6,7 @@ import {
     isValidWav, normalizeSpeechText, prepareSpeechRequest, synthesizeGroqSpeech, finalizeStreamingWav,
     getRateLimitCooldownMs
 } from '../server/control/audio-cache.js';
-import { claimAudioRequest, createAudioHandler, isActiveCallAudio } from '../server/control/audio.js';
+import { claimAudioRequest, createAudioHandler, isActiveCallAudio, settleAudioRequest } from '../server/control/audio.js';
 import { createAckHandler } from '../server/control/ack.js';
 import { parseEnvironment } from '../scripts/audio-env.js';
 
@@ -171,7 +171,52 @@ test('concurrent requests consume only one generation claim per authorized event
     const results = await Promise.allSettled([claimAudioRequest('test-event-id-123456', key, options), claimAudioRequest('test-event-id-123456', key, options)]);
     assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
     assert.equal(value.generationAttempted, true);
-    await assert.rejects(claimAudioRequest('test-event-id-123456', key, options), error => error.statusCode === 409);
+    await assert.rejects(claimAudioRequest('test-event-id-123456', key, options), error => error.statusCode === 425);
+});
+
+test('a transient audio failure honors Retry-After, recovers once and never regenerates after success', async () => {
+    const id = 'isolated-audio-1234';
+    let time = 10000, revision = 0, calls = 0;
+    let item = { ...prepareSpeechRequest('نداء اختبار.', getSpeechSettings({})), expiresAt: time + 120000 };
+    const key = item.cacheKey;
+    const options = {
+        now: () => time,
+        read: async () => ({ data: structuredClone(item), etag: String(revision) }),
+        write: async (_, method, next, headers) => {
+            assert.equal(method, 'PUT');
+            assert.equal(headers['if-match'], String(revision++));
+            item = next;
+        }
+    };
+    const handler = createAudioHandler({
+        verify: async () => ({}),
+        readEvent: async () => ({ audioStatus: 'pending', audioCacheKey: key, expiresAt: Date.now() + 120000 }),
+        claimRequest: (eventId, code) => claimAudioRequest(eventId, code, options),
+        settleRequest: (eventId, claimId, error) => settleAudioRequest(eventId, claimId, error, options),
+        generate: async () => {
+            calls++;
+            if (calls === 1) throw Object.assign(new Error('transient'), { statusCode: 503, retryAfterMs: 4000 });
+            return wavFixture();
+        }
+    });
+    const attempt = async () => {
+        const response = responseFixture();
+        await handler({ method: 'GET', query: { key, event: id } }, response);
+        return response;
+    };
+    const initial = await attempt();
+    assert.equal(initial.statusCode, 503);
+    assert.equal(initial.headers['Retry-After'], '4');
+    assert.equal(item.generationState, 'retry');
+    time += 3000;
+    assert.equal((await attempt()).statusCode, 503);
+    assert.equal(calls, 1);
+    time += 1000;
+    assert.equal((await attempt()).statusCode, 200);
+    assert.equal(item.generationState, 'completed');
+    assert.equal(item.generationAttempts, 2);
+    assert.equal((await attempt()).statusCode, 409);
+    assert.equal(calls, 2);
 });
 
 test('RTDB rules expose display events but keep synthesis metadata and permissions private', async () => {

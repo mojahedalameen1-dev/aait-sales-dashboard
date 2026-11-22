@@ -77,7 +77,6 @@
 .sidebar .controls .icon-btn { height: 38px; border-radius: 10px; }
 .sidebar .controls .icon-btn svg { width: 18px; height: 18px; }
 .sidebar .icon-btn::after { bottom: calc(100% + 7px); }
-.sidebar .icon-btn.is-audio-failed { color: #fbbf24; border-color: rgba(251,191,36,.4); }
 .sync-warning { display: flex; gap: 7px; align-items: flex-start; padding: 7px 9px; border: 1px solid rgba(245,158,11,.25); border-radius: 9px; background: rgba(245,158,11,.07); color: #f5cd7d; font-size: .69rem; line-height: 1.6; }
 .sync-warning[hidden] { display: none; }
 .sync-warning svg { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 3px; }

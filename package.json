@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:cloudflare": "npm run build && node scripts/build-cloudflare.js",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
     "preview": "vite preview",
     "setup:control-passwords": "node scripts/setup-control-passwords.js",
     "test:groq-speech": "node scripts/groq-speech-samples.js",
@@ -17,7 +19,8 @@
   "author": "AAIT",
   "license": "ISC",
   "devDependencies": {
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "wrangler": "^4.165.0"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans-arabic": "^5.3.0",

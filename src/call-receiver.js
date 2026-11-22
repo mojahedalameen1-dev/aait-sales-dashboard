@@ -1,4 +1,4 @@
-import { isAudioPlaybackEnabled, playAnnouncementAudio } from './notifications.js';
+import { hasCompletedAudio, isAudioDeliveryOwner, isAudioPlaybackEnabled, playAnnouncementAudio, reportAudioDiagnostic } from './notifications.js';
 import { createAnnouncementAudioCache, requestPersistentAudioStorage } from './announcement-audio-cache.js';
 import { createAnnouncementAssetLoader } from './announcement-audio-assets.js';
 import { createPrayerAudioResolver } from './prayer-audio-resolver.js';
@@ -6,6 +6,12 @@ import { createPrayerAudioResolver } from './prayer-audio-resolver.js';
 const BOARD_AUTH_KEY = 'aait_board_anonymous_auth_v1';
 const PROCESSED_KEY = 'aait_board_processed_calls_v1';
 const RECEIVE_WINDOW_MS = 120000;
+
+function audioResponseError(response) {
+    const header = response.headers.get('Retry-After');
+    const retryAfter = header && (Number.isFinite(Number(header)) ? Date.now() + Number(header) * 1000 : Date.parse(header));
+    return Object.assign(new Error('تعذر تحميل ملف الصوت'), { status: response.status, retryAt: retryAfter || 0 });
+}
 
 function readStoredJson(storage, key, fallback) {
     try { return JSON.parse(storage.getItem(key) || 'null') || fallback; }
@@ -64,7 +70,7 @@ async function firebaseIdentityRequest(config, resource, values) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
-        cache: 'no-store'
+        cache: 'no-store', signal: AbortSignal.timeout(10000)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error?.message || 'تعذر تهيئة اتصال شاشة العرض');
@@ -79,7 +85,7 @@ async function getScreenToken(config, storage, forceRefresh = false) {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: session.refreshToken }),
-            cache: 'no-store'
+            cache: 'no-store', signal: AbortSignal.timeout(10000)
         });
         const payload = await response.json().catch(() => ({}));
         if (response.ok && payload.id_token) {
@@ -104,24 +110,32 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     let announcementExpiresAt = 0;
     let config = null;
     let surface = null;
-    let audioQueue = [];
-    let audioBusy = false;
     let eventCache = new Map();
     let currentStreamReader = null;
+    let suspended = false;
+    let streamRequest = null;
+    let streamTask = null;
+    let configRequest = null;
+    let tokenRequest = null;
+    let wakeRetry = null;
     const acknowledgementChains = new Map();
-    const sessionStartedAt = Date.now();
-    const seenEventIds = new Set();
+    const seenEventIds = new Map();
+
+    function screenToken(force = false) {
+        if (!tokenRequest) tokenRequest = getScreenToken(config, storage, force).finally(() => { tokenRequest = null; });
+        return tokenRequest;
+    }
 
     function acknowledge(eventId, status) {
         const previous = acknowledgementChains.get(eventId) || Promise.resolve();
         const next = previous.catch(() => {}).then(async () => {
             try {
-                const idToken = await getScreenToken(config, storage);
+                const idToken = await screenToken();
                 await fetch('/api/control/ack', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
                     body: JSON.stringify({ eventId, status }),
-                    cache: 'no-store'
+                    cache: 'no-store', signal: AbortSignal.timeout(10000)
                 });
             } catch { /* Status is informative only; playback is never repeated to retry an acknowledgement. */ }
         });
@@ -168,113 +182,84 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
     }
 
     function markDisplayed(event) {
-        if (globalThis.navigator?.locks?.request) {
-            let callbackStarted = false;
-            void globalThis.navigator.locks.request(`aait-call-delivery-${event.id}`, { ifAvailable: true }, lock => {
-                callbackStarted = true;
-                if (lock && !destroyed) markDisplayedOnce(event);
-            }).catch(() => { if (!callbackStarted && !destroyed) markDisplayedOnce(event); });
+        if (destroyed || seenEventIds.has(event.id)
+            || (event.statusVerified === true && ['audio_completed', 'audio_failed'].includes(event.status))) return;
+        const createdAt = Number(event.createdAt);
+        const expiresAt = Math.min(eventExpiry(event), createdAt + RECEIVE_WINDOW_MS);
+        if (!Number.isFinite(createdAt) || expiresAt <= Date.now()) return;
+        if (readStoredJson(storage, PROCESSED_KEY, []).includes(event.id)) return;
+        for (const [id, deadline] of seenEventIds) if (deadline <= Date.now()) seenEventIds.delete(id);
+        seenEventIds.set(event.id, expiresAt);
+
+        const canPlay = ['pending', 'ready'].includes(event.audioStatus) && /^[a-f0-9]{64}$/.test(event.audioCacheKey || '');
+        if (!canPlay) {
+            renderCall(event, event.audioStatus === 'not_configured'
+                ? 'ظهر النداء؛ الصوت غير مهيأ على الخادم'
+                : 'ظهر النداء؛ تعذّر تجهيز الصوت');
+            void acknowledge(event.id, 'displayed');
+            if (isAudioDeliveryOwner()) void acknowledge(event.id, 'audio_failed');
             return;
         }
-        markDisplayedOnce(event);
-    }
 
-    function markDisplayedOnce(event) {
-        const alreadyProcessed = readStoredJson(storage, PROCESSED_KEY, []);
-        if (seenEventIds.has(event.id) || alreadyProcessed.includes(event.id)) return;
-        if (eventExpiry(event) <= Date.now() || Number(event.createdAt) < Math.max(sessionStartedAt - RECEIVE_WINDOW_MS, Date.now() - RECEIVE_WINDOW_MS)) return;
-        // Persist before UI/audio so reloads and reconnects never replay this event.
-        seenEventIds.add(event.id);
-        saveProcessed(storage, event.id);
-        const canPlay = ['pending', 'ready'].includes(event.audioStatus) && /^[a-f0-9]{64}$/.test(event.audioCacheKey || '');
+        renderCall(event, isAudioPlaybackEnabled() ? 'جاري توصيل النداء الصوتي…' : 'اضغط داخل صفحة العرض للسماح بالصوت');
         void acknowledge(event.id, 'displayed');
-        if (canPlay) {
-            audioQueue.push({ event, expiresAt: Math.min(eventExpiry(event), Date.now() + 45000) });
-            if (!audioBusy && audioQueue.length === 1) {
-                renderCall(event, 'جاري توصيل النداء الصوتي…', { keepVisible: isAudioPlaybackEnabled() });
-            }
-            if (!isAudioPlaybackEnabled()) {
-                if (currentAnnouncementId === event.id) surface._slots.status.textContent = 'الصوت مقفل؛ فعّل الصوت من الشريط السفلي';
-                setTimeout(() => {
-                    const item = audioQueue.find(entry => entry.event.id === event.id);
-                    if (!item || isAudioPlaybackEnabled()) return;
-                    audioQueue = audioQueue.filter(entry => entry.event.id !== event.id);
-                    if (currentAnnouncementId === event.id) surface._slots.status.textContent = 'ظهر النداء، لكن المتصفح منع تشغيل الصوت';
-                    void acknowledge(event.id, 'audio_failed');
-                }, 45000);
-            }
-            void processAudioQueue();
-        } else {
-            renderCall(event, 'ظهر النداء على الشاشة');
-            surface._slots.status.textContent = event.audioStatus === 'not_configured'
-                ? 'ظهر النداء؛ الصوت غير مهيأ على الخادم'
-                : 'ظهر النداء؛ تعذّر تجهيز الصوت';
-            void acknowledge(event.id, 'audio_failed');
-        }
-    }
-
-    async function processAudioQueue() {
-        if (audioBusy || !audioQueue.length || !isAudioPlaybackEnabled() || destroyed) return;
-        audioBusy = true;
-        const item = audioQueue.shift();
-        try {
-            if (item.expiresAt <= Date.now()) {
-                renderCall(item.event, 'انتهت مهلة النداء المؤجل');
-                void acknowledge(item.event.id, 'audio_failed');
-                return;
-            }
-            renderCall(item.event, 'جاري تجهيز النداء الصوتي…', { keepVisible: true });
+        const audioId = 'admin:' + event.id;
+        let ownedAttempt = false;
+        const audio = playAnnouncementAudio(async () => {
+            ownedAttempt = true;
             const cachedAudio = await audioCache.getOrCreate({
-                cacheKey: item.event.audioCacheKey,
-                callType: item.event.callType,
-                loadAsset: () => loadStaticAsset(item.event.audioCacheKey),
+                cacheKey: event.audioCacheKey,
+                callType: event.callType,
+                loadAsset: () => loadStaticAsset(event.audioCacheKey),
                 loadGenerated: async () => {
-                    const idToken = await getScreenToken(config, storage);
+                    const idToken = await screenToken();
                     const audioUrl = new URL('/api/control/audio', window.location.origin);
-                    audioUrl.searchParams.set('key', item.event.audioCacheKey);
-                    audioUrl.searchParams.set('event', item.event.id);
+                    audioUrl.searchParams.set('key', event.audioCacheKey);
+                    audioUrl.searchParams.set('event', event.id);
                     const response = await fetch(audioUrl, {
-                        headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store'
+                        headers: { Authorization: 'Bearer ' + idToken }, cache: 'no-store',
+                        signal: AbortSignal.timeout(35000)
                     });
                     if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/wav')) {
-                        throw new Error('تعذر تحميل ملف صوت النداء');
+                        throw audioResponseError(response);
                     }
                     return response.blob();
                 }
             });
-            if (cachedAudio.warning) {
-                console.warn('[Audio cache] تعذّر حفظ الصوت محليًا؛ لن يؤثر ذلك على تشغيل النداء الحالي.');
-            }
-            const result = await playAnnouncementAudio(cachedAudio.blob, {
-                expiresAt: item.expiresAt,
-                onDeferred: ({ waitingFor }) => {
-                    if (currentAnnouncementId === item.event.id) {
-                        renderCall(item.event, waitingFor === 'prayer'
-                            ? 'مؤجل حتى انتهاء تنبيه الصلاة'
-                            : 'مؤجل حتى ينتهي الصوت الحالي', { keepVisible: true });
-                    }
-                },
-                onStarted: ({ repetition, total }) => {
-                    renderCall(item.event, `يُشغّل النداء · ${repetition} من ${total}`, { keepVisible: true });
-                    if (repetition === 1) void acknowledge(item.event.id, 'audio_started');
-                },
-                onCompleted: () => {
-                    renderCall(item.event, 'اكتمل تشغيل النداء مرتين');
+            if (cachedAudio.warning) reportAudioDiagnostic('cache_write_unavailable', { level: 'admin' });
+            return cachedAudio.blob;
+        }, {
+            id: audioId,
+            expiresAt,
+            isRelevant: () => {
+                const current = eventCache.get(event.id);
+                return !destroyed && Boolean(current) && !(current.statusVerified === true && current.status === 'audio_completed');
+            },
+            onDeferred: ({ waitingFor }) => {
+                if (currentAnnouncementId === event.id && waitingFor && isAudioDeliveryOwner()) {
+                    renderCall(event, waitingFor === 'prayer' ? 'مؤجل حتى انتهاء تنبيه الصلاة' : 'مؤجل حتى ينتهي الصوت الحالي');
                 }
-            });
-            if (result.completedRepetitions !== 2) {
-                renderCall(item.event, result.reason === 'expired'
-                    ? 'انتهت مهلة النداء قبل اكتمال التكرار؛ أعد إرساله من مركز التحكم'
-                    : 'لم يكتمل تشغيل النداء مرتين على شاشة العرض');
-                void acknowledge(item.event.id, 'audio_failed');
+            },
+            onStarted: ({ repetition, total }) => {
+                renderCall(event, 'يُشغّل النداء · ' + repetition + ' من ' + total, { keepVisible: true });
+                if (repetition === 1) void acknowledge(event.id, 'audio_started');
+            },
+            onCompleted: () => renderCall(event, 'اكتمل تشغيل النداء مرتين')
+        });
+        void audio.then(result => {
+            if (destroyed) return;
+            if (result.completedRepetitions === 2 || hasCompletedAudio(audioId)) {
+                saveProcessed(storage, event.id);
+                if (ownedAttempt || isAudioDeliveryOwner()) void acknowledge(event.id, 'audio_completed');
+            } else if (ownedAttempt || isAudioDeliveryOwner()) {
+                if (currentAnnouncementId === event.id) {
+                    renderCall(event, result.reason === 'expired'
+                        ? 'انتهت مهلة النداء قبل اكتمال الصوت'
+                        : 'لم يكتمل تشغيل النداء على شاشة العرض');
+                }
+                if (result.reason !== 'interrupted') void acknowledge(event.id, 'audio_failed');
             }
-        } catch {
-            renderCall(item.event, 'ظهر النداء، لكن تعذّر تجهيز الصوت على شاشة العرض');
-            void acknowledge(item.event.id, 'audio_failed');
-        } finally {
-            audioBusy = false;
-            if (audioQueue.length) void processAudioQueue();
-        }
+        }).catch(() => reportAudioDiagnostic('delivery_callback_failed', { level: 'admin' }));
     }
 
     function applyStreamUpdate(eventName, payload) {
@@ -313,13 +298,25 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
 
     async function consumeStream() {
         let forceRefresh = false;
-        while (!destroyed) {
+        while (!destroyed && !suspended) {
+            let watchdog;
+            const controller = new AbortController();
+            streamRequest = controller;
+            const armWatchdog = () => {
+                clearTimeout(watchdog);
+                watchdog = setTimeout(() => controller.abort('stream_idle'), 90000);
+            };
             try {
-                const idToken = await getScreenToken(config, storage, forceRefresh);
+                await configure();
+                if (destroyed || suspended || controller.signal.aborted) return;
+                const idToken = await screenToken(forceRefresh);
                 forceRefresh = false;
                 const url = `${config.databaseUrl.replace(/\/$/, '')}/${config.feedPath}.json?auth=${encodeURIComponent(idToken)}`;
-                const response = await fetch(url, { headers: { Accept: 'text/event-stream' }, cache: 'no-store', redirect: 'follow' });
-                if (!response.ok || !response.body) throw Object.assign(new Error('تعذر فتح بث شاشة العرض'), { status: response.status });
+                armWatchdog();
+                const response = await fetch(url, { headers: { Accept: 'text/event-stream' }, cache: 'no-store', redirect: 'follow', signal: controller.signal });
+                if (!response.ok || !response.body || !/^text\/event-stream\b/i.test(response.headers.get('Content-Type') || '')) {
+                    throw Object.assign(new Error('تعذر فتح بث شاشة العرض'), { status: response.status, code: 'stream_unavailable' });
+                }
                 retryDelay = 1800;
                 onConnectionChange(true);
                 const reader = response.body.getReader();
@@ -331,9 +328,9 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                 const dispatch = () => {
                     if (eventName === 'auth_revoked') {
                         forceRefresh = true;
-                        throw new Error('screen-token-expired');
+                        throw Object.assign(new Error('screen-token-expired'), { code: 'firebase_token_expired' });
                     }
-                    if (eventName === 'cancel') throw new Error('database-read-not-authorized');
+                    if (eventName === 'cancel') throw Object.assign(new Error('database-read-not-authorized'), { code: 'firebase_read_cancelled' });
                     if (dataLines.length) {
                         try { applyStreamUpdate(eventName, JSON.parse(dataLines.join('\n'))); }
                         catch (error) { if (error.message === 'screen-token-expired' || error.message === 'database-read-not-authorized') throw error; }
@@ -341,9 +338,11 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                     eventName = 'message';
                     dataLines = [];
                 };
-                while (!destroyed) {
+                while (!destroyed && !suspended && !controller.signal.aborted) {
                     const { done, value } = await reader.read();
                     if (done) break;
+                    if (destroyed || suspended) break;
+                    armWatchdog();
                     buffer += decoder.decode(value, { stream: true });
                     let newline;
                     while ((newline = buffer.indexOf('\n')) !== -1) {
@@ -355,68 +354,107 @@ export function createCallReceiver({ storage = globalThis.localStorage, onConnec
                         else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
                     }
                 }
-                currentStreamReader = null;
-                if (!destroyed) throw new Error('انقطع بث النداءات');
+                if (!destroyed && !suspended) throw new Error('انقطع بث النداءات');
             } catch (error) {
                 onConnectionChange(false);
-                if (destroyed) break;
-                if (error.message.includes('token-expired') || error.status === 401) forceRefresh = true;
-                console.warn('[Call receiver] اتصال شاشة العرض غير متاح؛ ستتم إعادة المحاولة.');
-                await new Promise(resolve => { retryTimer = setTimeout(resolve, retryDelay); });
-                retryDelay = Math.min(15000, Math.round(retryDelay * 1.7));
+                if (destroyed || suspended) break;
+                if (error?.message?.includes('token-expired') || error?.status === 401) forceRefresh = true;
+                reportAudioDiagnostic('call_feed_retry', {
+                    reason: controller.signal.reason === 'stream_idle' ? 'stream_idle' : error?.code || error?.name || 'stream_closed',
+                    httpStatus: error?.status, delayMs: retryDelay
+                });
+            } finally {
+                clearTimeout(watchdog);
+                controller.abort();
+                void currentStreamReader?.cancel().catch(() => {});
+                currentStreamReader = null;
+                if (streamRequest === controller) streamRequest = null;
             }
+            if (destroyed || suspended) break;
+            await new Promise(resolve => {
+                wakeRetry = resolve;
+                retryTimer = setTimeout(resolve, retryDelay);
+            });
+            clearTimeout(retryTimer);
+            retryTimer = null;
+            wakeRetry = null;
+            retryDelay = Math.min(15000, Math.round(retryDelay * 1.7));
         }
     }
 
-    async function start() {
-        void requestPersistentAudioStorage();
-        try {
-            const response = await fetch('/api/control/config', { cache: 'no-store' });
+    function configure() {
+        if (config) return Promise.resolve(config);
+        if (!configRequest) configRequest = (async () => {
+            const response = await fetch('/api/control/config', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
             const payload = await response.json();
             if (!response.ok || !payload.firebaseConfigured || !payload.firebase?.databaseUrl || !payload.firebase?.apiKey) {
-                onConnectionChange(false);
-                return;
+                throw Object.assign(new Error('إعداد اتصال العرض غير متاح'), { status: response.status });
             }
-            config = {
+            return (config = {
                 databaseUrl: payload.firebase.databaseUrl,
                 apiKey: payload.firebase.apiKey,
                 prayerAudio: payload.prayerAudio,
                 feedPath: String(payload.firebase.feedPath || 'calls/public').split('/').map(encodeURIComponent).join('/')
-            };
-            await getScreenToken(config, storage);
-            void consumeStream();
-        } catch {
-            onConnectionChange(false);
-        }
+            });
+        })().finally(() => { configRequest = null; });
+        return configRequest;
     }
 
-    const ready = start();
+    function resume() {
+        if (destroyed) return;
+        suspended = false;
+        wakeRetry?.();
+        if (!streamTask) streamTask = consumeStream().finally(() => {
+            streamTask = null;
+            if (!destroyed && !suspended) resume();
+        });
+    }
+
+    function suspend() {
+        suspended = true;
+        streamRequest?.abort('suspended');
+        void currentStreamReader?.cancel().catch(() => {});
+        wakeRetry?.();
+    }
+
+    void requestPersistentAudioStorage();
+    resume();
     const loadPrayerAudio = createPrayerAudioResolver({
         audioCache,
-        getManifest: async () => { await ready; if (!config && !destroyed) await start(); return config?.prayerAudio; },
+        getManifest: async () => (await configure())?.prayerAudio,
         loadGenerated: async ({ key, kind, cacheKey }) => {
             if (destroyed || !config) throw new Error('اتصال شاشة العرض غير متاح');
-            const idToken = await getScreenToken(config, storage);
+            const idToken = await screenToken();
             const query = new URLSearchParams({ key, kind, cache: cacheKey });
             const response = await fetch(`/api/control/prayer-audio?${query}`, {
-                headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store'
+                headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store', signal: AbortSignal.timeout(18000)
             });
             if (!response.ok || response.headers.get('X-Audio-Cache-Key') !== cacheKey
                 || !response.headers.get('content-type')?.toLowerCase().startsWith('audio/wav')) {
-                throw new Error('تعذر تحميل صوت الصلاة؛ يظل التنبيه المرئي متاحًا');
+                throw audioResponseError(response);
             }
             return response.blob();
         }
     });
     return {
         loadPrayerAudio,
-        notifyAudioEnabled: processAudioQueue,
+        async authorizeDisplay() {
+            await configure();
+            const displayToken = await screenToken();
+            const result = await fetch('/api/control/display', {
+                method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ displayToken }), signal: AbortSignal.timeout(12000)
+            });
+            if (!result.ok) throw Object.assign(new Error('تعذر اعتماد شاشة العرض'), { status: result.status });
+        },
+        resume,
+        suspend,
         destroy() {
             destroyed = true;
-            if (retryTimer) clearTimeout(retryTimer);
+            suspend();
             if (announcementTimer) clearTimeout(announcementTimer);
             if (announcementHideTimer) clearTimeout(announcementHideTimer);
-            void currentStreamReader?.cancel().catch(() => {});
             surface?.remove();
             surface = null;
         }

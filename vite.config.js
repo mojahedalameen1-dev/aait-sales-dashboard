@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import meetingsApi from './api/meetings.js';
 import prayerTimesApi from './api/prayer-times.js';
 import controlConfigApi from './server/control/config.js';
+import displayApi from './server/control/display.js';
 import controlMeApi from './server/control/me.js';
 import controlMeetingsApi from './server/control/meetings.js';
 import controlCallsApi from './server/control/calls.js';
@@ -20,6 +21,7 @@ const LOCAL_API_HANDLERS = new Map([
   ['/api/meetings', meetingsApi],
   ['/api/prayer-times', prayerTimesApi],
   ['/api/control/config', controlConfigApi],
+  ['/api/control/display', displayApi],
   ['/api/control/me', controlMeApi],
   ['/api/control/meetings', controlMeetingsApi],
   ['/api/control/calls', controlCallsApi],
