@@ -2,6 +2,7 @@ import ackHandler from '../server/control/ack.js';
 import audioHandler from '../server/control/audio.js';
 import callsHandler from '../server/control/calls.js';
 import configHandler from '../server/control/config.js';
+import displayHandler from '../server/control/display.js';
 import loginHandler from '../server/control/login.js';
 import logoutHandler from '../server/control/logout.js';
 import meHandler from '../server/control/me.js';
@@ -16,6 +17,7 @@ const handlers = new Map([
     ['prayer-audio', prayerAudioHandler],
     ['calls', callsHandler],
     ['config', configHandler],
+    ['display', displayHandler],
     ['login', loginHandler],
     ['logout', logoutHandler],
     ['me', meHandler],

@@ -37,9 +37,15 @@ export const ENGINEERS = [
     }
 ];
 
+export function normalizeEngineerName(value = '') {
+    return String(value).normalize('NFKD')
+        .replace(/[\u0610-\u061a\u0640\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')
+        .replace(/[أإآٱ]/g, 'ا').trim().toLowerCase();
+}
+
 export function getEngineerProfile(teamName = '') {
-    const normalized = String(teamName).trim().toLowerCase();
-    return ENGINEERS.find(engineer => engineer.aliases.some(alias => normalized.includes(alias.toLowerCase()))) || null;
+    const normalized = normalizeEngineerName(teamName);
+    return ENGINEERS.find(engineer => engineer.aliases.some(alias => normalized.includes(normalizeEngineerName(alias)))) || null;
 }
 
 export function getEngineerTheme(teamName) {

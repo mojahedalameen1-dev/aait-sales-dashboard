@@ -6,9 +6,9 @@ import { createIcons, Building2, CalendarDays, Check, CircleCheck, CircleHelp, C
 
 const ICONS = { Building2, CalendarDays, Check, CircleCheck, CircleHelp, CircleUserRound, CircleX, Clock3, ExternalLink, Info, KeyRound, LayoutDashboard, LoaderCircle, LogIn, LogOut, PhoneCall, Radio, RefreshCw, Send, ShieldAlert, TriangleAlert, UserRoundCheck, UsersRound, Video, X };
 const EMPLOYEES = [
+    { id: 'ashraf', name: 'م. أشرف', color: '#3896ff' },
     { id: 'mojahed', name: 'م. مجاهد', color: '#9a78ff' },
     { id: 'mahmoud', name: 'م. محمود', color: '#f6b94a' },
-    { id: 'ashraf', name: 'م. أشرف', color: '#3896ff' },
     { id: 'hossam', name: 'م. حسام', color: '#00c98a' },
     { id: 'shady', name: 'م. شادي', color: '#ef5da8' }
 ];
@@ -639,13 +639,17 @@ async function submitCall() {
 async function monitorCallStatus(eventId, audioStatus) {
     if (!eventId || statusTimer) clearTimeout(statusTimer);
     let lastStatus = 'sent';
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < 85; attempt++) {
         await new Promise(resolve => { statusTimer = setTimeout(resolve, 1500); });
         try {
             const current = await apiRequest(`/api/control/status?id=${encodeURIComponent(eventId)}`);
             lastStatus = current.status || lastStatus;
             if (current.status === 'audio_started') {
-                showResult('وصل النداء إلى الشاشة وبدأ تشغيل الصوت عليها.');
+                showResult('بدأ تشغيل الصوت في متصفح شاشة العرض؛ ننتظر اكتماله…');
+                continue;
+            }
+            if (current.status === 'audio_completed') {
+                showResult('اكتمل تشغيل النداء مرتين في متصفح شاشة العرض.');
                 return;
             }
             if (current.status === 'audio_failed') {
@@ -659,9 +663,9 @@ async function monitorCallStatus(eventId, audioStatus) {
             if (current.status === 'displayed') showResult('ظهر النداء على الشاشة؛ ننتظر بدء التشغيل الصوتي…');
         } catch { /* Keep the most recent truthful status visible if the board is offline. */ }
     }
-    showResult(lastStatus === 'displayed'
+    showResult(lastStatus === 'audio_started' ? 'بدأ التشغيل، لكن متصفح شاشة العرض لم يؤكد اكتماله بعد.' : lastStatus === 'displayed'
         ? 'ظهر النداء على الشاشة، لكن ما تأكد بدء الصوت حتى الآن. راجع حالة الصوت واتصال شاشة العرض.'
-        : 'أُرسل الأمر، لكن ما وصلنا تأكيد من شاشة العرض. تحقق من اتصال الشاشة والصوت.', 'warn');
+        : 'أُرسل النداء، لكن ما وصل تأكيد من شاشة معتمدة. تحقق من اتصال الشاشة واعتمادها من الإعدادات.', 'warn');
 }
 
 async function handleLogin(event) {

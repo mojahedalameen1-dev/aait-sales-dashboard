@@ -3,504 +3,76 @@
  * REFACTORED: Audio Queue System + Performance Cleanup
  */
 
-import { getSettings, isDone, isCancelled, getCurrentTimeParts, formatTodayDate } from './data.js';
-import { getEngineerAudioPrefix, getEngineerProfile, isEngineerMeetingReminderAudioEnabled } from './config.js';
+import { getSettings, isDone, isCancelled } from './data.js';
+import { getEngineerAudioPrefix, getEngineerProfile } from './config.js';
 import { createIcons, AlertCircle, AlertTriangle, Bell, Info } from 'lucide';
 import { ALERT_CATCHUP_MS, MEETING_REMINDER_MINUTES, shouldTriggerAlert } from './alert-timing.js';
-import { createAudioPriorityQueue } from './audio-priority.js';
-import { createAlertAudioSequence } from './alert-audio-sequence.js';
+import { AUDIO_STATE, createAudioDelivery } from './audio-delivery.js';
 
-// ========================================
-// 🔊 Audio System (Queue Based)
-// ========================================
-
-/**
- * Audio States
- */
-export const AUDIO_STATE = {
-    LOCKED: 'locked',
-    ENABLED: 'enabled',
-    FAILED: 'failed'
-};
-
-const playQueue = [];
-let isPlaying = false;
-let currentAudioState = AUDIO_STATE.LOCKED;
-let onStateChangeCallback = null;
-let audioUnlockPromise = null;
-let retainedAudioPlayer = null;
-let activeAudioTask = null;
-let announcementPlayer = null;
-let announcementObjectUrl = '';
-let cancelAnnouncementPlayback = null;
-let alertBeepPlayer = null;
-let cancelAlertBeepPlayback = null;
-const SILENT_AUDIO = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
-
-// Track recently warned meetings to avoid spamming fallbacks
-const recentlyWarnedMeetings = new Map(); // id -> timestamp
+export { AUDIO_STATE };
 const DELIVERED_STORAGE_KEY = 'aait_delivered_notifications';
-const PLAY_COUNTS_STORAGE_KEY = 'aait_notification_play_counts';
 const AUDIO_LEADER_LOCK = 'aait-notification-audio-leader';
 const AUDIO_LEASE_KEY = 'aait_notification_audio_lease';
 const AUDIO_LEASE_MS = 12000;
-const AUDIO_FILES = ['a', 'm', 's'].flatMap(prefix => MEETING_REMINDER_MINUTES.map(minutes => `${prefix}${minutes}.mp3`));
-const audioTabId = globalThis.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-let playbackGeneration = 0;
-let activeSafetyTimeout = null;
-let queueAdvanceTimeout = null;
-let latestMeetingsById = new Map();
-let isAudioLeader = false;
+const audioTabId = globalThis.crypto?.randomUUID?.() || 'tab-' + Date.now() + '-' + Math.random();
+let audioOwner = false;
+let leaderRequestPending = false;
 let releaseWebAudioLock = null;
-let leaderRetryInterval = null;
-let leaseRenewInterval = null;
-let leaseConfirmationTimeout = null;
-const priorityAudioQueue = createAudioPriorityQueue({ onIdle: () => processQueue() });
+let leaseConfirmation;
+let usingLease = false;
+let latestMeetingsById = new Map();
+let onStateChange = () => {};
+let timerInterval = null;
+let loop = null;
 
-/**
- * Set a callback for UI updates when audio state changes
- */
-export function setAudioStateListener(callback) {
-    onStateChangeCallback = callback;
+const delivery = createAudioDelivery({
+    canOwnAudio: isAudioDeliveryOwner,
+    isEnabled: () => getSettings().soundEnabled,
+    onState(state) {
+        onStateChange(state);
+        if (state === AUDIO_STATE.ENABLED) tryAcquireAudioLeadership();
+    }
+});
+
+export function setAudioStateListener(listener) { onStateChange = listener || (() => {}); }
+export function unlockAudio(options) { return delivery.unlock(options); }
+export function stopAudioPlayback() { delivery.stop(); releaseAudioLeadership(); }
+export function suspendAudioPlayback() { delivery.suspend(); releaseAudioLeadership(); }
+export function reportAudioDiagnostic(event, details) { delivery.report(event, details); }
+export function isAudioPlaybackEnabled() { return delivery.state === AUDIO_STATE.ENABLED && getSettings().soundEnabled; }
+export function isAudioDeliveryOwner() {
+    if (!loop) return true;
+    if (!audioOwner || delivery.suspended) return false;
+    if (!usingLease) return true;
+    const lease = readAudioLease();
+    return lease.id === audioTabId && lease.expiresAt > Date.now();
+}
+export function hasCompletedAudio(id, repetitions = 2) { return (delivery.getProgress(id)?.completed || 0) >= repetitions; }
+
+export function resumeAudioPlayback(options) {
+    delivery.wake(options);
+    tryAcquireAudioLeadership();
+    runNotificationTick();
 }
 
-function updateAudioState(newState) {
-    if (currentAudioState === newState) return;
-    currentAudioState = newState;
-    console.log(`[Audio] State changed to: ${newState}`);
-    if (onStateChangeCallback) onStateChangeCallback(newState);
-    if (newState === AUDIO_STATE.ENABLED && getSettings().soundEnabled) tryAcquireAudioLeadership();
-    else releaseAudioLeadership();
-}
-
-/**
- * "Unlock" audio context. Called from user interaction.
- */
-export function unlockAudio() {
-    if (currentAudioState === AUDIO_STATE.ENABLED) return Promise.resolve(true);
-    if (audioUnlockPromise) return audioUnlockPromise;
-
-    try {
-        retainedAudioPlayer ||= new Audio();
-        retainedAudioPlayer.preload = 'auto';
-        retainedAudioPlayer.src = SILENT_AUDIO;
-        audioUnlockPromise = retainedAudioPlayer.play().then(() => {
-            retainedAudioPlayer.pause();
-            retainedAudioPlayer.currentTime = 0;
-            updateAudioState(AUDIO_STATE.ENABLED);
-            preloadAlertBeep();
-            preloadAudioFiles();
-            processQueue();
-            return true;
-        }).catch(error => {
-            console.warn('[Audio] Unlock failed:', error);
-            updateAudioState(error?.name === 'NotAllowedError' ? AUDIO_STATE.LOCKED : AUDIO_STATE.FAILED);
-            return false;
-        }).finally(() => {
-            audioUnlockPromise = null;
+export function playTestAlert(onResult, { onStarted, onDeferred } = {}) {
+    return delivery.enqueue('routine', { clipUrl: '/sounds/m5.mp3', expiresAt: Date.now() + 90000, onStarted, onDeferred })
+        .then(result => {
+            onResult?.(result.completedRepetitions === 2);
+            return result;
         });
-
-        return audioUnlockPromise;
-    } catch (e) {
-        console.warn('[Audio] Unlock setup failed:', e);
-        audioUnlockPromise = null;
-        updateAudioState(AUDIO_STATE.FAILED);
-        return Promise.resolve(false);
-    }
 }
 
-function preloadAudioFiles() {
-    for (const filename of AUDIO_FILES) {
-        const audio = new Audio(`/sounds/${filename}`);
-        audio.preload = 'auto';
-        audio.load();
-    }
+export function playAnnouncementAudio(audioBlobOrLoader, options = {}) {
+    return delivery.enqueue('admin', { ...options, loadRecording: () => typeof audioBlobOrLoader === 'function' ? audioBlobOrLoader() : audioBlobOrLoader });
 }
 
-export function playTestAlert(onResult) {
-    enqueueAudio({ filename: 'm5.mp3', meetingId: 'audio-test', onDelivered: onResult });
-}
-
-export function isAudioPlaybackEnabled() {
-    return currentAudioState === AUDIO_STATE.ENABLED && getSettings().soundEnabled;
-}
-
-const ALERT_BEEP_URL = '/sounds/beeb.mp3';
-const ALERT_BEEP_VOLUME = 0.35;
-
-function preloadAlertBeep() {
-    if (alertBeepPlayer || typeof Audio !== 'function') return;
-    try {
-        alertBeepPlayer = new Audio(ALERT_BEEP_URL);
-        alertBeepPlayer.preload = 'auto';
-        alertBeepPlayer.volume = ALERT_BEEP_VOLUME;
-        alertBeepPlayer.load();
-    } catch {
-        alertBeepPlayer = null;
-    }
-}
-
-/** Reuses the bundled beep player and waits for its actual media end event. */
-function playAlertBeepNow({ expiresAt = Infinity } = {}) {
-    if (!isAudioPlaybackEnabled()) return Promise.resolve({ started: false, completed: false, reason: 'locked' });
-    if (expiresAt <= Date.now()) return Promise.resolve({ started: false, completed: false, reason: 'expired' });
-    preloadAlertBeep();
-    if (!alertBeepPlayer) return Promise.resolve({ started: false, completed: false, reason: 'beep_unavailable' });
-
-    const player = alertBeepPlayer;
-    cancelAlertBeepPlayback?.();
-    player.pause();
-    try { player.currentTime = 0; } catch { /* The media element may still be preparing. */ }
-
-    return new Promise(resolve => {
-        let started = false;
-        let settled = false;
-        let safetyTimer;
-        const finish = result => {
-            if (settled) return;
-            settled = true;
-            if (safetyTimer) clearTimeout(safetyTimer);
-            player.removeEventListener('playing', handleStarted);
-            player.removeEventListener('ended', handleEnded);
-            player.removeEventListener('error', handleError);
-            if (cancelAlertBeepPlayback === cancel) cancelAlertBeepPlayback = null;
-            resolve(result);
-        };
-        const handleStarted = () => { started = true; };
-        const handleEnded = () => finish({ started, completed: started });
-        const handleError = () => finish({ started, completed: false, reason: 'beep_playback_failed' });
-        const cancel = () => { player.pause(); finish({ started, completed: false, reason: 'interrupted' }); };
-        cancelAlertBeepPlayback = cancel;
-        player.addEventListener('playing', handleStarted);
-        player.addEventListener('ended', handleEnded);
-        player.addEventListener('error', handleError);
-        safetyTimer = setTimeout(() => {
-            player.pause();
-            finish({ started, completed: false, reason: 'beep_playback_timeout' });
-        }, Math.max(1, Math.min(45000, expiresAt - Date.now())));
-        player.play().catch(() => finish({ started: false, completed: false, reason: 'beep_playback_blocked' }));
-    });
-}
-
-async function playAnnouncementAudioNow(audioBlob, { onStarted, expiresAt = Infinity, priorityOwned = false } = {}) {
-    if (expiresAt <= Date.now()) return { started: false, reason: 'expired' };
-    if (!(audioBlob instanceof Blob) || !isAudioPlaybackEnabled()) return { started: false, reason: 'locked' };
-    if (!priorityOwned) stopRoutineAudioForPriority();
-    cancelAnnouncementPlayback?.();
-    announcementPlayer?.pause?.();
-    if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
-    announcementObjectUrl = URL.createObjectURL(audioBlob);
-    announcementPlayer = new Audio(announcementObjectUrl);
-    announcementPlayer.preload = 'auto';
-    announcementPlayer.volume = 1;
-
-    return new Promise(resolve => {
-        const player = announcementPlayer;
-        let started = false;
-        let settled = false;
-        let safetyTimer;
-        const finish = result => {
-            if (settled) return;
-            settled = true;
-            if (safetyTimer) clearTimeout(safetyTimer);
-            player.removeEventListener('playing', handleStarted);
-            player.removeEventListener('ended', handleEnded);
-            player.removeEventListener('error', handleError);
-            if (announcementPlayer === player) {
-                cancelAnnouncementPlayback = null;
-                announcementPlayer = null;
-                if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
-                announcementObjectUrl = '';
-            }
-            resolve(result);
-        };
-        const handleStarted = () => {
-            if (started) return;
-            started = true;
-            onStarted?.();
-        };
-        const handleEnded = () => finish({ started, completed: started });
-        const handleError = () => finish({ started, completed: false, reason: 'playback_failed' });
-        cancelAnnouncementPlayback = () => { player.pause(); finish({ started, completed: false, reason: 'interrupted' }); };
-        player.addEventListener('playing', handleStarted);
-        player.addEventListener('ended', handleEnded);
-        player.addEventListener('error', handleError);
-        safetyTimer = setTimeout(() => { player.pause(); finish({ started, reason: 'playback_timeout' }); }, Math.max(1, Math.min(45000, expiresAt - Date.now())));
-        player.play().catch(() => finish({ started: false, reason: 'playback_blocked' }));
-    });
-}
-
-function stopRoutineAudioForPriority() {
-    // Prayer and admin speech take priority over scheduled meeting reminder files.
-    playbackGeneration++;
-    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
-    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
-    activeSafetyTimeout = null;
-    queueAdvanceTimeout = null;
-    for (const task of playQueue.splice(0)) task.onDelivered?.(false);
-    activeAudioTask?.onDelivered?.(false);
-    activeAudioTask = null;
-    isPlaying = false;
-    if (retainedAudioPlayer) {
-        retainedAudioPlayer.onended = null;
-        retainedAudioPlayer.onerror = null;
-        retainedAudioPlayer.pause?.();
-        try { retainedAudioPlayer.currentTime = 0; } catch { /* ignored */ }
-    }
-}
-
-/** One serialized sequence shared by office calls, meeting calls, adhan and iqama. */
-function playAlertAnnouncement(level, audioBlobOrLoader, { onStarted, onDeferred, onCompleted, expiresAt = Infinity, isRelevant = () => true } = {}) {
-    if (!isAudioPlaybackEnabled()) return Promise.resolve({ started: false, reason: 'locked' });
-    return priorityAudioQueue.enqueue(level, async () => {
-        if (expiresAt <= Date.now() || !isRelevant()) return { started: false, reason: 'expired' };
-        stopRoutineAudioForPriority();
-        const generation = playbackGeneration;
-        let audioBlob;
-        try { audioBlob = typeof audioBlobOrLoader === 'function' ? await audioBlobOrLoader() : audioBlobOrLoader; }
-        catch { audioBlob = null; }
-        if (!(audioBlob instanceof Blob) || expiresAt <= Date.now()) {
-            return { started: false, reason: expiresAt <= Date.now() ? 'expired' : 'speech_unavailable' };
-        }
-
-        const playSequence = createAlertAudioSequence({
-            playBeep: () => playAlertBeepNow({ expiresAt }),
-            playSpeech: (blob, repetition) => playAnnouncementAudioNow(blob, {
-                onStarted: () => onStarted?.(repetition), expiresAt, priorityOwned: true
-            }),
-            canContinue: () => generation === playbackGeneration && isRelevant() && isAudioPlaybackEnabled() && Date.now() < expiresAt
-        });
-        const result = await playSequence(audioBlob);
-        if (result.completedRepetitions === 2 && result.expectedRepetitions === 2) onCompleted?.(result);
-        return result;
-    }, { expiresAt, onDeferred });
-}
-
-/** The admin receiver passes its existing IndexedDB-cached WAV here. */
-export function playAnnouncementAudio(audioBlob, options = {}) {
-    return playAlertAnnouncement('admin', audioBlob, options);
-}
-
-/** Adhan and iqama have higher queue priority but use the same playback sequence. */
 export function playPrayerAnnouncement(audioBlobOrLoader, options = {}) {
-    return playAlertAnnouncement('prayer', audioBlobOrLoader, options);
+    return delivery.enqueue('prayer', { ...options, loadRecording: () => typeof audioBlobOrLoader === 'function' ? audioBlobOrLoader() : audioBlobOrLoader });
 }
 
 export function getPriorityAudioState() {
-    return { active: priorityAudioQueue.activeLevel, queued: priorityAudioQueue.queuedCount };
-}
-
-/**
- * Add audio task to queue
- */
-function enqueueAudio(task) {
-    const { soundEnabled } = getSettings();
-    if (!soundEnabled) return false;
-
-    const deliveryKeys = task.deliveryKeys || [];
-    const startedCount = getMaxStartedCount(deliveryKeys);
-    const requestedPlays = Math.max(1, task.repetitionsRemaining || 2);
-    const remainingPlays = Math.min(requestedPlays, Math.max(0, 2 - startedCount));
-    if (remainingPlays === 0) return false;
-
-    console.log(`[Queue] Queued: ${task.filename || task}`);
-    playQueue.push({
-        ...task,
-        repetitionsRemaining: remainingPlays,
-        deliveryConfirmed: false
-    });
-    processQueue();
-    return true;
-}
-
-export function stopAudioPlayback() {
-    playbackGeneration++;
-    if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
-    if (queueAdvanceTimeout) clearTimeout(queueAdvanceTimeout);
-    activeSafetyTimeout = null;
-    queueAdvanceTimeout = null;
-
-    const cancelled = playQueue.splice(0);
-    if (activeAudioTask) cancelled.push(activeAudioTask);
-    const seen = new Set();
-    for (const task of cancelled) {
-        if (seen.has(task)) continue;
-        seen.add(task);
-        task.onDelivered?.(false);
-    }
-    if (retainedAudioPlayer) {
-        retainedAudioPlayer.onended = null;
-        retainedAudioPlayer.onerror = null;
-        retainedAudioPlayer.pause?.();
-    }
-    if (retainedAudioPlayer) retainedAudioPlayer.currentTime = 0;
-    cancelAnnouncementPlayback?.();
-    cancelAlertBeepPlayback?.();
-    announcementPlayer?.pause?.();
-    announcementPlayer = null;
-    if (announcementObjectUrl) URL.revokeObjectURL(announcementObjectUrl);
-    announcementObjectUrl = '';
-    activeAudioTask = null;
-    isPlaying = false;
-    updateAudioState(AUDIO_STATE.LOCKED);
-}
-
-/**
- * Process the Audio Queue (STRICT MODE: Files Only)
- */
-async function processQueue() {
-    if (isPlaying || playQueue.length === 0 || priorityAudioQueue.activeLevel || priorityAudioQueue.queuedCount) return;
-    if (playQueue[0]?.meetingId !== 'audio-test' && !hasCurrentAudioLeadership()) return;
-    
-    if (currentAudioState !== AUDIO_STATE.ENABLED) {
-        console.warn('[Queue] Waiting for Audio Unlock...');
-        return;
-    }
-
-    const generation = playbackGeneration;
-    const finish = (delay = 2000) => {
-        if (activeSafetyTimeout) clearTimeout(activeSafetyTimeout);
-        activeSafetyTimeout = null;
-        queueAdvanceTimeout = setTimeout(() => {
-            if (generation !== playbackGeneration) return;
-            queueAdvanceTimeout = null;
-            isPlaying = false;
-            processQueue();
-        }, delay);
-    };
-
-    if (!getSettings().soundEnabled) {
-        stopAudioPlayback();
-        return;
-    }
-
-    isPlaying = true;
-    const task = playQueue.shift();
-    activeAudioTask = task;
-    const filename = task.filename || task;
-    let settled = false;
-
-    // Array#filter passes the index as the predicate's second argument. Keep the
-    // default `allowExhausted = false` explicit so later reminders cannot skip
-    // the two-play delivery cap just because they are later in the array.
-    const validReminders = (task.reminders || []).filter(reminder => isReminderStillValid(reminder));
-    if (task.reminders?.length && validReminders.length === 0) {
-        activeAudioTask = null;
-        confirmTask(task, false);
-        finish(0);
-        return;
-    }
-    if (validReminders.length) {
-        task.deliveryKeys = validReminders.map(reminder => reminder.key);
-        task.reminders = validReminders;
-    }
-
-    const availablePlays = Math.max(0, 2 - getMaxStartedCount(task.deliveryKeys || []));
-    task.repetitionsRemaining = Math.min(task.repetitionsRemaining, availablePlays);
-    if (!task.repetitionsRemaining) {
-        activeAudioTask = null;
-        confirmTask(task, false);
-        finish(0);
-        return;
-    }
-
-    const confirmDelivery = success => {
-        if (task.deliveryConfirmed) return;
-        task.deliveryConfirmed = true;
-        task.onDelivered?.(success);
-    };
-
-    const settle = (delay = 500) => {
-        if (settled) return;
-        settled = true;
-        finish(delay);
-    };
-
-    activeSafetyTimeout = setTimeout(() => {
-        if (generation !== playbackGeneration) return;
-        console.warn('[Queue] Safety timeout — skipping stalled audio task');
-        retainedAudioPlayer?.pause?.();
-        retainedAudioPlayer && (retainedAudioPlayer.onended = null);
-        retainedAudioPlayer && (retainedAudioPlayer.onerror = null);
-        activeAudioTask = null;
-        confirmDelivery(false);
-        settle(0);
-    }, 90000);
-
-    try {
-        const audioPath = `/sounds/${filename}`;
-        console.log(`[Queue] Stage: Playing -> ${filename}`);
-
-        const audio = retainedAudioPlayer || new Audio();
-        retainedAudioPlayer = audio;
-        audio.pause();
-        audio.currentTime = 0;
-        audio.src = audioPath;
-        audio.load();
-        audio.onended = () => {
-            if (generation !== playbackGeneration) return;
-            console.log('[Queue] Stage: Completed');
-            if (task.repetitionsRemaining > 1) {
-                task.repetitionsRemaining--;
-                playQueue.unshift({
-                    ...task,
-                    deliveryConfirmed: false
-                });
-                activeAudioTask = null;
-                settle(2500);
-            } else {
-                activeAudioTask = null;
-                confirmDelivery(true);
-                settle(500);
-            }
-        };
-
-        audio.onerror = () => {
-            if (generation !== playbackGeneration) return;
-            console.error(`[Queue] Stage: Failed (File NOT FOUND: ${filename}). Skipping.`);
-            activeAudioTask = null;
-            updateAudioState(AUDIO_STATE.FAILED);
-            confirmDelivery(false);
-            settle(0);
-        };
-
-        await audio.play().then(() => {
-            if (generation === playbackGeneration) recordStartedPlay(task);
-        }).catch((err) => {
-            if (generation !== playbackGeneration) return;
-            if (err.name === 'NotAllowedError') {
-                playQueue.unshift(task);
-                updateAudioState(AUDIO_STATE.LOCKED);
-            } else {
-                console.error('[Queue] Play Error:', err);
-                activeAudioTask = null;
-                updateAudioState(AUDIO_STATE.FAILED);
-                confirmDelivery(false);
-            }
-            settle(500);
-        });
-    } catch (e) {
-        if (generation !== playbackGeneration) return;
-        console.error('[Queue] Unexpected Error:', e);
-        activeAudioTask = null;
-        updateAudioState(AUDIO_STATE.FAILED);
-        confirmDelivery(false);
-        settle(500);
-    }
-}
-
-function confirmTask(task, success) {
-    if (task.deliveryConfirmed) return;
-    task.deliveryConfirmed = true;
-    task.onDelivered?.(success);
-}
-
-/**
- * Map Arabic Name to Audio File Prefix
- * UPDATED: Added Hossam ( حـسام ) -> 'a'
- */
-function getEngineerPrefix(teamName) {
-    return getEngineerAudioPrefix(teamName);
+    return { active: delivery.activeLevel, queued: delivery.queuedCount };
 }
 
 // ========================================
@@ -556,258 +128,126 @@ export function showToast({ title, message, level = 'info', icon = '🔔' }) {
 // ⏰ Meeting Timer / Notification Engine
 // ========================================
 
-const triggeredNotifications = new Set(loadDeliveredNotifications());
+const triggeredNotifications = new Set();
+const attemptedNotifications = new Set();
 const pendingNotifications = new Set();
-let lastNotifiedDate = formatTodayDate();
+let lastNotifiedDate = null;
 
-function loadDeliveredNotifications() {
+function reloadDelivered(date) {
     try {
         const stored = JSON.parse(localStorage.getItem(DELIVERED_STORAGE_KEY) || '{}');
-        const today = formatTodayDate();
-        return stored.date === today && Array.isArray(stored.keys) ? stored.keys : [];
-    } catch {
-        return [];
-    }
-}
-
-function persistDeliveredNotifications() {
-    try {
-        localStorage.setItem(DELIVERED_STORAGE_KEY, JSON.stringify({
-            date: formatTodayDate(),
-            keys: [...triggeredNotifications]
-        }));
-    } catch (error) {
-        console.warn('[Audio] Could not persist delivered reminders:', error);
-    }
-}
-
-function getStartedPlayCounts() {
-    try {
-        const stored = JSON.parse(localStorage.getItem(PLAY_COUNTS_STORAGE_KEY) || '{}');
-        return stored.date === formatTodayDate() && stored.counts && typeof stored.counts === 'object'
-            ? stored.counts
-            : {};
-    } catch {
-        return {};
-    }
-}
-
-function getMaxStartedCount(keys = []) {
-    const counts = getStartedPlayCounts();
-    return keys.reduce((highest, key) => Math.max(highest, Number(counts[key]) || 0), 0);
-}
-
-function recordStartedPlay(task) {
-    const keys = task.deliveryKeys || [];
-    if (!keys.length) return;
-    const counts = getStartedPlayCounts();
-    for (const key of keys) counts[key] = (Number(counts[key]) || 0) + 1;
-    try {
-        localStorage.setItem(PLAY_COUNTS_STORAGE_KEY, JSON.stringify({ date: formatTodayDate(), counts }));
-    } catch (error) {
-        console.warn('[Audio] Could not persist reminder playback:', error);
-    }
-}
-
-function isReminderStillValid(reminder, allowExhausted = false) {
-    const meeting = latestMeetingsById.get(reminder.meetingId);
-    if (!meeting || !isEngineerMeetingReminderAudioEnabled(meeting.team)
-        || meeting.date !== formatTodayDate() || !meeting.time || isDone(meeting) || isCancelled(meeting)) return false;
-    if (!allowExhausted && (getStartedPlayCounts()[reminder.key] || 0) >= 2) return false;
-
-    const [hours, minutes] = meeting.time.split(':').map(Number);
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return false;
-    const now = getCurrentTimeParts(new Date());
-    const diffSeconds = hours * 3600 + minutes * 60 - (now.hours * 3600 + now.minutes * 60 + now.seconds);
-    return shouldTriggerAlert(diffSeconds, reminder.minutesType * 60, ALERT_CATCHUP_MS);
-}
-
-function cancelObsoleteQueuedReminders() {
-    for (let index = playQueue.length - 1; index >= 0; index--) {
-        const task = playQueue[index];
-        if (!task.reminders?.length) continue;
-        const valid = task.reminders.filter(reminder => isReminderStillValid(reminder));
-        const validKeys = new Set(valid.map(reminder => reminder.key));
-        for (const reminder of task.reminders) {
-            if (!validKeys.has(reminder.key)) pendingNotifications.delete(reminder.key);
-        }
-        if (!valid.length) {
-            playQueue.splice(index, 1);
-            confirmTask(task, false);
-            continue;
-        }
-        task.reminders = valid;
-        task.deliveryKeys = valid.map(reminder => reminder.key);
-    }
-}
-
-function refreshDeliveredFromStorage(value) {
-    try {
-        const stored = JSON.parse(value || '{}');
-        triggeredNotifications.clear();
-        if (stored.date === formatTodayDate() && Array.isArray(stored.keys)) {
+        if (stored.date === date && Array.isArray(stored.keys)) {
             for (const key of stored.keys) triggeredNotifications.add(key);
         }
-    } catch {
-        // Ignore malformed data written by an interrupted older version.
-    }
+    } catch { /* Storage can be unavailable. */ }
 }
 
-if (typeof window !== 'undefined') {
-    window.addEventListener('storage', event => {
-        if (event.key === DELIVERED_STORAGE_KEY) refreshDeliveredFromStorage(event.newValue);
-        if (event.key === AUDIO_LEASE_KEY && isAudioLeader) {
-            try {
-                const lease = JSON.parse(event.newValue || '{}');
-                if (lease.id !== audioTabId) isAudioLeader = false;
-            } catch {
-                isAudioLeader = false;
-            }
-        }
-    });
+function persistDeliveredNotifications(date) {
+    try {
+        reloadDelivered(date);
+        localStorage.setItem(DELIVERED_STORAGE_KEY, JSON.stringify({ date, keys: [...triggeredNotifications] }));
+    } catch { /* Current-tab dedupe remains active. */ }
 }
 
-const notificationAttempts = new Map();
-const notificationRetryAt = new Map();
-
-function canAttemptNotification(key) {
-    const now = Date.now();
-    if ((notificationRetryAt.get(key) || 0) > now) return false;
-    const attempts = (notificationAttempts.get(key) || 0) + 1;
-    if (attempts > 3) return false;
-    notificationAttempts.set(key, attempts);
-    notificationRetryAt.set(key, now + 30000);
-    return true;
+function updateNotificationDate(date) {
+    if (lastNotifiedDate === date) return;
+    lastNotifiedDate = date;
+    triggeredNotifications.clear();
+    attemptedNotifications.clear();
+    pendingNotifications.clear();
+    reloadDelivered(date);
 }
 
-function markNotificationDelivered(key, success = true) {
-    pendingNotifications.delete(key);
-    if (success) {
-        triggeredNotifications.add(key);
-        notificationAttempts.delete(key);
-        notificationRetryAt.delete(key);
-        persistDeliveredNotifications();
-    }
+function getMeetingAudioGroup(meeting, todayDate, minutesType) {
+    const [hours, minutes] = (meeting.time || '').split(':').map(Number);
+    if (!Number.isInteger(hours) || hours < 0 || hours > 23 || !Number.isInteger(minutes) || minutes < 0 || minutes > 59) return null;
+    const startSeconds = hours * 3600 + minutes * 60;
+    const start = Date.parse(todayDate.replaceAll('/', '-') + 'T00:00:00+03:00') + startSeconds * 1000;
+    if (!Number.isFinite(start)) return null;
+    const engineer = getEngineerProfile(meeting.team);
+    const engineerKey = engineer?.id || 'unknown';
+    const dueAt = start - minutesType * 60000;
+    return {
+        start, dueAt, expiresAt: dueAt + ALERT_CATCHUP_MS, prefix: getEngineerAudioPrefix(meeting.team),
+        id: 'meeting:' + todayDate + ':' + engineerKey + ':' + startSeconds + ':' + minutesType
+    };
 }
 
-export function checkMeetingTimers(meetings, todayDate) {
-    updateReminderMeetings(meetings);
-    if (!getSettings().soundEnabled) return;
+function isMeetingReminderRelevant(meeting, group, date, minutesType) {
+    const current = latestMeetingsById.get(meeting.id);
+    return current?.date === date && !isDone(current) && !isCancelled(current)
+        && getMeetingAudioGroup(current, date, minutesType)?.id === group.id;
+}
 
-    const today = todayDate;
-    if (lastNotifiedDate !== today) {
-        triggeredNotifications.clear();
-        pendingNotifications.clear();
-        notificationAttempts.clear();
-        notificationRetryAt.clear();
-        lastNotifiedDate = today;
-        persistDeliveredNotifications();
-    }
-
-    const now = new Date();
-    const nowParts = getCurrentTimeParts(now);
-    const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
-    const todayMeetings = meetings.filter(m => m.date === todayDate && m.time && !isDone(m) && !isCancelled(m));
-    const engineerGroups = new Map();
-
-    for (const meeting of todayMeetings) {
-        const [h, min] = meeting.time.split(':').map(Number);
-        if (!Number.isFinite(h) || !Number.isFinite(min)) continue;
-        const meetingSeconds = h * 3600 + min * 60;
-        const diffSeconds = meetingSeconds - nowSeconds;
-        const prefix = getEngineerPrefix(meeting.team);
-        const engineerProfile = getEngineerProfile(meeting.team);
-        const engineerKey = engineerProfile?.id || String(meeting.team || 'unknown')
-            .normalize('NFKD')
-            .replace(/[\u064B-\u065F\u0670]/g, '')
-            .trim()
-            .toLowerCase();
+export function checkMeetingTimers(meetings, todayDate, now = Date.now()) {
+    latestMeetingsById = new Map(meetings.map(item => [item.id, item]));
+    if (!getSettings().soundEnabled || !isAudioDeliveryOwner() || delivery.suspended) return;
+    updateNotificationDate(todayDate);
+    const groups = new Map();
+    for (const meeting of meetings) {
+        if (meeting.date !== todayDate || !meeting.time || isDone(meeting) || isCancelled(meeting)) continue;
         for (const minutesType of MEETING_REMINDER_MINUTES) {
-            if (!shouldTriggerAlert(diffSeconds, minutesType * 60, ALERT_CATCHUP_MS)) continue;
-            const key = `${meeting.id}_${minutesType}min`;
-            if (triggeredNotifications.has(key) || pendingNotifications.has(key)
-                || getStartedPlayCounts()[key] >= 2 || !canAttemptNotification(key)) continue;
-            // Collapse only genuinely simultaneous meetings for this engineer.
-            // Separate meetings can become due in the same catch-up window and
-            // must retain their own reminder.
-            const groupKey = `${engineerKey}:${meetingSeconds}:${minutesType}`;
-            const list = engineerGroups.get(groupKey) || [];
-            list.push({ meeting, meetingId: meeting.id, prefix, minutesType, diff: Math.max(0, Math.round(diffSeconds / 60)), key });
-            engineerGroups.set(groupKey, list);
+            const group = getMeetingAudioGroup(meeting, todayDate, minutesType);
+            if (!group || !shouldTriggerAlert((group.start - now) / 1000, minutesType * 60, ALERT_CATCHUP_MS)) continue;
+            if (!groups.has(group.id)) groups.set(group.id, { ...group, minutesType, meetings: [] });
+            groups.get(group.id).meetings.push(meeting);
         }
     }
 
-    // One reminder per engineer, start time, and alert stage. Simultaneous
-    // meetings share a single spoken call and a single toast/push notification.
-    for (const candidates of engineerGroups.values()) {
-        candidates.sort((a, b) => a.minutesType - b.minutesType || a.diff - b.diff);
-        const selected = candidates[0];
-        for (const item of candidates) pendingNotifications.add(item.key);
-        const onDelivered = success => candidates.forEach(item => markNotificationDelivered(item.key, success));
-        const queued = triggerAlert(selected.meeting, selected.prefix, selected.minutesType, selected.diff, onDelivered, candidates);
-        if (!queued) {
-            // Muted audio, a disabled engineer, or an unknown engineer is intentional silence.
-            const intentionalSilence = !selected.prefix;
-            onDelivered(intentionalSilence);
-        }
+    for (const group of groups.values()) {
+        if (attemptedNotifications.has(group.id)) continue;
+        const { meetings: items, minutesType } = group;
+        const repetitions = items.length > 1 ? 1 : 2;
+        if (items.every(item => triggeredNotifications.has(item.id + '_' + minutesType + 'min'))
+            || hasCompletedAudio(group.id, repetitions)) continue;
+        attemptedNotifications.add(group.id);
+        const meeting = items[0];
+        showMeetingReminder(meeting, minutesType, Math.max(0, Math.round((group.start - now) / 60000)));
+        if (!group.prefix) continue;
+        pendingNotifications.add(group.id);
+        void delivery.enqueue('routine', {
+            id: group.id, expiresAt: group.expiresAt, repetitions, clipUrl: '/sounds/' + group.prefix + minutesType + '.mp3',
+            isRelevant: () => items.some(item => isMeetingReminderRelevant(item, group, todayDate, minutesType)),
+            onCompleted() {
+                if (lastNotifiedDate !== todayDate) return;
+                for (const item of items) {
+                    if (isMeetingReminderRelevant(item, group, todayDate, minutesType)) {
+                        triggeredNotifications.add(item.id + '_' + minutesType + 'min');
+                    }
+                }
+                persistDeliveredNotifications(todayDate);
+            }
+        }).finally(() => pendingNotifications.delete(group.id));
     }
 }
 
 export function updateReminderMeetings(meetings = []) {
-    latestMeetingsById = new Map(meetings.map(meeting => [meeting.id, meeting]));
-    cancelObsoleteQueuedReminders();
+    latestMeetingsById = new Map(meetings.map(item => [item.id, item]));
+    runNotificationTick();
+    delivery.kick();
 }
 
 /** Returns the next undelivered spoken reminder so the sidebar can expose it. */
 export function getNextAudioReminder(meetings, todayDate) {
     if (!getSettings().soundEnabled) return { state: 'muted' };
 
-    const nowParts = getCurrentTimeParts(new Date());
-    const nowSeconds = nowParts.hours * 3600 + nowParts.minutes * 60 + nowParts.seconds;
+    updateNotificationDate(todayDate);
+    const now = Date.now();
     const candidates = [];
-
-    for (const meeting of meetings.filter(item => isEngineerMeetingReminderAudioEnabled(item.team)
-        && item.date === todayDate && item.time && !isDone(item) && !isCancelled(item))) {
-        const [hours, minutes] = meeting.time.split(':').map(Number);
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) continue;
-        const diffSeconds = (hours * 3600 + minutes * 60) - nowSeconds;
-
+    for (const meeting of meetings) {
+        if (meeting.date !== todayDate || !meeting.time || isDone(meeting) || isCancelled(meeting)) continue;
         for (const minutesType of MEETING_REMINDER_MINUTES) {
-            const key = `${meeting.id}_${minutesType}min`;
-            if (triggeredNotifications.has(key) || pendingNotifications.has(key) || getStartedPlayCounts()[key] >= 2) continue;
-            const secondsUntil = diffSeconds - minutesType * 60;
-            if (secondsUntil < -(ALERT_CATCHUP_MS / 1000)) continue;
-            candidates.push({ meeting, minutesType, secondsUntil: Math.max(0, secondsUntil) });
+            const group = getMeetingAudioGroup(meeting, todayDate, minutesType);
+            if (!group?.prefix || group.expiresAt <= now || (attemptedNotifications.has(group.id) && !pendingNotifications.has(group.id))
+                || triggeredNotifications.has(meeting.id + '_' + minutesType + 'min')) continue;
+            candidates.push({ meeting, minutesType, secondsUntil: Math.max(0, Math.ceil((group.dueAt - now) / 1000)) });
         }
     }
-
     candidates.sort((a, b) => a.secondsUntil - b.secondsUntil || a.minutesType - b.minutesType);
     return candidates[0] ? { state: 'scheduled', ...candidates[0] } : { state: 'none' };
 }
-function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders = []) {
-    let audioQueued = false;
-    if (prefix) {
-        const filename = `${prefix}${minutesType}.mp3`;
-        audioQueued = enqueueAudio({
-            filename,
-            meetingId: meeting.id,
-            minutesType,
-            reminders,
-            deliveryKeys: reminders.map(reminder => reminder.key),
-            // A simultaneous pair is one call; a single meeting keeps the
-            // existing two-play reminder behavior.
-            repetitionsRemaining: reminders.length > 1 ? 1 : 2,
-            onDelivered: success => {
-                const validKeys = new Set(reminders.filter(reminder => isReminderStillValid(reminder, true)).map(reminder => reminder.key));
-                for (const item of reminders) {
-                    if (validKeys.has(item.key)) markNotificationDelivered(item.key, success);
-                    else pendingNotifications.delete(item.key);
-                }
-            }
-        });
-    } else if (isEngineerMeetingReminderAudioEnabled(meeting.team)) {
-        console.warn(`[Audio] No mapping found for engineer: "${meeting.team}" (id: ${meeting.id}). Skipping sound.`);
-    }
+
+function showMeetingReminder(meeting, minutesType, diff) {
 
     const timeText = diff <= 1 ? 'سيبدأ الآن' : `بعد ${diff} دقيقة`;
     let level = 'info';
@@ -825,163 +265,114 @@ function triggerAlert(meeting, prefix, minutesType, diff, onDelivered, reminders
         icon
     });
 
-    sendPushNotification(meeting, timeText, {
-        silent: !isEngineerMeetingReminderAudioEnabled(meeting.team) || currentAudioState === AUDIO_STATE.ENABLED
-    });
-    return audioQueued;
+    sendPushNotification(meeting, timeText);
 }
 
-function sendPushNotification(meeting, timeText, { silent = currentAudioState === AUDIO_STATE.ENABLED } = {}) {
-    if (!("Notification" in window)) return;
-
-    if (Notification.permission === "granted") {
-        new Notification(`تنبيه: ${meeting.project}`, {
-            body: `${meeting.team || 'الفريق'} - ${timeText}`,
-            silent
-        });
-    }
-}
-
-// ========================================
-// 🔁 Timer Loop
-// ========================================
-
-let timerInterval = null;
-let visibilityListener = null;
-
-function setAudioLeader(active) {
-    isAudioLeader = active;
-    if (active) {
-        runNotificationTick();
-        return;
-    }
-    if (leaseRenewInterval) clearInterval(leaseRenewInterval);
-    leaseRenewInterval = null;
-    if (leaseConfirmationTimeout) clearTimeout(leaseConfirmationTimeout);
-    leaseConfirmationTimeout = null;
+function sendPushNotification(meeting, timeText) {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    try {
+        // The notification system must not be a second audio player.
+        new Notification('تنبيه: ' + meeting.project, { body: (meeting.team || 'الفريق') + ' - ' + timeText, silent: true });
+    } catch { /* Desktop notifications are optional. */ }
 }
 
 function readAudioLease() {
-    try {
-        return JSON.parse(localStorage.getItem(AUDIO_LEASE_KEY) || '{}');
-    } catch {
-        return {};
-    }
+    try { return JSON.parse(localStorage.getItem(AUDIO_LEASE_KEY) || '{}'); }
+    catch { return {}; }
 }
 
-function acquireFallbackAudioLease() {
-    const current = readAudioLease();
-    if (current.expiresAt > Date.now() && current.id !== audioTabId) return;
-
-    try {
-        localStorage.setItem(AUDIO_LEASE_KEY, JSON.stringify({ id: audioTabId, expiresAt: Date.now() + AUDIO_LEASE_MS }));
-        if (leaseConfirmationTimeout) clearTimeout(leaseConfirmationTimeout);
-        leaseConfirmationTimeout = setTimeout(() => {
-            if (readAudioLease().id !== audioTabId) return;
-            setAudioLeader(true);
-            if (!leaseRenewInterval) {
-                leaseRenewInterval = setInterval(() => {
-                    const lease = readAudioLease();
-                    if (lease.id !== audioTabId) {
-                        setAudioLeader(false);
-                        return;
-                    }
-                    localStorage.setItem(AUDIO_LEASE_KEY, JSON.stringify({ id: audioTabId, expiresAt: Date.now() + AUDIO_LEASE_MS }));
-                }, 4000);
-            }
-        }, 100);
-    } catch (error) {
-        console.warn('[Audio] Cross-tab coordination is unavailable:', error);
+function setAudioOwner(active) {
+    if (audioOwner !== active) reportAudioDiagnostic(active ? 'owner_acquired' : 'owner_released');
+    audioOwner = active;
+    if (active) {
+        if (loop) reloadDelivered(loop.getTodayDate());
+        runNotificationTick();
     }
+    delivery.kick();
 }
 
 function tryAcquireAudioLeadership() {
-    if (isAudioLeader || currentAudioState !== AUDIO_STATE.ENABLED || !getSettings().soundEnabled) return;
-    if (!globalThis.navigator?.locks?.request) {
-        acquireFallbackAudioLease();
+    if (!loop || delivery.suspended || !getSettings().soundEnabled) return;
+    if (delivery.state === AUDIO_STATE.LOCKED && !audioOwner) return;
+    if (!usingLease && globalThis.navigator?.locks?.request) {
+        if (audioOwner || leaderRequestPending) return;
+        leaderRequestPending = true;
+        void navigator.locks.request(AUDIO_LEADER_LOCK, { ifAvailable: true }, async lock => {
+            if (!lock || !loop || delivery.suspended || delivery.state === AUDIO_STATE.LOCKED) return;
+            const hold = new Promise(resolve => { releaseWebAudioLock = resolve; });
+            setAudioOwner(true);
+            await hold;
+            releaseWebAudioLock = null;
+            setAudioOwner(false);
+        }).catch(() => {
+            reportAudioDiagnostic('lock_unavailable');
+            usingLease = true;
+            if (loop && !delivery.suspended) keepAudioLease();
+        }).finally(() => { leaderRequestPending = false; });
         return;
     }
+    usingLease = true;
+    keepAudioLease();
+}
 
-    globalThis.navigator.locks.request(AUDIO_LEADER_LOCK, { ifAvailable: true }, async lock => {
-        if (!lock) return;
-        setAudioLeader(true);
-        await new Promise(resolve => { releaseWebAudioLock = resolve; });
-        releaseWebAudioLock = null;
-        setAudioLeader(false);
-    }).catch(error => {
-        console.warn('[Audio] Lock API failed; using a local lease:', error);
-        acquireFallbackAudioLease();
-    });
+function keepAudioLease() {
+    const lease = readAudioLease();
+    if (lease.id !== audioTabId && lease.expiresAt > Date.now()) {
+        if (audioOwner) {
+            delivery.suspend();
+            setAudioOwner(false);
+            delivery.wake();
+        }
+        return;
+    }
+    try {
+        localStorage.setItem(AUDIO_LEASE_KEY, JSON.stringify({ id: audioTabId, expiresAt: Date.now() + AUDIO_LEASE_MS }));
+        if (!audioOwner && !leaseConfirmation) leaseConfirmation = setTimeout(() => {
+            leaseConfirmation = null;
+            if (!delivery.suspended && loop && readAudioLease().id === audioTabId) setAudioOwner(true);
+        }, 120);
+    } catch {
+        reportAudioDiagnostic('lease_unavailable');
+    }
 }
 
 function releaseAudioLeadership() {
+    clearTimeout(leaseConfirmation);
+    leaseConfirmation = null;
+    if (audioOwner) setAudioOwner(false);
     releaseWebAudioLock?.();
-    releaseWebAudioLock = null;
-    if (leaseRenewInterval) clearInterval(leaseRenewInterval);
-    leaseRenewInterval = null;
-    const lease = readAudioLease();
-    if (lease.id === audioTabId) localStorage.removeItem(AUDIO_LEASE_KEY);
-    setAudioLeader(false);
+    try {
+        if (readAudioLease().id === audioTabId) localStorage.removeItem(AUDIO_LEASE_KEY);
+    } catch { /* Storage can be unavailable. */ }
 }
 
-function hasCurrentAudioLeadership() {
-    if (!isAudioLeader) return false;
-    if (globalThis.navigator?.locks?.request) return true;
-    const lease = readAudioLease();
-    return lease.id === audioTabId && lease.expiresAt > Date.now();
-}
+globalThis.window?.addEventListener?.('storage', event => {
+    if (event.key !== AUDIO_LEASE_KEY || !usingLease || !audioOwner || isAudioDeliveryOwner()) return;
+    delivery.suspend();
+    setAudioOwner(false);
+    delivery.wake();
+});
 
 function runNotificationTick() {
-    if (isAudioLeader) {
-        const meetings = latestMeetingsById.size ? [...latestMeetingsById.values()] : [];
-        checkMeetingTimers(meetings, formatTodayDate());
-    }
-}
-
-function stopNotificationLoop() {
-    if (timerInterval) clearInterval(timerInterval);
-    if (leaderRetryInterval) clearInterval(leaderRetryInterval);
-    if (visibilityListener) document.removeEventListener('visibilitychange', visibilityListener);
-    timerInterval = null;
-    leaderRetryInterval = null;
-    visibilityListener = null;
-    releaseWebAudioLock?.();
-    releaseWebAudioLock = null;
-    setAudioLeader(false);
-    const lease = readAudioLease();
-    if (lease.id === audioTabId) localStorage.removeItem(AUDIO_LEASE_KEY);
+    if (loop && audioOwner && !delivery.suspended) checkMeetingTimers(loop.getMeetings(), loop.getTodayDate());
 }
 
 export function startNotificationLoop(getMeetings, getTodayDate, onTick) {
-    stopNotificationLoop();
-
-    const tick = () => {
-        if (isAudioLeader) {
-            if (!getSettings().soundEnabled) {
-                stopAudioPlayback();
-                onTick?.();
-                return;
-            }
-            const meetings = getMeetings();
-            latestMeetingsById = new Map(meetings.map(meeting => [meeting.id, meeting]));
-            checkMeetingTimers(meetings, getTodayDate());
-        }
+    if (timerInterval) clearInterval(timerInterval);
+    loop = { getMeetings, getTodayDate };
+    timerInterval = setInterval(() => {
+        if (!getSettings().soundEnabled && delivery.state !== AUDIO_STATE.LOCKED) stopAudioPlayback();
+        tryAcquireAudioLeadership();
+        runNotificationTick();
         onTick?.();
-    };
-
-    runNotificationTick = tick;
-    timerInterval = setInterval(tick, 10 * 1000);
-    leaderRetryInterval = setInterval(tryAcquireAudioLeadership, 3000);
-    visibilityListener = () => {
-        if (document.visibilityState === 'visible') {
-            tryAcquireAudioLeadership();
-            tick();
-        }
-    };
-    document.addEventListener('visibilitychange', visibilityListener);
-
+    }, 3000);
     tryAcquireAudioLeadership();
-    return stopNotificationLoop;
+    return () => {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        releaseAudioLeadership();
+        loop = null;
+    };
 }
 
 export function requestNotificationPermission() {

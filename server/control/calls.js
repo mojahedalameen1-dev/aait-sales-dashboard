@@ -99,21 +99,6 @@ export function prepareCallSpeech(employee, callType, callerName, meetingTitle =
     }
 }
 
-async function removeExpiredCalls() {
-    const [calls, audioRequests] = await Promise.all([
-        firebaseDatabaseRequest('calls/public'),
-        firebaseDatabaseRequest('calls/audioRequests')
-    ]);
-    const now = Date.now();
-    await Promise.all([
-        ...Object.entries(calls || {}).filter(([, event]) => !event || Number(event.expiresAt) <= now)
-            .map(([id]) => firebaseDatabaseRequest(`calls/public/${id}`, 'DELETE')),
-        ...Object.entries(audioRequests || {}).filter(([, item]) => !item || Number(item.expiresAt) <= now)
-            .map(([id]) => firebaseDatabaseRequest(`calls/audioRequests/${id}`, 'DELETE'))
-    ]);
-    return calls || {};
-}
-
 function findRecentEmployeeCall(calls, employeeId, now = Date.now()) {
     return Object.values(calls || {})
         .filter(event => event?.employeeId === employeeId
@@ -232,7 +217,7 @@ export default async function handler(request, response) {
             selectedMeeting = { ...selectedMeeting, mode, meetingMode: mode, ownerName, location };
         }
 
-        const publicCalls = await removeExpiredCalls();
+        const publicCalls = await firebaseDatabaseRequest('calls/public');
         const recentCall = findRecentEmployeeCall(publicCalls, employee.id);
         if (recentCall && !confirmedRecentDuplicate) {
             response.setHeader('Cache-Control', 'no-store');

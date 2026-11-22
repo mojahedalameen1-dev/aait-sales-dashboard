@@ -10,6 +10,13 @@ test('signed-in control card shows only the authenticated admin name', () => {
     assert.doesNotMatch(controlHtml, /الدور المصرّح|الدور الممنوح/);
 });
 
+test('employee call cards place Ashraf first and Mujahid second, preserving the remaining order', () => {
+    const employeeBlock = /const EMPLOYEES = \[([\s\S]*?)\n\];/.exec(controlScript)?.[1];
+    assert.ok(employeeBlock, 'employee list exists');
+    const employeeIds = [...employeeBlock.matchAll(/id: '([^']+)'/g)].map(match => match[1]);
+    assert.deepEqual(employeeIds, ['ashraf', 'mojahed', 'mahmoud', 'hossam', 'shady']);
+});
+
 test('password-only forms provide a hidden, non-interactive username autocomplete hint', () => {
     for (const [id, passwordCount] of [['login-form', 1], ['change-password-form', 3]]) {
         const form = new RegExp(`<form\\b[^>]*id="${id}"[^>]*>([\\s\\S]*?)<\\/form>`).exec(controlHtml)?.[1];

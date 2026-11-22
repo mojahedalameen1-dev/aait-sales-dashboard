@@ -36,9 +36,7 @@ import {
     RefreshCw,
     Settings,
     Sun,
-    Video,
-    Volume2,
-    VolumeX
+    Video
 } from 'lucide';
 import { 
     startAutoSync, 
@@ -59,10 +57,11 @@ import {
     setAudioStateListener,
     AUDIO_STATE,
     playTestAlert,
-    stopAudioPlayback,
     getNextAudioReminder,
     updateReminderMeetings,
-    isAudioPlaybackEnabled,
+    resumeAudioPlayback,
+    suspendAudioPlayback,
+    reportAudioDiagnostic,
     playPrayerAnnouncement,
     showToast
 } from './notifications.js';
@@ -91,8 +90,6 @@ let lastGridSignature = null;
 let prayerCard = null;
 let prayerAlerts = null;
 let callReceiver = null;
-let pendingPrayerReminder = null;
-let pendingPrayerReminderTimeout = null;
 let prayerAlertStatusTimeout = null;
 let dhikrSlider = null;
 let currentAudioState = AUDIO_STATE.LOCKED;
@@ -155,9 +152,7 @@ function refreshIcons(root = document) {
             RefreshCw,
             Settings,
             Sun,
-            Video,
-            Volume2,
-            VolumeX
+            Video
         }
     });
     root.querySelectorAll('svg[data-lucide]').forEach(icon => icon.removeAttribute('data-lucide'));
@@ -762,7 +757,9 @@ function updateVoiceReminderStatus() {
     container.classList.toggle('is-muted', reminder.state === 'muted');
     container.classList.toggle('is-due', reminder.state === 'scheduled' && reminder.secondsUntil === 0);
 
-    if (reminder.state === 'muted') {
+    if (reminder.state !== 'muted' && currentAudioState === AUDIO_STATE.LOCKED) {
+        text.textContent = 'اضغط داخل صفحة العرض للسماح بالصوت';
+    } else if (reminder.state === 'muted') {
         text.textContent = 'النداء الصوتي متوقف';
     } else if (reminder.state === 'scheduled') {
         const alertLabel = 'تذكير الاجتماع';
@@ -903,37 +900,6 @@ window.toggleTheme = () => {
     }
 };
 
-window.toggleSound = () => {
-    const soundEnabled = !getSettings().soundEnabled;
-    updateSettings({ soundEnabled });
-    if (soundEnabled) {
-        void unlockAudio();
-        requestNotificationPermission();
-    } else stopAudioPlayback();
-    updateAudioControl();
-};
-
-function updateAudioControl(state = currentAudioState) {
-    currentAudioState = state;
-    const button = document.getElementById('sound-toggle-btn');
-    if (!button) return;
-    const enabled = getSettings().soundEnabled;
-    const failed = enabled && state === AUDIO_STATE.FAILED;
-    const pending = enabled && state === AUDIO_STATE.LOCKED;
-    const label = enabled ? 'كتم صوت تنبيهات الاجتماعات' : 'تفعيل صوت تنبيهات الاجتماعات';
-    const tooltip = pending
-        ? 'الصوت مفعّل؛ ينتظر أول تفاعل من المتصفح'
-        : failed ? 'تعذر تشغيل الصوت؛ أوقفه ثم فعّله للمحاولة' : label;
-    button.setAttribute('aria-label', label);
-    button.setAttribute('aria-pressed', String(enabled));
-    button.title = tooltip;
-    button.dataset.tooltip = tooltip;
-    button.classList.toggle('is-audio-failed', failed);
-    button.classList.toggle('is-audio-pending', pending);
-    button.innerHTML = `<i data-lucide="${failed ? 'alert-circle' : enabled ? 'volume-2' : 'volume-x'}"></i>`;
-    refreshIcons(button);
-}
-
 function getRiyadhCalendarDate(date = new Date()) {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -1026,15 +992,19 @@ function showPrayerAlertStatus(message, durationMs = 10000, eventId = '') {
 async function playPrayerAlert(prayer) {
     const label = prayer.kind === 'iqama' ? `إقامة صلاة ${prayer.label}` : `أذان صلاة ${prayer.label}`;
     const result = await playPrayerAnnouncement(() => callReceiver?.loadPrayerAudio(prayer), {
+        id: 'prayer:' + prayer.id,
         expiresAt: prayer.expiresAt,
-        isRelevant: () => prayerCard?.getSnapshot()?.city === prayer.cityId && document.visibilityState !== 'hidden',
-        onDeferred: () => showPrayerAlertStatus(`تأخر ${label} قليلًا لحين انتهاء الصوت الحالي.`, 10000, prayer.id),
+        isRelevant: () => prayerCard?.getSnapshot()?.city === prayer.cityId,
+        onDeferred: ({ waitingFor }) => {
+            if (waitingFor) showPrayerAlertStatus(`تأخر ${label} قليلًا لحين انتهاء الصوت الحالي.`, 10000, prayer.id);
+            else if (currentAudioState === AUDIO_STATE.LOCKED) {
+                showPrayerAlertStatus(`حان ${label}؛ اضغط داخل صفحة العرض للسماح بالصوت.`, 10000, prayer.id);
+            }
+        },
         onStarted: ({ repetition, total }) => showPrayerAlertStatus(`يُشغّل الآن تذكير ${label} · ${repetition} من ${total}.`, 10000, prayer.id)
     });
-    if (result.reason === 'speech_unavailable' || result.reason === 'beep_unavailable' || result.reason === 'beep_playback_failed') {
-        showPrayerAlertStatus(`حان ${label}؛ تعذر تشغيل تسلسل الصوت كاملًا على شاشة العرض.`, 10000, prayer.id);
-    }
-    else if (!result.started) showPrayerAlertStatus(`ظهر تذكير ${label} على الشاشة، لكن تعذر تشغيل الصوت.`, 10000, prayer.id);
+    if (result.alreadyCompleted) return result;
+    if (!result.started) showPrayerAlertStatus(`ظهر تذكير ${label} على الشاشة، لكن تعذر تشغيل الصوت.`, 10000, prayer.id);
     else {
         showPrayerAlertStatus(result.completedRepetitions === 2 ? `اكتمل تذكير ${label} مرتين.` : `لم يكتمل تكرار تذكير ${label}.`, 5000, prayer.id);
     }
@@ -1071,7 +1041,7 @@ window.toggleSettings = () => {
 };
 
 window.unlockAudio = () => {
-    unlockAudio();
+    unlockAudio({ userGesture: navigator.userActivation?.isActive === true });
     requestNotificationPermission();
 };
 
@@ -1189,6 +1159,8 @@ function fallbackCopy(text) {
 // ========================================
 
 async function initApp() {
+    let stopMeetingNotifications;
+    if (document.wasDiscarded) reportAudioDiagnostic('page_reloaded_after_discard');
     const meetingsGrid = document.getElementById('meetings-grid');
     if (meetingsGrid) setupMeetingGridResponsiveLayout(meetingsGrid);
     const layoutPreviewMeetings = getLayoutPreviewMeetings();
@@ -1202,20 +1174,13 @@ async function initApp() {
     callReceiver = createCallReceiver();
     prayerAlerts = createPrayerAlerts({
         getSnapshot: () => prayerCard.getSnapshot(),
-        isActive: () => document.visibilityState !== 'hidden',
+        // All tabs can discover due events; the shared playback owner alone can play them.
+        locks: null,
         getIqamaSettings: () => getSettings().prayerIqama,
         onAlert: prayer => {
             const phrase = getPrayerSpeechText(prayer.key, prayer.kind);
             showPrayerAlertStatus(`${phrase} · ${prayer.city}`, 10000, prayer.id);
-            if (isAudioPlaybackEnabled()) return playPrayerAlert(prayer);
-            if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
-            if (Date.now() < prayer.expiresAt) {
-                pendingPrayerReminder = { createdAt: Date.now(), expiresAt: prayer.expiresAt, prayer };
-                pendingPrayerReminderTimeout = setTimeout(() => {
-                    pendingPrayerReminder = null;
-                    pendingPrayerReminderTimeout = null;
-                }, Math.max(0, prayer.expiresAt - Date.now()));
-            }
+            return playPrayerAlert(prayer);
         }
     });
     dhikrSlider = createDhikrSlider(document.getElementById('dhikr-card'));
@@ -1223,7 +1188,6 @@ async function initApp() {
 
     document.getElementById('refresh-now-btn')?.addEventListener('click', window.manualRefresh);
     document.getElementById('theme-toggle-btn')?.addEventListener('click', window.toggleTheme);
-    document.getElementById('sound-toggle-btn')?.addEventListener('click', window.toggleSound);
     document.getElementById('settings-toggle-btn')?.addEventListener('click', window.toggleSettings);
     document.getElementById('display-mode-btn')?.addEventListener('click', toggleDisplayMode);
     document.getElementById('save-settings-btn')?.addEventListener('click', window.saveSettings);
@@ -1246,15 +1210,16 @@ async function initApp() {
 
     // Audio State UI Handling
     const resumeAudioFromGesture = event => {
-        if (!getSettings().soundEnabled || currentAudioState === AUDIO_STATE.ENABLED) return;
-        if (event.target instanceof Element && event.target.closest('#sound-toggle-btn')) return;
-        void unlockAudio();
+        if (!event.isTrusted || !getSettings().soundEnabled || currentAudioState === AUDIO_STATE.ENABLED) return;
+        void unlockAudio({ userGesture: navigator.userActivation?.isActive !== false });
     };
     const resumeAudioFromKey = event => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         resumeAudioFromGesture(event);
     };
     document.addEventListener('pointerdown', resumeAudioFromGesture, { passive: true });
+    // Touch and other input types may only grant activation at click time.
+    document.addEventListener('click', resumeAudioFromGesture, { passive: true });
     document.addEventListener('keydown', resumeAudioFromKey);
 
     const sheetKeyInput = document.getElementById('sheet-key-input');
@@ -1268,21 +1233,12 @@ async function initApp() {
     });
 
     setAudioStateListener((state) => {
-        updateAudioControl(state);
+        currentAudioState = state;
+        updateVoiceReminderStatus();
         if (state === AUDIO_STATE.ENABLED) {
-            document.removeEventListener('pointerdown', resumeAudioFromGesture);
-            document.removeEventListener('keydown', resumeAudioFromKey);
-            if (pendingPrayerReminder && pendingPrayerReminder.expiresAt > Date.now()) {
-                const pending = pendingPrayerReminder;
-                pendingPrayerReminder = null;
-                if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
-                pendingPrayerReminderTimeout = null;
-                void playPrayerAlert(pending.prayer);
-            }
-            callReceiver?.notifyAudioEnabled();
+            prayerAlerts?.tick(new Date());
         }
     });
-    updateAudioControl();
     if (settings.soundEnabled) void unlockAudio();
 
     if (layoutPreviewMeetings) {
@@ -1291,7 +1247,7 @@ async function initApp() {
         updateSyncStatus(activeSyncResult);
         renderUI(activeMeetings);
     } else {
-        startNotificationLoop(
+        stopMeetingNotifications = startNotificationLoop(
             () => activeMeetings,
             formatTodayDate,
             () => {} // onTick
@@ -1310,16 +1266,53 @@ async function initApp() {
     if (dynamicUpdateIntervalId) clearInterval(dynamicUpdateIntervalId);
     dynamicUpdateIntervalId = setInterval(updateLiveMeetingState, 1000);
 
-    document.getElementById('test-sound-btn')?.addEventListener('click', event => {
-        updateSettings({ soundEnabled: true });
-        updateAudioControl();
-        void unlockAudio();
+    document.getElementById('test-sound-btn')?.addEventListener('click', async event => {
         const button = event.currentTarget;
-        playTestAlert(success => setControlFeedback(
-            button,
-            success ? 'اكتمل اختبار الصوت' : 'تعذر تشغيل صوت الاختبار',
-            success ? 'success' : 'error'
-        ));
+        if (button.disabled) return;
+        const report = text => {
+            const status = document.getElementById('test-sound-status');
+            status.hidden = false;
+            status.textContent = text;
+        };
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        report('جارٍ تهيئة الصوت…');
+        try {
+            updateSettings({ soundEnabled: true });
+            if (!await unlockAudio({ userGesture: event.isTrusted })) {
+                report('المتصفح ما سمح بتشغيل الصوت. جرّب الزر من تبويب العرض نفسه.');
+                return;
+            }
+            await playTestAlert(
+                success => report(success ? 'اكتمل الاختبار في المتصفح. تأكد أن الصوت مسموع من التلفزيون.'
+                    : 'لم يكتمل اختبار الصوت. راجع حالة التبويب والطابور ثم جرّب مرة ثانية.'), {
+                    onStarted: ({ repetition, total }) => report(`تشغيل الاختبار · ${repetition} من ${total}`),
+                    onDeferred: ({ waitingFor }) => report(waitingFor ? 'الاختبار ينتظر انتهاء التنبيهات الحالية.'
+                        : 'بانتظار مسؤولية الصوت في هذا التبويب. تأكد ما فيه تبويب لوحة ثاني ماسك الصوت.')
+                }
+            );
+        } catch {
+            report('تعذر تهيئة صوت الاختبار.');
+        } finally {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
+    });
+
+    document.getElementById('authorize-display-btn')?.addEventListener('click', async event => {
+        const button = event.currentTarget;
+        if (button.disabled || !window.confirm('هل تريد اعتماد هذا المتصفح بدل شاشة العرض السابقة؟')) return;
+        const status = document.getElementById('authorize-display-status');
+        status.hidden = false;
+        status.textContent = 'جارٍ التحقق من صلاحية المدير العام…';
+        button.disabled = true;
+        try {
+            await callReceiver.authorizeDisplay();
+            status.textContent = 'تم اعتماد هذا المتصفح لتأكيد وصول النداءات.';
+        } catch (error) {
+            status.textContent = error?.status === 401 ? 'سجّل الدخول كمدير عام في مركز التحكم على نفس المتصفح ثم أعد المحاولة.'
+                : error?.status === 403 ? 'اعتماد شاشة العرض متاح للمدير العام فقط.' : 'تعذر اعتماد شاشة العرض الآن.';
+        } finally { button.disabled = false; }
     });
 
     document.addEventListener('keydown', event => {
@@ -1349,31 +1342,49 @@ async function initApp() {
     });
 
     document.addEventListener('fullscreenchange', syncDisplayModeButton);
+    let frozen = false;
+    function recheckAlerts({ resume = false, recovery = false } = {}) {
+        if (frozen && !resume) return;
+        if (resume) {
+            frozen = false;
+            reportAudioDiagnostic('lifecycle_resumed', { discarded: document.wasDiscarded === true });
+            callReceiver?.resume();
+        }
+        const now = new Date();
+        prayerCard?.tick(now);
+        prayerAlerts?.resume(now);
+        resumeAudioPlayback({ recovery: resume || recovery });
+    }
+    function freezeAlerts() {
+        frozen = true;
+        suspendAudioPlayback();
+        callReceiver?.suspend();
+    }
+    document.addEventListener('freeze', freezeAlerts);
+    document.addEventListener('resume', () => recheckAlerts({ resume: true }));
+    window.addEventListener('pageshow', event => { if (event.persisted) recheckAlerts({ resume: true }); });
+    window.addEventListener('online', () => {
+        if (!frozen) callReceiver?.resume();
+        recheckAlerts({ recovery: true });
+    });
     document.addEventListener('visibilitychange', () => {
+        reportAudioDiagnostic('visibility_changed');
         if (document.body.classList.contains('display-mode') && document.visibilityState === 'visible') requestScreenWakeLock();
-        if (document.visibilityState === 'hidden') {
-            if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
-            pendingPrayerReminderTimeout = null;
-            pendingPrayerReminder = null;
-            return;
-        }
-        if (document.visibilityState === 'visible') {
-            prayerCard?.tick(new Date());
-            prayerAlerts?.skipMissed(new Date());
-        }
+        recheckAlerts();
     });
 
     window.addEventListener('pagehide', event => {
+        freezeAlerts();
         if (event.persisted) return;
+        stopMeetingNotifications?.();
         prayerCard?.destroy();
         prayerAlerts?.destroy();
         callReceiver?.destroy();
-        if (pendingPrayerReminderTimeout) clearTimeout(pendingPrayerReminderTimeout);
         if (prayerAlertStatusTimeout) clearTimeout(prayerAlertStatusTimeout);
         dhikrSlider?.destroy();
         clearInterval(clockIntervalId);
         clearInterval(dynamicUpdateIntervalId);
-    }, { once: true });
+    });
 
     refreshIcons();
 }

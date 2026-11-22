@@ -67,6 +67,13 @@
                 <button class="btn-secondary" id="test-sound-btn" type="button">تجربة وتفعيل الصوت</button>
                 <button class="btn-cancel" id="cancel-settings-btn" type="button">إلغاء</button>
             </div>
+            <p id="test-sound-status" role="status" aria-live="polite" hidden></p>
+            <details class="iqama-settings">
+                <summary>اعتماد شاشة العرض</summary>
+                <p>من نفس متصفح العرض، سجّل الدخول كمدير عام في مركز التحكم ثم اعتمد هذا المتصفح. سيحل محل الشاشة المعتمدة السابقة.</p>
+                <button class="btn-secondary" id="authorize-display-btn" type="button">اعتماد هذا المتصفح</button>
+                <p id="authorize-display-status" role="status" aria-live="polite" hidden></p>
+            </details>
         </div>
     </div>
 
@@ -160,9 +167,6 @@
             </button>
             <button class="icon-btn" id="theme-toggle-btn" title="تبديل الوضع" aria-label="تبديل الوضع" data-tooltip="تبديل الوضع">
                 <i data-lucide="moon"></i>
-            </button>
-            <button class="icon-btn" id="sound-toggle-btn" title="كتم صوت تنبيهات الاجتماعات" aria-label="كتم صوت تنبيهات الاجتماعات" aria-pressed="true" data-tooltip="كتم صوت تنبيهات الاجتماعات">
-                <i data-lucide="volume-2"></i>
             </button>
             <button class="icon-btn" id="settings-toggle-btn" title="الإعدادات" aria-label="الإعدادات" data-tooltip="الإعدادات">
                 <i data-lucide="settings"></i>

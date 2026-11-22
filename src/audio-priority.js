@@ -9,46 +9,64 @@ function normalizeExpiry(value) {
 }
 
 /** A small in-page, priority-aware audio arbiter. Active playback is never overlapped. */
-export function createAudioPriorityQueue({ onIdle = () => {} } = {}) {
+export function createAudioPriorityQueue({ onIdle = () => {}, canStart = () => true, now = Date.now } = {}) {
     let active = null;
     let sequence = 0;
     const queued = [];
+    let timer;
 
     function drain() {
-        if (active || !queued.length) return;
-        queued.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
-        const task = queued.shift();
-        if (task.expiresAt <= Date.now()) {
-            task.resolve({ started: false, reason: 'expired' });
-            drain();
-            return;
+        clearTimeout(timer);
+        timer = undefined;
+        const current = now();
+        for (let index = queued.length - 1; index >= 0; index--) {
+            if (queued[index].expiresAt > current) continue;
+            const [expired] = queued.splice(index, 1);
+            expired.resolve({ started: false, reason: 'expired' });
         }
-        active = task;
-        task.started = true;
-        Promise.resolve().then(task.run).then(
-            result => task.resolve(result ?? { started: false, reason: 'no_result' }),
-            () => task.resolve({ started: false, reason: 'playback_failed' })
-        ).finally(() => {
-            if (active === task) active = null;
+        if (!queued.length) return;
+        queued.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
+        const index = active ? -1 : queued.findIndex(task => task.readyAt <= current && canStart(task.level));
+        if (index < 0) {
+            const next = Math.min(...queued.map(task => task.readyAt > current
+                ? Math.min(task.readyAt, task.expiresAt) : task.expiresAt));
+            if (Number.isFinite(next)) timer = setTimeout(drain, Math.min(2147483647, Math.max(1, next - current)));
+        } else {
+            const [task] = queued.splice(index, 1);
+            active = task;
+            Promise.resolve().then(task.run).then(
+                result => task.resolve(result ?? { started: false, reason: 'no_result' }),
+                () => task.resolve({ started: false, reason: 'playback_failed' })
+            ).finally(() => {
+                if (active === task) active = null;
+                drain();
+                if (!active && !queued.length) onIdle();
+            });
             drain();
-            if (!active && !queued.length) onIdle();
-        });
+        }
     }
 
-    function enqueue(level, run, { expiresAt = Infinity, onDeferred } = {}) {
+    function enqueue(level, run, { expiresAt = Infinity, readyAt = 0, onDeferred } = {}) {
         const priority = PRIORITY[level];
         if (!priority || typeof run !== 'function') return Promise.resolve({ started: false, reason: 'invalid_task' });
         return new Promise(resolve => {
-            const task = { level, priority, run, expiresAt: normalizeExpiry(expiresAt), resolve, sequence: sequence++, started: false };
-            const deferred = Boolean(active || queued.length);
+            const task = { level, priority, run, expiresAt: normalizeExpiry(expiresAt), readyAt, resolve, sequence: sequence++ };
+            const deferred = Boolean(active || queued.length || !canStart(level));
             queued.push(task);
-            if (deferred) onDeferred?.({ level, waitingFor: active?.level || null });
+            if (deferred) {
+                try { onDeferred?.({ level, waitingFor: active?.level || null }); } catch { /* Status UI cannot halt the queue. */ }
+            }
             drain();
         });
     }
 
     return Object.freeze({
         enqueue,
+        kick: drain,
+        cancelPending(reason = 'interrupted') {
+            for (const task of queued.splice(0)) task.resolve({ started: false, reason });
+            drain();
+        },
         get activeLevel() { return active?.level || null; },
         get queuedCount() { return queued.length; },
         hasHigherPriority(level) {

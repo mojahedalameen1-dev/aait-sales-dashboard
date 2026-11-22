@@ -6,8 +6,7 @@ test('admin and prayer use the same cached beeb/speech sequence without duplicat
     const original = Object.fromEntries(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
     const nativeTimeout = globalThis.setTimeout;
     const trace = [];
-    let beepPlayers = 0;
-    let beepLoads = 0;
+    let players = 0;
     let beepPlays = 0;
     let speechPlays = 0;
 
@@ -16,9 +15,8 @@ test('admin and prayer use the same cached beeb/speech sequence without duplicat
             super();
             this.src = src;
             this.paused = true;
-            if (src === '/sounds/beeb.mp3') beepPlayers++;
+            players++;
         }
-        load() { if (this.src === '/sounds/beeb.mp3') beepLoads++; }
         pause() { this.paused = true; }
         play() {
             this.paused = false;
@@ -81,8 +79,7 @@ test('admin and prayer use the same cached beeb/speech sequence without duplicat
         assert.equal(prayer.completedRepetitions, 2);
         assert.equal(completed, 2);
         assert.equal(prayerLoads, 1);
-        assert.equal(beepPlayers, 1);
-        assert.equal(beepLoads, 1);
+        assert.equal(players, 1, 'unlock, both beeps and both speech clips reuse one element');
         assert.equal(beepPlays, 4);
         assert.equal(speechPlays, 4);
 

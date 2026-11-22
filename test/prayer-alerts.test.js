@@ -29,7 +29,10 @@ test('adhan is emitted once and persisted using a stable prayer-kind event id', 
     const storage = memoryStorage();
     const alerts = [];
     const service = { load: async () => ({ days: [{ date, timings: timings() }] }) };
-    const scheduler = createRiyadhPrayerAlerts({ storage, service, now: () => current, onAlert: event => alerts.push(event) });
+    const scheduler = createRiyadhPrayerAlerts({ storage, service, now: () => current, onAlert: event => {
+        alerts.push(event);
+        return { completedRepetitions: 2 };
+    } });
     await settle();
     current = new Date(due);
     scheduler.tick(current);
@@ -57,8 +60,9 @@ test('two visible tabs share an exclusive event lock and produce only one playba
     const service = { load: async () => ({ days: [{ date, timings: timings() }] }) };
     const first = [];
     const second = [];
-    const one = createRiyadhPrayerAlerts({ storage, service, now: () => current, locks, onAlert: event => first.push(event) });
-    const two = createRiyadhPrayerAlerts({ storage, service, now: () => current, locks, onAlert: event => second.push(event) });
+    const finish = target => event => { target.push(event); return { completedRepetitions: 2 }; };
+    const one = createRiyadhPrayerAlerts({ storage, service, now: () => current, locks, onAlert: finish(first) });
+    const two = createRiyadhPrayerAlerts({ storage, service, now: () => current, locks, onAlert: finish(second) });
     await settle();
     current = new Date(due);
     one.tick(current);
@@ -122,7 +126,7 @@ test('Ramadan profile overrides regular only inside its manually verified date r
     assert.equal(validateIqamaProfile({ ...ramadan, endDate: '2027-03-15' }, 'ramadan', '2027-02-20').valid, false);
 });
 
-test('missed alerts after sleep are suppressed rather than played late', async () => {
+test('resuming shortly after the due time dispatches once instead of silently marking missed', async () => {
     const date = '2026-10-24';
     const due = Date.parse(`${date}T12:00:00+03:00`);
     let current = new Date(due - 5000);
@@ -133,14 +137,14 @@ test('missed alerts after sleep are suppressed rather than played late', async (
     });
     await settle();
     current = new Date(due + 5000);
-    scheduler.skipMissed(current);
+    scheduler.resume(current);
     scheduler.tick(new Date(due + 6000));
     await settle();
     scheduler.destroy();
-    assert.equal(alerts.length, 0);
+    assert.equal(alerts.length, 1);
 });
 
-test('a delayed prayer-times response cannot replay an already passed event', async () => {
+test('a delayed prayer-times response cannot play an expired event', async () => {
     const date = '2026-10-24';
     const due = Date.parse(`${date}T12:00:00+03:00`);
     let current = new Date(due - 1000);
@@ -149,13 +153,33 @@ test('a delayed prayer-times response cannot replay an already passed event', as
     const alerts = [];
     const scheduler = createRiyadhPrayerAlerts({ storage: memoryStorage(), service, now: () => current, onAlert: event => alerts.push(event) });
     await Promise.resolve();
-    current = new Date(due + 1000);
+    current = new Date(due + 121000);
     resolve({ days: [{ date, timings: timings() }] });
     await settle();
     scheduler.tick(current);
     await settle();
     scheduler.destroy();
     assert.equal(alerts.length, 0);
+});
+
+test('a waiting or failed prayer is not stored as played; a reopened tab can recover it', async () => {
+    const date = '2026-10-24';
+    const due = Date.parse(`${date}T12:00:00+03:00`);
+    let current = new Date(due - 1000);
+    const storage = memoryStorage();
+    const options = { storage, now: () => current, getSnapshot: () => ({ payload: { days: [{ date, timings: timings() }] } }) };
+    let settleAudio;
+    const scheduler = createRiyadhPrayerAlerts({ ...options, onAlert: () => new Promise(resolve => { settleAudio = resolve; }) });
+    scheduler.tick(current = new Date(due + 4000));
+    assert.equal(storage.getItem('aait_prayer_alerts_riyadh_v1'), null);
+    settleAudio({ completedRepetitions: 1 });
+    await settle();
+    assert.equal(storage.getItem('aait_prayer_alerts_riyadh_v1'), null);
+    scheduler.destroy();
+    const reopened = createRiyadhPrayerAlerts({ ...options, onAlert: () => ({ completedRepetitions: 2 }) });
+    await settle();
+    assert.deepEqual(JSON.parse(storage.getItem('aait_prayer_alerts_riyadh_v1')), [`riyadh:${date}:Dhuhr:adhan`]);
+    reopened.destroy();
 });
 
 test('in-memory fallback still suppresses duplicate ticks when browser storage is unavailable', async () => {

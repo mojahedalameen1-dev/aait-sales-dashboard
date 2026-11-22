@@ -5,6 +5,7 @@ dist/
 .gemini/
 .agent/
 .vercel/
+.wrangler/
 .audio-test/
 .env.local
 .env.local.*

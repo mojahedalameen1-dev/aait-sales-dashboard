@@ -7,6 +7,7 @@ import { getPrayerSpeechText } from '../src/prayer-audio-assets.js';
 import { createPrayerAudioResolver } from '../src/prayer-audio-resolver.js';
 import { createAnnouncementAudioCache } from '../src/announcement-audio-cache.js';
 import { claimPrayerAudio, createPrayerAudioHandler, getPrayerAudioManifest } from '../server/control/prayer-audio.js';
+import { getPrayerSpeechSettings } from '../server/control/audio-cache.js';
 import { resolveIqamaSettings, IQAMA_PRESET_VERSION } from '../src/prayer-iqama.js';
 
 const DATE = '2026-10-27';
@@ -115,12 +116,12 @@ test('the event scheduler reads the exact card snapshot without making a separat
 
 test('late card data still shows the right focus but never plays a stale prayer reminder', async () => {
     const events = [];
-    const current = new Date(instant('14:52:10'));
+    const current = new Date(instant('14:54:01'));
     const scheduler = createPrayerAlerts({ now: () => current, storage: store(), locks: null,
         getSnapshot: () => ({ payload: payload(), readyAt: current.getTime() }), onAlert: event => events.push(event) });
     scheduler.tick(current); await settle(); scheduler.destroy();
     assert.equal(events.length, 0);
-    assert.equal(getPrayerPresentation(payload(), current).phase, 'adhan');
+    assert.equal(getPrayerPresentation(payload(), current).prayer.key, 'Asr');
 });
 
 test('an inactive tab cannot consume the reminder before the visible board receives it', async () => {
@@ -161,7 +162,7 @@ test('authenticated screen generation accepts only a fixed prayer phrase and ret
     let generated = 0;
     const handler = createPrayerAudioHandler({
         verify: async token => { assert.equal(token, 'display-test-token'); return { sub: 'display-test-uid' }; },
-        configured: () => true, settings: () => ({ model: 'canopylabs/orpheus-arabic-saudi', voice: 'abdullah', speed: .95, sampleRate: 24000, version: 'aait-ar-sa-v1' }),
+        configured: () => true, settings: () => getPrayerSpeechSettings({ GROQ_VOICE: 'abdullah' }),
         claim: async uid => assert.equal(uid, 'display-test-uid'),
         generate: async descriptor => { generated++; assert.equal(descriptor.text, 'حان الآن موعد صلاة العصر.'); return wavBytes(); }
     });
